@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
 	server "github.com/Elexation/onyx/internal/port/http"
@@ -26,9 +27,14 @@ func main() {
 	defer db.Close()
 
 	settingsRepo := database.NewSettingsRepo(db)
-	_ = service.NewSettingsService(settingsRepo)
+	settingsService := service.NewSettingsService(settingsRepo)
 
-	router := server.NewRouter(logger)
+	userRepo := database.NewUserRepo(db)
+	sessionRepo := database.NewSessionRepo(db)
+	authService := service.NewAuthService(userRepo, sessionRepo, settingsService)
+	authService.StartCleanup(10 * time.Minute)
+
+	router := server.NewRouter(authService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

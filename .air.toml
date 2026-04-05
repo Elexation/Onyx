@@ -1,0 +1,14 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -tags dev -o tmp/onyx.exe ./cmd/server"
+  bin = "tmp/onyx.exe"
+  delay = 1000
+  exclude_dir = ["frontend", "node_modules", "tmp", "web/build", ".git"]
+  exclude_regex = ["_test\\.go$"]
+  include_ext = ["go"]
+  kill_delay = 500
+
+[misc]
+  clean_on_exit = true

@@ -1,6 +1,6 @@
 # Go
 /onyx
-/onyx.exe
+*.exe
 /tmp/
 
 # Frontend

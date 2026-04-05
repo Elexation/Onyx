@@ -1,0 +1,28 @@
+# Go
+/onyx
+/onyx.exe
+/tmp/
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+
+# Build artifacts
+web/build/
+
+# App directories
+config/
+data/
+.versions/
+.trash/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

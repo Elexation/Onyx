@@ -11,10 +11,11 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService) *chi.Mux {
+func NewRouter(auth *service.AuthService, files *service.FileService) *chi.Mux {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
+	fileHandler := handler.NewFileHandler(files)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -34,7 +35,9 @@ func NewRouter(auth *service.AuthService) *chi.Mux {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(middleware.Auth(auth))
 		r.Use(middleware.CSRF)
-		// Future protected endpoints go here
+
+		r.Get("/files/*", fileHandler.List)
+		r.Get("/download/*", fileHandler.Download)
 	})
 
 	r.NotFound(web.SPAHandler())

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
+	"github.com/Elexation/onyx/internal/adapter/storage"
 	server "github.com/Elexation/onyx/internal/port/http"
 	"github.com/Elexation/onyx/internal/service"
 )
@@ -17,6 +18,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	port := env("ONYX_PORT", "8080")
+	dataDir := env("ONYX_DATA", "data")
 	configDir := env("ONYX_CONFIG", "config")
 
 	db, err := database.Open(filepath.Join(configDir, "onyx.db"))
@@ -34,7 +36,15 @@ func main() {
 	authService := service.NewAuthService(userRepo, sessionRepo, settingsService)
 	authService.StartCleanup(10 * time.Minute)
 
-	router := server.NewRouter(authService)
+	localStorage, err := storage.NewLocalStorage(dataDir)
+	if err != nil {
+		slog.Error("storage init failed", "error", err)
+		os.Exit(1)
+	}
+	defer localStorage.Close()
+	fileService := service.NewFileService(localStorage)
+
+	router := server.NewRouter(authService, fileService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

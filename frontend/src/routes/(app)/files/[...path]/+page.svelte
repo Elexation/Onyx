@@ -97,7 +97,7 @@
 	{:else}
 		<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
 
-		<div class="min-h-0 flex-1">
+		<div class="flex min-h-0 flex-1 flex-col">
 			{#if activeView === "grid"}
 				<FileGrid items={sorted} />
 			{:else}

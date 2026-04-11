@@ -20,7 +20,7 @@
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
 	let containerWidth = $state(0);
-	let getScrollElement = $derived(() => scrollEl);
+	const makeGetScrollElement = (el: HTMLDivElement | null) => () => el;
 
 	const columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap))));
 	const rowCount = $derived(Math.ceil(items.length / columns));
@@ -28,7 +28,7 @@
 	let virtualizer = $derived(
 		createVirtualizer({
 			count: rowCount,
-			getScrollElement,
+			getScrollElement: makeGetScrollElement(scrollEl),
 			estimateSize: () => itemHeight + gap,
 			overscan,
 			lanes: columns,
@@ -36,7 +36,7 @@
 	);
 </script>
 
-<div bind:this={scrollEl} bind:clientWidth={containerWidth} class="h-full overflow-auto">
+<div bind:this={scrollEl} bind:clientWidth={containerWidth} class="min-h-0 flex-1 overflow-auto">
 	<div class="relative w-full" style="height: {$virtualizer.getTotalSize()}px;">
 		{#each $virtualizer.getVirtualItems() as vRow (vRow.index)}
 			{@const rowStart = vRow.index * columns}

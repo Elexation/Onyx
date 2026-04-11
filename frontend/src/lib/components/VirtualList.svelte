@@ -15,19 +15,19 @@
 	} = $props();
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
-	let getScrollElement = $derived(() => scrollEl);
+	const makeGetScrollElement = (el: HTMLDivElement | null) => () => el;
 
 	let virtualizer = $derived(
 		createVirtualizer({
 			count: items.length,
-			getScrollElement,
+			getScrollElement: makeGetScrollElement(scrollEl),
 			estimateSize,
 			overscan,
 		}),
 	);
 </script>
 
-<div bind:this={scrollEl} class="h-full overflow-auto">
+<div bind:this={scrollEl} class="min-h-0 flex-1 overflow-auto">
 	<div class="relative w-full" style="height: {$virtualizer.getTotalSize()}px;">
 		{#each $virtualizer.getVirtualItems() as vItem (vItem.index)}
 			{@render row({

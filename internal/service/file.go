@@ -1,7 +1,9 @@
 package service
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -54,4 +56,84 @@ func (s *FileService) GetFileInfo(filePath string) (*domain.FileInfo, error) {
 // OpenFile returns a reader, mod time, and size for serving a file.
 func (s *FileService) OpenFile(filePath string) (io.ReadSeekCloser, time.Time, int64, error) {
 	return s.storage.Open(filePath)
+}
+
+// MakeDir creates a directory. The parent must exist and the target must not.
+func (s *FileService) MakeDir(dirPath string) error {
+	if dirPath == "" || dirPath == "/" {
+		return fmt.Errorf("invalid directory path")
+	}
+	return s.storage.MakeDir(dirPath)
+}
+
+// Rename changes the name of a file or directory.
+// newName must be a bare name with no path separators.
+func (s *FileService) Rename(filePath, newName string) error {
+	if newName == "" {
+		return fmt.Errorf("new name must not be empty")
+	}
+	if strings.ContainsAny(newName, "/\\") {
+		return fmt.Errorf("new name must not contain path separators")
+	}
+
+	// Check source exists
+	if _, err := s.storage.Stat(filePath); err != nil {
+		return err
+	}
+
+	// Check target doesn't exist
+	parent := filePath[:strings.LastIndex(filePath, "/")+1]
+	targetPath := parent + newName
+	if _, err := s.storage.Stat(targetPath); err == nil {
+		return &ConflictError{Path: targetPath}
+	}
+
+	return s.storage.Rename(filePath, newName)
+}
+
+// Move relocates paths into a destination directory.
+func (s *FileService) Move(paths []string, destination string) ([]storage.OpResult, error) {
+	// Validate destination is a directory
+	info, err := s.storage.Stat(destination)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("destination not found: %s", destination)
+		}
+		return nil, err
+	}
+	if !info.IsDir {
+		return nil, fmt.Errorf("destination is not a directory: %s", destination)
+	}
+
+	return s.storage.Move(paths, destination), nil
+}
+
+// Copy duplicates paths into a destination directory.
+func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResult, error) {
+	info, err := s.storage.Stat(destination)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("destination not found: %s", destination)
+		}
+		return nil, err
+	}
+	if !info.IsDir {
+		return nil, fmt.Errorf("destination is not a directory: %s", destination)
+	}
+
+	return s.storage.Copy(paths, destination), nil
+}
+
+// Delete removes files and directories.
+func (s *FileService) Delete(paths []string) []storage.OpResult {
+	return s.storage.Delete(paths)
+}
+
+// ConflictError indicates a name collision.
+type ConflictError struct {
+	Path string
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("a file or directory already exists at %s", e.Path)
 }

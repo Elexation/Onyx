@@ -1,15 +1,37 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
 	import type { FileInfo } from "$lib/types";
-	import { getDownloadUrl } from "$lib/api/files.js";
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
+	import { selection } from "$lib/stores/selection.svelte.js";
+	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { ArrowUp, ArrowDown } from "lucide-svelte";
+	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
 	import FileIcon from "./FileIcon.svelte";
+	import FileContextMenu from "./FileContextMenu.svelte";
 	import VirtualList from "./VirtualList.svelte";
+	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
+	import { longpress } from "$lib/actions/longpress.js";
 
-	let { items }: { items: FileInfo[] } = $props();
+	let {
+		items,
+		onopen,
+		onrename,
+		ondelete,
+		onpaste,
+		onmoveto,
+		oncopyto,
+	}: {
+		items: FileInfo[];
+		onopen: (item: FileInfo) => void;
+		onrename: (item: FileInfo) => void;
+		ondelete: (paths: string[]) => void;
+		onpaste: () => void;
+		onmoveto: (paths: string[]) => void;
+		oncopyto: (paths: string[]) => void;
+	} = $props();
+
+	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
 
 	const columns: { label: string; field: SortField; align: string; width: string }[] = [
 		{ label: "Name", field: "name", align: "text-left", width: "" },
@@ -26,22 +48,35 @@
 		}
 	}
 
-	function handleClick(item: FileInfo) {
-		if (item.isDir) {
-			goto(`/files/${item.path}`);
+	function handleRowClick(e: MouseEvent, item: FileInfo) {
+		if (e.shiftKey) {
+			e.preventDefault();
+			selection.selectRange(item.path, allPaths);
+		} else if (e.ctrlKey || e.metaKey) {
+			e.preventDefault();
+			selection.toggle(item.path);
+		} else if (selection.isActive) {
+			selection.select(item.path);
 		} else {
-			const a = document.createElement("a");
-			a.href = getDownloadUrl(item.path);
-			a.download = item.name;
-			a.click();
+			onopen(item);
 		}
 	}
 
-	function handleKeydown(e: KeyboardEvent, item: FileInfo) {
+	function handleRowKeydown(e: KeyboardEvent, item: FileInfo) {
 		if (e.key === "Enter" || e.key === " ") {
 			e.preventDefault();
-			handleClick(item);
+			if (selection.isActive) {
+				selection.select(item.path);
+			} else {
+				onopen(item);
+			}
 		}
+	}
+
+	function getContextPaths(item: FileInfo): string[] {
+		return selection.has(item.path) && selection.count > 1
+			? [...selection.items]
+			: [item.path];
 	}
 </script>
 
@@ -51,7 +86,17 @@
 	</div>
 {:else}
 	<div class="flex border-b border-border text-xs text-muted-foreground">
-		<div class="w-10 py-2 pl-4"></div>
+		{#if selection.isActive}
+			<div class="flex w-10 items-center justify-center py-2">
+				<Checkbox
+					checked={selection.count === items.length}
+					indeterminate={selection.count > 0 && selection.count < items.length}
+					onCheckedChange={(checked) => checked ? selection.selectAll(allPaths) : selection.clear()}
+				/>
+			</div>
+		{:else}
+			<div class="w-10 py-2 pl-4"></div>
+		{/if}
 		{#each columns as col}
 			<button
 				class="flex items-center gap-1 py-2 font-medium transition-colors hover:text-foreground {col.align} {col.width} {col.width ? 'pr-4' : 'flex-1'}"
@@ -68,30 +113,95 @@
 				{/if}
 			</button>
 		{/each}
+		<div class="kebab-spacer hidden w-8"></div>
 	</div>
 
 	<VirtualList {items} estimateSize={() => 41}>
 		{#snippet row({ item, style })}
 			{@const file = item as FileInfo}
-			<div
-				class="flex cursor-pointer items-center border-b border-border/50 transition-colors hover:bg-accent/50"
-				{style}
-				onclick={() => handleClick(file)}
-				onkeydown={(e) => handleKeydown(e, file)}
-				tabindex="0"
-				role="button"
-			>
-				<div class="w-10 py-2 pl-4">
-					<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+			{#if file.name === ".."}
+				<div
+					class="flex cursor-pointer items-center border-b border-border/50 text-muted-foreground transition-colors select-none hover:bg-accent/50"
+					{style}
+					onclick={() => onopen(file)}
+					onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(file); } }}
+					tabindex={0}
+					role="row"
+				>
+					<div class="w-10 py-2 pl-4">
+						<FileIcon isDir={true} class="size-4 opacity-50" />
+					</div>
+					<div class="flex-1 py-2 text-sm">..</div>
 				</div>
-				<div class="flex-1 py-2 text-sm">{file.name}</div>
-				<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
-					{file.isDir ? "\u2014" : formatFileSize(file.size)}
-				</div>
-				<div class="w-44 py-2 pr-4 text-right text-sm text-muted-foreground">
-					{formatDate(file.modTime)}
-				</div>
-			</div>
+			{:else}
+				{@const isSelected = selection.has(file.path)}
+				{@const isCut = clipboard.isCut(file.path)}
+				<FileContextMenu
+					item={file}
+					onopen={() => onopen(file)}
+					onrename={() => onrename(file)}
+					ondelete={() => ondelete(getContextPaths(file))}
+					{onpaste}
+					onmoveto={() => onmoveto(getContextPaths(file))}
+					oncopyto={() => oncopyto(getContextPaths(file))}
+				>
+					{#snippet children(triggerProps)}
+						<div
+							{...triggerProps}
+							class="flex cursor-pointer items-center border-b border-border/50 transition-colors select-none
+								{isSelected ? 'bg-accent/70' : 'hover:bg-accent/50'}
+								{isCut ? 'opacity-50' : ''}"
+							{style}
+							onclick={(e) => handleRowClick(e, file)}
+							onkeydown={(e) => handleRowKeydown(e, file)}
+							use:longpress={() => selection.toggle(file.path)}
+							tabindex={0}
+							role="row"
+						>
+							{#if selection.isActive}
+								<div
+									class="flex w-10 items-center justify-center"
+									role="presentation"
+									onclick={(e) => { e.stopPropagation(); selection.toggle(file.path); }}
+								>
+									<Checkbox checked={isSelected} />
+								</div>
+							{:else}
+								<div class="w-10 py-2 pl-4">
+									<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+								</div>
+							{/if}
+							<div class="flex-1 py-2 text-sm">{file.name}</div>
+							<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
+								{file.isDir ? "\u2014" : formatFileSize(file.size)}
+							</div>
+							<div class="w-44 py-2 pr-4 text-right text-sm text-muted-foreground">
+								{formatDate(file.modTime)}
+							</div>
+							<div class="kebab-button hidden w-8 items-center justify-center">
+								<button
+									class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+									onclick={(e) => {
+										e.stopPropagation();
+										const row = e.currentTarget.closest('[role="row"]');
+										if (row) row.dispatchEvent(new PointerEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
+									}}
+									tabindex={-1}
+								>
+									<EllipsisVerticalIcon class="size-4" />
+								</button>
+							</div>
+						</div>
+					{/snippet}
+				</FileContextMenu>
+			{/if}
 		{/snippet}
 	</VirtualList>
 {/if}
+
+<style>
+	@media (pointer: coarse) and (hover: none) {
+		.kebab-button { display: flex !important; }
+		.kebab-spacer { display: block !important; }
+	}
+</style>

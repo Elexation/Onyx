@@ -1,19 +1,39 @@
 <script lang="ts">
 	import { page } from "$app/state";
-	import { listDirectory } from "$lib/api/files.js";
+	import { goto } from "$app/navigation";
+	import { listDirectory, getDownloadUrl } from "$lib/api/files.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
+	import { selection } from "$lib/stores/selection.svelte.js";
+	import { clipboard } from "$lib/stores/clipboard.svelte.js";
+	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
+	import { toast } from "svelte-sonner";
 	import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
 	import FileList from "$lib/components/FileList.svelte";
 	import FileGrid from "$lib/components/FileGrid.svelte";
+	import FileToolbar from "$lib/components/FileToolbar.svelte";
 	import ViewControls from "$lib/components/ViewControls.svelte";
+	import RenameDialog from "$lib/components/dialogs/RenameDialog.svelte";
+	import NewFolderDialog from "$lib/components/dialogs/NewFolderDialog.svelte";
+	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
+	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
 
 	const path = $derived(page.params.path ?? "");
 
 	let listing = $state<DirectoryListing | null>(null);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
+
+	// Dialog state
+	let renameOpen = $state(false);
+	let renameTarget = $state<FileInfo | null>(null);
+	let newFolderOpen = $state(false);
+	let deleteOpen = $state(false);
+	let deletePaths = $state<string[]>([]);
+	let moveOpen = $state(false);
+	let movePaths = $state<string[]>([]);
+	let moveMode = $state<"move" | "copy">("move");
 
 	async function load(dirPath: string, showHidden: boolean) {
 		loading = true;
@@ -30,6 +50,12 @@
 
 	$effect(() => {
 		load(path, preferences.showHidden);
+	});
+
+	// Clear selection on navigation
+	$effect(() => {
+		path;
+		selection.clear();
 	});
 
 	function compareItems(a: FileInfo, b: FileInfo, field: SortField, dir: SortDir): number {
@@ -51,6 +77,18 @@
 		return dir === "asc" ? cmp : -cmp;
 	}
 
+	const parentEntry = $derived.by((): FileInfo | null => {
+		if (!path) return null;
+		const parts = path.split("/").filter(Boolean);
+		return {
+			name: "..",
+			path: parts.slice(0, -1).join("/"),
+			isDir: true,
+			size: 0,
+			modTime: 0,
+		};
+	});
+
 	const sorted = $derived.by(() => {
 		if (!listing) return [];
 		const dirs = listing.items.filter((f) => f.isDir);
@@ -58,8 +96,12 @@
 		const { sortField, sortDir } = preferences;
 		dirs.sort((a, b) => compareItems(a, b, sortField, sortDir));
 		files.sort((a, b) => compareItems(a, b, sortField, sortDir));
-		return [...dirs, ...files];
+		const result = [...dirs, ...files];
+		if (parentEntry) result.unshift(parentEntry);
+		return result;
 	});
+
+	const allPaths = $derived(sorted.filter((i) => i.name !== "..").map((i) => i.path));
 
 	// Smart view: auto-grid if >50% of items are image/video
 	const smartView = $derived.by((): ViewMode => {
@@ -81,9 +123,133 @@
 		}
 		preferences.viewMode = mode;
 	}
+
+	function refresh() {
+		load(path, preferences.showHidden);
+	}
+
+	// Actions
+	function handleOpen(item: FileInfo) {
+		if (item.isDir) {
+			goto(`/files/${item.path}`);
+		} else {
+			const a = document.createElement("a");
+			a.href = getDownloadUrl(item.path);
+			a.download = item.name;
+			a.click();
+		}
+	}
+
+	function handleRename(item: FileInfo) {
+		renameTarget = item;
+		renameOpen = true;
+	}
+
+	function handleDelete(paths: string[]) {
+		deletePaths = paths;
+		deleteOpen = true;
+	}
+
+	function handleMoveTo(paths: string[]) {
+		movePaths = paths;
+		moveMode = "move";
+		moveOpen = true;
+	}
+
+	function handleCopyTo(paths: string[]) {
+		movePaths = paths;
+		moveMode = "copy";
+		moveOpen = true;
+	}
+
+	async function handlePaste() {
+		if (!clipboard.hasItems) return;
+		try {
+			const results = await clipboard.paste(path || "/");
+			const failed = results.filter((r) => !r.success);
+			if (failed.length === 0) {
+				toast.success(results.length === 1 ? "Pasted item" : `Pasted ${results.length} items`);
+			} else {
+				toast.error(`${failed.length} item(s) failed`);
+			}
+			selection.clear();
+			refresh();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Paste failed");
+		}
+	}
+
+	function handleCopy() {
+		const paths = selection.count > 0 ? [...selection.items] : [];
+		if (paths.length === 0) return;
+		clipboard.copy(paths);
+		toast.success(paths.length === 1 ? "Copied to clipboard" : `Copied ${paths.length} items`);
+	}
+
+	function handleCut() {
+		const paths = selection.count > 0 ? [...selection.items] : [];
+		if (paths.length === 0) return;
+		clipboard.cut(paths);
+		toast.success(paths.length === 1 ? "Cut to clipboard" : `Cut ${paths.length} items`);
+	}
+
+	function handleDeleteSuccess() {
+		selection.clear();
+		refresh();
+	}
+
+	function handleRenameSuccess() {
+		selection.clear();
+		refresh();
+	}
+
+	function handleMoveSuccess() {
+		selection.clear();
+		refresh();
+	}
+
+	// Keyboard shortcuts
+	const shortcutMap: ShortcutMap = {
+		"delete": () => {
+			if (selection.count > 0) handleDelete([...selection.items]);
+		},
+		"f2": () => {
+			if (selection.count === 1) {
+				const p = [...selection.items][0];
+				const item = sorted.find((i) => i.path === p);
+				if (item) handleRename(item);
+			}
+		},
+		"ctrl+c": () => handleCopy(),
+		"ctrl+x": () => handleCut(),
+		"ctrl+v": () => handlePaste(),
+		"ctrl+a": () => selection.selectAll(allPaths),
+		"enter": () => {
+			if (selection.count === 1) {
+				const p = [...selection.items][0];
+				const item = sorted.find((i) => i.path === p);
+				if (item) handleOpen(item);
+			}
+		},
+		"escape": () => selection.clear(),
+		"backspace": () => {
+			const parts = path.split("/").filter(Boolean);
+			if (parts.length > 0) {
+				goto(`/files/${parts.slice(0, -1).join("/")}`);
+			} else {
+				goto("/files");
+			}
+		},
+	};
 </script>
 
-<div class="flex h-full flex-col gap-4 p-4">
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+	class="flex h-full flex-col gap-4 p-4"
+	tabindex={0}
+	role="application"
+	use:shortcuts={shortcutMap}
+>
 	<Breadcrumbs {path} />
 
 	{#if loading}
@@ -95,14 +261,68 @@
 			{error}
 		</div>
 	{:else}
-		<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
+		<FileToolbar
+			onnewfolder={() => (newFolderOpen = true)}
+			ondelete={() => handleDelete([...selection.items])}
+			onpaste={handlePaste}
+			oncopy={handleCopy}
+			oncut={handleCut}
+		>
+			{#snippet viewControls()}
+				<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
+			{/snippet}
+		</FileToolbar>
 
 		<div class="flex min-h-0 flex-1 flex-col">
 			{#if activeView === "grid"}
-				<FileGrid items={sorted} />
+				<FileGrid
+					items={sorted}
+					onopen={handleOpen}
+					onrename={handleRename}
+					ondelete={handleDelete}
+					onpaste={handlePaste}
+					onmoveto={handleMoveTo}
+					oncopyto={handleCopyTo}
+				/>
 			{:else}
-				<FileList items={sorted} />
+				<FileList
+					items={sorted}
+					onopen={handleOpen}
+					onrename={handleRename}
+					ondelete={handleDelete}
+					onpaste={handlePaste}
+					onmoveto={handleMoveTo}
+					oncopyto={handleCopyTo}
+				/>
 			{/if}
 		</div>
 	{/if}
 </div>
+
+{#if renameTarget}
+	<RenameDialog
+		bind:open={renameOpen}
+		path={renameTarget.path}
+		name={renameTarget.name}
+		onsuccess={handleRenameSuccess}
+	/>
+{/if}
+
+<NewFolderDialog
+	bind:open={newFolderOpen}
+	parentPath={path}
+	onsuccess={refresh}
+/>
+
+<DeleteDialog
+	bind:open={deleteOpen}
+	paths={deletePaths}
+	onsuccess={handleDeleteSuccess}
+/>
+
+<MoveDialog
+	bind:open={moveOpen}
+	paths={movePaths}
+	mode={moveMode}
+	onsuccess={handleMoveSuccess}
+/>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import AppHeader from "$lib/components/AppHeader.svelte";
 	import Sidebar from "$lib/components/Sidebar.svelte";
+	import { Toaster } from "$lib/components/ui/sonner/index.js";
 
 	let { children } = $props();
 </script>
@@ -14,3 +15,4 @@
 		</main>
 	</div>
 </div>
+<Toaster theme="dark" />

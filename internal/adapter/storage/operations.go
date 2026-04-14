@@ -56,6 +56,7 @@ func (s *LocalStorage) Move(paths []string, destination string) []OpResult {
 
 // Copy duplicates paths into a destination directory.
 // Files are streamed; directories are copied recursively.
+// If the destination name already exists, a unique name is generated.
 // Returns per-item results.
 func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 	destination = cleanPath(destination)
@@ -65,15 +66,43 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 		p = cleanPath(p)
 		name := path.Base(p)
 		dst := path.Join(destination, name)
+		dst = s.uniqueName(dst)
 
 		err := s.copyOne(p, dst)
-		results[i] = OpResult{Path: "/" + p, Success: err == nil}
+		results[i] = OpResult{Path: "/" + dst, Success: err == nil}
 		if err != nil {
 			results[i].Error = err.Error()
 		}
 	}
 
 	return results
+}
+
+// uniqueName returns dst unchanged if it doesn't exist, otherwise appends
+// " (copy)", " (copy 2)", etc. until a free name is found.
+func (s *LocalStorage) uniqueName(dst string) string {
+	if _, err := s.root.Lstat(dst); err != nil {
+		return dst
+	}
+
+	dir := path.Dir(dst)
+	base := path.Base(dst)
+	ext := path.Ext(base)
+	name := base[:len(base)-len(ext)]
+
+	candidate := path.Join(dir, name+" (copy)"+ext)
+	if _, err := s.root.Lstat(candidate); err != nil {
+		return candidate
+	}
+
+	for i := 2; i <= 99; i++ {
+		candidate = path.Join(dir, fmt.Sprintf("%s (copy %d)%s", name, i, ext))
+		if _, err := s.root.Lstat(candidate); err != nil {
+			return candidate
+		}
+	}
+
+	return dst
 }
 
 // Delete removes paths (files or directories, recursively).

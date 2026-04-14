@@ -37,14 +37,15 @@ func NewRouter(auth *service.AuthService, files *service.FileService) *chi.Mux {
 		r.Use(middleware.Auth(auth))
 		r.Use(middleware.CSRF)
 
-		r.Get("/files/*", fileHandler.List)
+		r.Route("/files", func(r chi.Router) {
+			r.Post("/mkdir", fileOpsHandler.MakeDir)
+			r.Post("/rename", fileOpsHandler.Rename)
+			r.Post("/move", fileOpsHandler.Move)
+			r.Post("/copy", fileOpsHandler.Copy)
+			r.Delete("/", fileOpsHandler.Delete)
+			r.Get("/*", fileHandler.List)
+		})
 		r.Get("/download/*", fileHandler.Download)
-
-		r.Post("/files/mkdir", fileOpsHandler.MakeDir)
-		r.Post("/files/rename", fileOpsHandler.Rename)
-		r.Post("/files/move", fileOpsHandler.Move)
-		r.Post("/files/copy", fileOpsHandler.Copy)
-		r.Delete("/files", fileOpsHandler.Delete)
 	})
 
 	r.NotFound(web.SPAHandler())

@@ -3,7 +3,6 @@
 	import { formatFileSize } from "$lib/utils/format.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FileIcon from "./FileIcon.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
@@ -31,27 +30,24 @@
 	const isCut = $derived(clipboard.isCut(item.path));
 
 	function handleClick(e: MouseEvent) {
+		e.stopPropagation();
 		if (e.shiftKey) {
 			e.preventDefault();
-			// Range selection needs all paths — done at parent level
 		} else if (e.ctrlKey || e.metaKey) {
 			e.preventDefault();
 			selection.toggle(item.path);
-		} else if (selection.isActive) {
-			selection.select(item.path);
 		} else {
-			onopen(item);
+			selection.select(item.path);
 		}
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === "Enter" || e.key === " ") {
+		if (e.key === "Enter") {
 			e.preventDefault();
-			if (selection.isActive) {
-				selection.select(item.path);
-			} else {
-				onopen(item);
-			}
+			onopen(item);
+		} else if (e.key === " ") {
+			e.preventDefault();
+			selection.toggle(item.path);
 		}
 	}
 
@@ -65,7 +61,7 @@
 {#if item.name === ".."}
 	<div
 		class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 text-muted-foreground transition-colors select-none hover:bg-accent/50"
-		onclick={() => onopen(item)}
+		onclick={(e) => { e.stopPropagation(); onopen(item); }}
 		onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(item); } }}
 		tabindex={0}
 		role="gridcell"
@@ -90,20 +86,12 @@
 					{isSelected ? 'bg-accent/70 border-accent' : 'hover:bg-accent/50'}
 					{isCut ? 'opacity-50' : ''}"
 				onclick={handleClick}
+				ondblclick={(e) => { e.stopPropagation(); onopen(item); }}
 				onkeydown={handleKeydown}
 				use:longpress={() => selection.toggle(item.path)}
 				tabindex={0}
 				role="gridcell"
 			>
-				{#if selection.isActive}
-					<div
-						class="absolute left-2 top-2"
-						role="presentation"
-						onclick={(e) => { e.stopPropagation(); selection.toggle(item.path); }}
-					>
-						<Checkbox checked={isSelected} />
-					</div>
-				{/if}
 				<div class="kebab-button absolute right-1 top-1 hidden">
 					<button
 						class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"

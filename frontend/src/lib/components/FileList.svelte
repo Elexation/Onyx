@@ -5,7 +5,6 @@
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { ArrowUp, ArrowDown } from "lucide-svelte";
-	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
 	import FileIcon from "./FileIcon.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
@@ -49,27 +48,25 @@
 	}
 
 	function handleRowClick(e: MouseEvent, item: FileInfo) {
+		e.stopPropagation();
 		if (e.shiftKey) {
 			e.preventDefault();
 			selection.selectRange(item.path, allPaths);
 		} else if (e.ctrlKey || e.metaKey) {
 			e.preventDefault();
 			selection.toggle(item.path);
-		} else if (selection.isActive) {
-			selection.select(item.path);
 		} else {
-			onopen(item);
+			selection.select(item.path);
 		}
 	}
 
 	function handleRowKeydown(e: KeyboardEvent, item: FileInfo) {
-		if (e.key === "Enter" || e.key === " ") {
+		if (e.key === "Enter") {
 			e.preventDefault();
-			if (selection.isActive) {
-				selection.select(item.path);
-			} else {
-				onopen(item);
-			}
+			onopen(item);
+		} else if (e.key === " ") {
+			e.preventDefault();
+			selection.toggle(item.path);
 		}
 	}
 
@@ -85,18 +82,9 @@
 		<p class="text-sm">This folder is empty</p>
 	</div>
 {:else}
-	<div class="flex border-b border-border text-xs text-muted-foreground">
-		{#if selection.isActive}
-			<div class="flex w-10 items-center justify-center py-2">
-				<Checkbox
-					checked={selection.count === items.length}
-					indeterminate={selection.count > 0 && selection.count < items.length}
-					onCheckedChange={(checked) => checked ? selection.selectAll(allPaths) : selection.clear()}
-				/>
-			</div>
-		{:else}
-			<div class="w-10 py-2 pl-4"></div>
-		{/if}
+	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<div class="flex border-b border-border text-xs text-muted-foreground" onclick={(e) => e.stopPropagation()}>
+		<div class="w-10 py-2 pl-4"></div>
 		{#each columns as col}
 			<button
 				class="flex items-center gap-1 py-2 font-medium transition-colors hover:text-foreground {col.align} {col.width} {col.width ? 'pr-4' : 'flex-1'}"
@@ -123,7 +111,7 @@
 				<div
 					class="flex cursor-pointer items-center border-b border-border/50 text-muted-foreground transition-colors select-none hover:bg-accent/50"
 					{style}
-					onclick={() => onopen(file)}
+					onclick={(e) => { e.stopPropagation(); onopen(file); }}
 					onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(file); } }}
 					tabindex={0}
 					role="row"
@@ -153,24 +141,15 @@
 								{isCut ? 'opacity-50' : ''}"
 							{style}
 							onclick={(e) => handleRowClick(e, file)}
+							ondblclick={(e) => { e.stopPropagation(); onopen(file); }}
 							onkeydown={(e) => handleRowKeydown(e, file)}
 							use:longpress={() => selection.toggle(file.path)}
 							tabindex={0}
 							role="row"
 						>
-							{#if selection.isActive}
-								<div
-									class="flex w-10 items-center justify-center"
-									role="presentation"
-									onclick={(e) => { e.stopPropagation(); selection.toggle(file.path); }}
-								>
-									<Checkbox checked={isSelected} />
-								</div>
-							{:else}
-								<div class="w-10 py-2 pl-4">
-									<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
-								</div>
-							{/if}
+							<div class="w-10 py-2 pl-4">
+								<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+							</div>
 							<div class="flex-1 py-2 text-sm">{file.name}</div>
 							<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
 								{file.isDir ? "\u2014" : formatFileSize(file.size)}

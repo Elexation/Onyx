@@ -1,8 +1,10 @@
 package storage
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"strings"
@@ -146,9 +148,97 @@ func (s *LocalStorage) detectFileMIME(filePath, name string) string {
 	return DetectMIME(name, buf[:n])
 }
 
+// WriteZip streams a zip archive containing the given paths to w.
+// Directories are walked recursively. Each top-level item appears at the archive root.
+func (s *LocalStorage) WriteZip(w io.Writer, paths []string) error {
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	for _, p := range paths {
+		p = cleanPath(p)
+		info, err := s.root.Stat(p)
+		if err != nil {
+			return err
+		}
+
+		baseName := path.Base(p)
+		if info.IsDir() {
+			if err := s.zipDir(zw, p, baseName); err != nil {
+				return err
+			}
+		} else {
+			if err := s.zipFile(zw, p, baseName, info); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *LocalStorage) zipFile(zw *zip.Writer, fsPath, archivePath string, info fs.FileInfo) error {
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = archivePath
+	header.Method = zip.Deflate
+
+	writer, err := zw.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	f, err := s.root.Open(fsPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(writer, f)
+	return err
+}
+
+func (s *LocalStorage) zipDir(zw *zip.Writer, fsPath, archivePath string) error {
+	dir, err := s.root.Open(fsPath)
+	if err != nil {
+		return err
+	}
+	entries, err := dir.ReadDir(-1)
+	dir.Close()
+	if err != nil {
+		return err
+	}
+
+	if _, err := zw.Create(archivePath + "/"); err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		childFs := path.Join(fsPath, entry.Name())
+		childArchive := archivePath + "/" + entry.Name()
+
+		if entry.IsDir() {
+			if err := s.zipDir(zw, childFs, childArchive); err != nil {
+				return err
+			}
+		} else {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if err := s.zipFile(zw, childFs, childArchive, info); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // cleanPath normalizes a request path for use with os.Root.
 func cleanPath(p string) string {
-	p = strings.TrimPrefix(p, "/")
+	p = strings.TrimLeft(p, "/")
 	if p == "" {
 		return "."
 	}

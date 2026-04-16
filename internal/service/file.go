@@ -58,6 +58,11 @@ func (s *FileService) OpenFile(filePath string) (io.ReadSeekCloser, time.Time, i
 	return s.storage.Open(filePath)
 }
 
+// WriteZip streams a zip archive of the given paths to w.
+func (s *FileService) WriteZip(w io.Writer, paths []string) error {
+	return s.storage.WriteZip(w, paths)
+}
+
 // MakeDir creates a directory. The parent must exist and the target must not.
 func (s *FileService) MakeDir(dirPath string) error {
 	if dirPath == "" || dirPath == "/" {
@@ -127,6 +132,51 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 // Delete removes files and directories.
 func (s *FileService) Delete(paths []string) []storage.OpResult {
 	return s.storage.Delete(paths)
+}
+
+// CheckConflicts returns the subset of paths that already exist in targetDir.
+func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) ([]string, error) {
+	var conflicts []string
+	for _, rp := range relativePaths {
+		fullPath := targetDir + "/" + rp
+		exists, err := s.storage.Exists(fullPath)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			conflicts = append(conflicts, rp)
+		}
+	}
+	return conflicts, nil
+}
+
+// CompleteUpload moves an uploaded file into the data root.
+// conflictStrategy: "replace" overwrites, "keepBoth" auto-renames.
+// relativePath is the path relative to targetDir (supports nested dirs for folder uploads).
+func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy string, src io.Reader) (string, error) {
+	destPath := strings.TrimPrefix(targetDir+"/"+relativePath, "/")
+
+	exists, err := s.storage.Exists(destPath)
+	if err != nil {
+		return "", fmt.Errorf("check existing: %w", err)
+	}
+
+	if exists {
+		switch conflictStrategy {
+		case "replace":
+			// WriteFile will truncate
+		case "keepBoth":
+			destPath = s.storage.UniqueName(destPath)
+		default:
+			return "", fmt.Errorf("file already exists: %s", destPath)
+		}
+	}
+
+	if err := s.storage.WriteFile(destPath, src); err != nil {
+		return "", fmt.Errorf("write upload: %w", err)
+	}
+
+	return "/" + destPath, nil
 }
 
 // ConflictError indicates a name collision.

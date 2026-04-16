@@ -6,8 +6,14 @@ github.com/ncruces/go-sqlite3-wasm v1.0.4-0.20260329114232-2491c387476c h1:Fnw6J
 github.com/ncruces/go-sqlite3-wasm v1.0.4-0.20260329114232-2491c387476c/go.mod h1:eewd1iQhpv/1qDXP83cfDk06Bpbhmt3EspN/0krcy70=
 github.com/ncruces/julianday v1.0.0 h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=
 github.com/ncruces/julianday v1.0.0/go.mod h1:Dusn2KvZrrovOMJuOt0TNXL6tB7U2E8kvza5fFc9G7g=
+github.com/tus/lockfile v1.2.0 h1:92dMoNyeb5zaNi8eQ79WLqt/npUWUFkaM5ZM9kOMIDM=
+github.com/tus/lockfile v1.2.0/go.mod h1:JyfWCHNyfd7eGxudGohrkt38kuKRki6L0JH82p2e+mc=
+github.com/tus/tusd/v2 v2.9.2 h1:Dd/Dh0CG7+/wom4lDQnnhca+1p5qVwgnbyEBacj1v7c=
+github.com/tus/tusd/v2 v2.9.2/go.mod h1:+a9uNLru2Qy+CUu7QUIshmQ+X0fLNw77eu8voKVxmgA=
 golang.org/x/crypto v0.49.0 h1:+Ng2ULVvLHnJ/ZFEq4KdcDd/cfjrrjjNSXNzxg0Y4U4=
 golang.org/x/crypto v0.49.0/go.mod h1:ErX4dUh2UM+CFYiXZRTcMpEcN8b/1gxEuv3nODoYtCA=
+golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 h1:yqrTHse8TCMW1M1ZCP+VAR/l0kKxwaAIqN/il7x4voA=
+golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8/go.mod h1:tujkw807nyEEAamNbDrEGzRav+ilXA7PCRAd6xsmwiU=
 golang.org/x/sys v0.42.0 h1:omrd2nAlyT5ESRdCLYdm3+fMfNFE/+Rf4bDIQImRJeo=
 golang.org/x/sys v0.42.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.35.0 h1:JOVx6vVDFokkpaq1AEptVzLTpDe9KGpj5tR4/X+ybL8=

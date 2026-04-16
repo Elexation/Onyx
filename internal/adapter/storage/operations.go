@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"syscall"
 )
 
@@ -202,6 +203,88 @@ func (s *LocalStorage) copyDir(src, dst string) error {
 		}
 	}
 
+	return nil
+}
+
+// Exists reports whether a path exists inside the root.
+func (s *LocalStorage) Exists(filePath string) (bool, error) {
+	filePath = cleanPath(filePath)
+	_, err := s.root.Lstat(filePath)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// WriteFile writes data from src to the given path, creating parent
+// directories as needed. If the file exists it is truncated.
+func (s *LocalStorage) WriteFile(filePath string, src io.Reader) error {
+	filePath = cleanPath(filePath)
+
+	// Ensure parent directories exist
+	dir := path.Dir(filePath)
+	if dir != "." {
+		if err := s.mkdirAll(dir); err != nil {
+			return fmt.Errorf("create parent dirs: %w", err)
+		}
+	}
+
+	f, err := s.root.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, src); err != nil {
+		return fmt.Errorf("write data: %w", err)
+	}
+	return nil
+}
+
+// UniqueName returns the path unchanged if it doesn't exist, otherwise
+// appends " (1)", " (2)", etc. until a free name is found.
+// Exported for use by the upload system.
+func (s *LocalStorage) UniqueName(filePath string) string {
+	filePath = cleanPath(filePath)
+	if _, err := s.root.Lstat(filePath); err != nil {
+		return filePath
+	}
+
+	dir := path.Dir(filePath)
+	base := path.Base(filePath)
+	ext := path.Ext(base)
+	name := base[:len(base)-len(ext)]
+
+	for i := 1; i <= 999; i++ {
+		candidate := path.Join(dir, fmt.Sprintf("%s (%d)%s", name, i, ext))
+		if _, err := s.root.Lstat(candidate); err != nil {
+			return candidate
+		}
+	}
+	return filePath
+}
+
+// mkdirAll creates a directory and all parents inside the root.
+func (s *LocalStorage) mkdirAll(dirPath string) error {
+	parts := strings.Split(dirPath, "/")
+	current := ""
+	for _, part := range parts {
+		if part == "" || part == "." {
+			continue
+		}
+		if current == "" {
+			current = part
+		} else {
+			current = current + "/" + part
+		}
+		err := s.root.Mkdir(current, 0755)
+		if err != nil && !os.IsExist(err) {
+			return err
+		}
+	}
 	return nil
 }
 

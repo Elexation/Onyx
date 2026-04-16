@@ -1,22 +1,26 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Elexation/onyx/internal/adapter/upload"
 	"github.com/Elexation/onyx/internal/port/http/handler"
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService) *chi.Mux {
+func NewRouter(auth *service.AuthService, files *service.FileService, tus *upload.TusHandler) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
+	uploadHandler := handler.NewUploadHandler(files)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -42,15 +46,38 @@ func NewRouter(auth *service.AuthService, files *service.FileService) *chi.Mux {
 			r.Post("/rename", fileOpsHandler.Rename)
 			r.Post("/move", fileOpsHandler.Move)
 			r.Post("/copy", fileOpsHandler.Copy)
+			r.Post("/check-conflicts", uploadHandler.CheckConflicts)
 			r.Delete("/", fileOpsHandler.Delete)
 			r.Get("/*", fileHandler.List)
 		})
+		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
 	})
 
 	r.NotFound(web.SPAHandler())
 
-	return r
+	// Intercept /api/upload before Chi to avoid path mangling.
+	// OPTIONS pass through without auth (tus CORS preflight).
+	return uploadInterceptor(auth, tus, r)
+}
+
+// uploadInterceptor routes /api/upload requests directly to tusd,
+// bypassing Chi's routing which modifies URL paths.
+func uploadInterceptor(auth middleware.SessionValidator, tus http.Handler, next http.Handler) http.Handler {
+	stripped := http.StripPrefix("/api/upload/", tus)
+	authed := middleware.Auth(auth)(stripped)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/upload") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		slog.Info("upload interceptor", "method", r.Method, "path", r.URL.Path)
+		if r.Method == http.MethodOptions {
+			stripped.ServeHTTP(w, r)
+			return
+		}
+		authed.ServeHTTP(w, r)
+	})
 }
 
 // optionalAuth tries to load the session but doesn't require it

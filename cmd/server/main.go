@@ -9,6 +9,7 @@ import (
 
 	"github.com/Elexation/onyx/internal/adapter/database"
 	"github.com/Elexation/onyx/internal/adapter/storage"
+	"github.com/Elexation/onyx/internal/adapter/upload"
 	server "github.com/Elexation/onyx/internal/port/http"
 	"github.com/Elexation/onyx/internal/service"
 )
@@ -20,6 +21,7 @@ func main() {
 	port := env("ONYX_PORT", "8080")
 	dataDir := env("ONYX_DATA", "data")
 	configDir := env("ONYX_CONFIG", "config")
+	cacheDir := env("ONYX_CACHE", ".cache")
 
 	db, err := database.Open(filepath.Join(configDir, "onyx.db"))
 	if err != nil {
@@ -44,7 +46,18 @@ func main() {
 	defer localStorage.Close()
 	fileService := service.NewFileService(localStorage)
 
-	router := server.NewRouter(authService, fileService)
+	tusHandler, err := upload.NewTusHandler(
+		filepath.Join(cacheDir, "uploads"),
+		"/api/upload/",
+		fileService,
+	)
+	if err != nil {
+		slog.Error("upload handler init failed", "error", err)
+		os.Exit(1)
+	}
+	defer tusHandler.Close()
+
+	router := server.NewRouter(authService, fileService, tusHandler)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -63,6 +64,39 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(w, r, name, modTime, file)
+}
+
+// DownloadZip handles GET /api/download/zip?path=...&path=...
+// Streams a zip archive containing all requested files and directories.
+func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
+	paths := r.URL.Query()["path"]
+	if len(paths) == 0 {
+		http.Error(w, `{"error":"no paths specified"}`, http.StatusBadRequest)
+		return
+	}
+
+	for _, p := range paths {
+		if _, err := h.files.GetFileInfo(p); err != nil {
+			writeFileError(w, err)
+			return
+		}
+	}
+
+	zipName := "download.zip"
+	if len(paths) == 1 {
+		name := paths[0]
+		if idx := strings.LastIndex(name, "/"); idx >= 0 {
+			name = name[idx+1:]
+		}
+		zipName = name + ".zip"
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+zipName+`"`)
+
+	if err := h.files.WriteZip(w, paths); err != nil {
+		slog.Error("zip stream error", "error", err)
+	}
 }
 
 // extractWildcard pulls the path after the prefix from the URL.

@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
-	import { listDirectory, getDownloadUrl } from "$lib/api/files.js";
+	import { listDirectory, getDownloadUrl, getZipDownloadUrl } from "$lib/api/files.js";
+	import { checkConflicts } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
+	import { uploadState } from "$lib/stores/upload.svelte.js";
+	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
 	import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
@@ -14,10 +17,12 @@
 	import FileGrid from "$lib/components/FileGrid.svelte";
 	import FileToolbar from "$lib/components/FileToolbar.svelte";
 	import ViewControls from "$lib/components/ViewControls.svelte";
+	import UploadZone from "$lib/components/UploadZone.svelte";
 	import RenameDialog from "$lib/components/dialogs/RenameDialog.svelte";
 	import NewFolderDialog from "$lib/components/dialogs/NewFolderDialog.svelte";
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
+	import ConflictDialog from "$lib/components/dialogs/ConflictDialog.svelte";
 
 	const path = $derived(page.params.path ?? "");
 
@@ -34,6 +39,12 @@
 	let moveOpen = $state(false);
 	let movePaths = $state<string[]>([]);
 	let moveMode = $state<"move" | "copy">("move");
+
+	// Upload state
+	let conflictOpen = $state(false);
+	let conflictNames = $state<string[]>([]);
+	let pendingUploadFiles = $state<File[]>([]);
+	let pendingDropFileIds = $state<string[]>([]);
 
 	async function load(dirPath: string, showHidden: boolean) {
 		loading = true;
@@ -140,6 +151,27 @@
 		}
 	}
 
+	function handleDownload() {
+		const paths = selection.count > 0 ? [...selection.items] : [];
+		if (paths.length === 0) return;
+
+		if (paths.length === 1) {
+			const item = sorted.find((i) => i.path === paths[0]);
+			if (item && !item.isDir) {
+				const a = document.createElement("a");
+				a.href = getDownloadUrl(item.path);
+				a.download = item.name;
+				a.click();
+				return;
+			}
+		}
+
+		const a = document.createElement("a");
+		a.href = getZipDownloadUrl(paths);
+		a.download = "";
+		a.click();
+	}
+
 	function handleRename(item: FileInfo) {
 		renameTarget = item;
 		renameOpen = true;
@@ -208,6 +240,76 @@
 		refresh();
 	}
 
+	// Upload handling
+	async function handleUpload(files: File[]) {
+		const targetDir = path || "/";
+		const relativePaths = files.map(
+			(f) => (f as any).webkitRelativePath || f.name,
+		);
+
+		try {
+			const { conflicts } = await checkConflicts(targetDir, relativePaths);
+			if (conflicts.length > 0) {
+				pendingUploadFiles = files;
+				conflictNames = conflicts;
+				conflictOpen = true;
+			} else {
+				addFiles(files, targetDir);
+				startUpload();
+			}
+		} catch {
+			// If conflict check fails, upload anyway without conflict resolution
+			addFiles(files, targetDir);
+			startUpload();
+		}
+	}
+
+	function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
+		conflictOpen = false;
+		const targetDir = path || "/";
+
+		if (pendingDropFileIds.length > 0) {
+			// Resolve conflicts for files already in Uppy (from drag-and-drop)
+			const uppy = getUppy();
+			for (const fileId of pendingDropFileIds) {
+				const file = uppy.getFile(fileId);
+				if (!file) continue;
+				const rp = (file.meta as any).relativePath || file.name;
+				const resolution = resolutions[rp];
+				if (resolution === "skip") {
+					uppy.removeFile(fileId);
+				} else if (resolution) {
+					uppy.setFileMeta(fileId, { conflictStrategy: resolution });
+				}
+			}
+			pendingDropFileIds = [];
+			startUpload();
+		} else {
+			// Resolve conflicts for files from the picker button
+			addFiles(pendingUploadFiles, targetDir, resolutions);
+			startUpload();
+			pendingUploadFiles = [];
+		}
+	}
+
+	function handleDropConflicts(fileIds: string[], conflicts: string[]) {
+		pendingDropFileIds = fileIds;
+		conflictNames = conflicts;
+		conflictOpen = true;
+	}
+
+	// Refresh file list when uploads complete
+	$effect(() => {
+		const uppy = getUppy();
+		const handler = () => {
+			refresh();
+		};
+		uppy.on("complete", handler);
+		return () => {
+			uppy.off("complete", handler);
+		};
+	});
+
 	// Keyboard shortcuts
 	const shortcutMap: ShortcutMap = {
 		"delete": () => {
@@ -267,35 +369,40 @@
 			onpaste={handlePaste}
 			oncopy={handleCopy}
 			oncut={handleCut}
+			ondownload={handleDownload}
+			onupload={handleUpload}
 		>
 			{#snippet viewControls()}
 				<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
 			{/snippet}
 		</FileToolbar>
 
-		<div class="flex min-h-0 flex-1 flex-col">
-			{#if activeView === "grid"}
-				<FileGrid
-					items={sorted}
-					onopen={handleOpen}
-					onrename={handleRename}
-					ondelete={handleDelete}
-					onpaste={handlePaste}
-					onmoveto={handleMoveTo}
-					oncopyto={handleCopyTo}
-				/>
-			{:else}
-				<FileList
-					items={sorted}
-					onopen={handleOpen}
-					onrename={handleRename}
-					ondelete={handleDelete}
-					onpaste={handlePaste}
-					onmoveto={handleMoveTo}
-					oncopyto={handleCopyTo}
-				/>
-			{/if}
-		</div>
+		<UploadZone currentDir={path || "/"} onconflicts={handleDropConflicts}>
+			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+			<div class="flex min-h-0 flex-1 flex-col" onclick={() => selection.clear()}>
+				{#if activeView === "grid"}
+					<FileGrid
+						items={sorted}
+						onopen={handleOpen}
+						onrename={handleRename}
+						ondelete={handleDelete}
+						onpaste={handlePaste}
+						onmoveto={handleMoveTo}
+						oncopyto={handleCopyTo}
+					/>
+				{:else}
+					<FileList
+						items={sorted}
+						onopen={handleOpen}
+						onrename={handleRename}
+						ondelete={handleDelete}
+						onpaste={handlePaste}
+						onmoveto={handleMoveTo}
+						oncopyto={handleCopyTo}
+					/>
+				{/if}
+			</div>
+		</UploadZone>
 	{/if}
 </div>
 
@@ -326,3 +433,10 @@
 	mode={moveMode}
 	onsuccess={handleMoveSuccess}
 />
+
+{#if conflictOpen}
+	<ConflictDialog
+		conflicts={conflictNames}
+		onresolve={handleConflictResolve}
+	/>
+{/if}

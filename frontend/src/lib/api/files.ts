@@ -11,6 +11,14 @@ export function getDownloadUrl(path: string): string {
 	return `/api/download/${path}`;
 }
 
+export function getZipDownloadUrl(paths: string[]): string {
+	const params = new URLSearchParams();
+	for (const p of paths) {
+		params.append("path", p);
+	}
+	return `/api/download/zip?${params.toString()}`;
+}
+
 export interface BatchResult {
 	path: string;
 	success: boolean;

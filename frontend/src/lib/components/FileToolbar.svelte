@@ -2,10 +2,12 @@
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
+	import UploadButton from "$lib/components/UploadButton.svelte";
 	import FolderPlusIcon from "@lucide/svelte/icons/folder-plus";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import ScissorsIcon from "@lucide/svelte/icons/scissors";
 	import ClipboardPasteIcon from "@lucide/svelte/icons/clipboard-paste";
+	import DownloadIcon from "@lucide/svelte/icons/download";
 	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import type { Snippet } from "svelte";
 
@@ -15,6 +17,8 @@
 		onpaste,
 		oncopy,
 		oncut,
+		ondownload,
+		onupload,
 		viewControls,
 	}: {
 		onnewfolder: () => void;
@@ -22,11 +26,14 @@
 		onpaste: () => void;
 		oncopy: () => void;
 		oncut: () => void;
+		ondownload: () => void;
+		onupload: (files: File[]) => void;
 		viewControls: Snippet;
 	} = $props();
 </script>
 
 <div class="flex items-center gap-2">
+	<UploadButton onfiles={onupload} />
 	<Button variant="outline" size="sm" onclick={onnewfolder}>
 		<FolderPlusIcon class="size-4" />
 		New Folder
@@ -46,6 +53,9 @@
 					<ClipboardPasteIcon class="size-3.5" />
 				</Button>
 			{/if}
+			<Button variant="ghost" size="icon-xs" onclick={ondownload} title="Download">
+				<DownloadIcon class="size-3.5" />
+			</Button>
 			<Button variant="ghost" size="icon-xs" onclick={ondelete} title="Delete">
 				<Trash2Icon class="size-3.5 text-destructive" />
 			</Button>

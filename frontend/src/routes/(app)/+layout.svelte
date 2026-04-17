@@ -1,6 +1,7 @@
 <script lang="ts">
 	import AppHeader from "$lib/components/AppHeader.svelte";
 	import Sidebar from "$lib/components/Sidebar.svelte";
+	import UploadPanel from "$lib/components/UploadPanel.svelte";
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
 
 	let { children } = $props();
@@ -15,4 +16,5 @@
 		</main>
 	</div>
 </div>
+<UploadPanel />
 <Toaster theme="dark" />

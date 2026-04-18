@@ -25,7 +25,9 @@
 		uppy.use(DropTarget, {
 			target: container,
 			onDragOver: () => {
-				dragging = true;
+				if (!document.body.classList.contains("onyx-internal-drag")) {
+					dragging = true;
+				}
 			},
 			onDragLeave: () => {
 				dragging = false;

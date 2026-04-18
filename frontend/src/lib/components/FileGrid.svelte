@@ -11,6 +11,7 @@
 		onpaste,
 		onmoveto,
 		oncopyto,
+		ondrop,
 	}: {
 		items: FileInfo[];
 		onopen: (item: FileInfo) => void;
@@ -19,6 +20,7 @@
 		onpaste: () => void;
 		onmoveto: (paths: string[]) => void;
 		oncopyto: (paths: string[]) => void;
+		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 </script>
 
@@ -37,6 +39,7 @@
 				{onpaste}
 				{onmoveto}
 				{oncopyto}
+				{ondrop}
 			/>
 		{/snippet}
 	</VirtualGrid>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
-	import { listDirectory, getDownloadUrl, getZipDownloadUrl } from "$lib/api/files.js";
+	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
 	import { checkConflicts } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
@@ -240,6 +240,27 @@
 		refresh();
 	}
 
+	async function handleDrop(paths: string[], destination: string) {
+		try {
+			const dest = destination || "/";
+			const { results } = await move(paths, dest);
+			const failed = results.filter((r) => !r.success);
+			if (failed.length === 0) {
+				toast.success(
+					results.length === 1
+						? `Moved item to ${dest}`
+						: `Moved ${results.length} items to ${dest}`,
+				);
+			} else {
+				toast.error(`${failed.length} item(s) failed to move`);
+			}
+			selection.clear();
+			refresh();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Move failed");
+		}
+	}
+
 	// Upload handling
 	async function handleUpload(files: File[]) {
 		const targetDir = path || "/";
@@ -352,7 +373,7 @@
 	role="application"
 	use:shortcuts={shortcutMap}
 >
-	<Breadcrumbs {path} />
+	<Breadcrumbs {path} ondrop={handleDrop} />
 
 	{#if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
@@ -389,6 +410,7 @@
 						onpaste={handlePaste}
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
+						ondrop={handleDrop}
 					/>
 				{:else}
 					<FileList
@@ -399,6 +421,7 @@
 						onpaste={handlePaste}
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
+						ondrop={handleDrop}
 					/>
 				{/if}
 			</div>

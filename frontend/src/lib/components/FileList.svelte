@@ -11,6 +11,8 @@
 	import VirtualList from "./VirtualList.svelte";
 	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
 	import { longpress } from "$lib/actions/longpress.js";
+	import { draggable } from "$lib/actions/draggable.js";
+	import { droppable } from "$lib/actions/droppable.js";
 
 	let {
 		items,
@@ -20,6 +22,7 @@
 		onpaste,
 		onmoveto,
 		oncopyto,
+		ondrop,
 	}: {
 		items: FileInfo[];
 		onopen: (item: FileInfo) => void;
@@ -28,6 +31,7 @@
 		onpaste: () => void;
 		onmoveto: (paths: string[]) => void;
 		oncopyto: (paths: string[]) => void;
+		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 
 	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
@@ -113,6 +117,7 @@
 					{style}
 					onclick={(e) => { e.stopPropagation(); onopen(file); }}
 					onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(file); } }}
+					use:droppable={{ path: file.path, ondrop }}
 					tabindex={0}
 					role="row"
 				>
@@ -144,6 +149,8 @@
 							ondblclick={(e) => { e.stopPropagation(); onopen(file); }}
 							onkeydown={(e) => handleRowKeydown(e, file)}
 							use:longpress={() => selection.toggle(file.path)}
+							use:draggable={{ path: file.path, isDir: file.isDir }}
+							use:droppable={{ path: file.path, ondrop, enabled: file.isDir }}
 							tabindex={0}
 							role="row"
 						>
@@ -182,5 +189,10 @@
 	@media (pointer: coarse) and (hover: none) {
 		.kebab-button { display: flex !important; }
 		.kebab-spacer { display: block !important; }
+	}
+	:global(.drop-target-active) {
+		background-color: hsl(var(--accent) / 0.5) !important;
+		outline: 2px dashed hsl(var(--primary));
+		outline-offset: -2px;
 	}
 </style>

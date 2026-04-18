@@ -7,6 +7,8 @@
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
 	import { longpress } from "$lib/actions/longpress.js";
+	import { draggable } from "$lib/actions/draggable.js";
+	import { droppable } from "$lib/actions/droppable.js";
 
 	let {
 		item,
@@ -16,6 +18,7 @@
 		onpaste,
 		onmoveto,
 		oncopyto,
+		ondrop,
 	}: {
 		item: FileInfo;
 		onopen: (item: FileInfo) => void;
@@ -24,6 +27,7 @@
 		onpaste: () => void;
 		onmoveto: (paths: string[]) => void;
 		oncopyto: (paths: string[]) => void;
+		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 
 	const isSelected = $derived(selection.has(item.path));
@@ -63,6 +67,7 @@
 		class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 text-muted-foreground transition-colors select-none hover:bg-accent/50"
 		onclick={(e) => { e.stopPropagation(); onopen(item); }}
 		onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(item); } }}
+		use:droppable={{ path: item.path, ondrop }}
 		tabindex={0}
 		role="gridcell"
 	>
@@ -89,6 +94,8 @@
 				ondblclick={(e) => { e.stopPropagation(); onopen(item); }}
 				onkeydown={handleKeydown}
 				use:longpress={() => selection.toggle(item.path)}
+				use:draggable={{ path: item.path, isDir: item.isDir }}
+				use:droppable={{ path: item.path, ondrop, enabled: item.isDir }}
 				tabindex={0}
 				role="gridcell"
 			>

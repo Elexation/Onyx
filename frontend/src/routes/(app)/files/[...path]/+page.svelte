@@ -320,13 +320,17 @@
 	}
 
 	// Refresh file list when uploads complete
+	// Small delay: tus signals completion to the client before the server
+	// finishes moving the file from the upload store to the data directory.
 	$effect(() => {
 		const uppy = getUppy();
+		let timer: ReturnType<typeof setTimeout>;
 		const handler = () => {
-			refresh();
+			timer = setTimeout(() => refresh(), 500);
 		};
 		uppy.on("complete", handler);
 		return () => {
+			clearTimeout(timer);
 			uppy.off("complete", handler);
 		};
 	});

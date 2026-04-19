@@ -49,8 +49,20 @@ export function getUppy(): Uppy {
 	// Clear completed files from Uppy after batch finishes so duplicates can be re-uploaded
 	instance.on("complete", (result) => {
 		for (const file of result.successful ?? []) {
+			uploadState.markComplete(file.id);
 			instance!.removeFile(file.id);
 		}
+
+		// Clean up any orphaned uploadState items that are no longer tracked by Uppy
+		const uppyIds = new Set(instance!.getFiles().map((f) => f.id));
+		for (const item of uploadState.items) {
+			if (!uppyIds.has(item.id) && item.status !== "complete") {
+				uploadState.markComplete(item.id);
+			}
+		}
+
+		// Auto-clear completed items after a brief delay
+		setTimeout(() => uploadState.clearCompleted(), 3000);
 	});
 
 	return instance;

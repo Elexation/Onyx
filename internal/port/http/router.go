@@ -14,13 +14,14 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, tus *upload.TusHandler) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, tus *upload.TusHandler) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
 	uploadHandler := handler.NewUploadHandler(files)
+	settingsHandler := handler.NewSettingsHandler(settings, auth)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -34,6 +35,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, tus *uploa
 		r.With(rl.Middleware).Post("/login", authHandler.Login)
 		r.Post("/setup", authHandler.Setup)
 		r.With(middleware.Auth(auth), middleware.CSRF).Post("/logout", authHandler.Logout)
+		r.With(middleware.Auth(auth), middleware.CSRF).Post("/change-password", settingsHandler.ChangePassword)
 	})
 
 	// Protected API routes
@@ -52,6 +54,9 @@ func NewRouter(auth *service.AuthService, files *service.FileService, tus *uploa
 		})
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
+
+		r.Get("/settings", settingsHandler.GetAll)
+		r.Patch("/settings", settingsHandler.Update)
 	})
 
 	r.NotFound(web.SPAHandler())

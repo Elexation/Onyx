@@ -6,6 +6,8 @@
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { Label } from "$lib/components/ui/label/index.js";
 
+	const MIN_PASSWORD_LENGTH = 8;
+
 	let password = $state("");
 	let confirm = $state("");
 	let error = $state("");
@@ -15,8 +17,8 @@
 		e.preventDefault();
 		error = "";
 
-		if (password.length < 8) {
-			error = "Password must be at least 8 characters";
+		if (password.length < MIN_PASSWORD_LENGTH) {
+			error = `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
 			return;
 		}
 		if (password !== confirm) {
@@ -49,7 +51,7 @@
 					<Input
 						id="password"
 						type="password"
-						placeholder="Minimum 8 characters"
+						placeholder="Minimum {MIN_PASSWORD_LENGTH} characters"
 						bind:value={password}
 						required
 						autofocus

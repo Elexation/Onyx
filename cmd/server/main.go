@@ -57,7 +57,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, tusHandler)
+	router := server.NewRouter(authService, fileService, settingsService, tusHandler)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

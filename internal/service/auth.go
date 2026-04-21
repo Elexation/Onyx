@@ -26,6 +26,7 @@ const (
 type UserRepo interface {
 	Create(username, passwordHash string) (*domain.User, error)
 	GetByUsername(username string) (*domain.User, error)
+	UpdatePassword(username, passwordHash string) error
 	Exists() (bool, error)
 }
 
@@ -34,6 +35,7 @@ type SessionRepo interface {
 	GetByID(id string) (*domain.Session, error)
 	UpdateLastActive(id string) error
 	Delete(id string) error
+	DeleteOtherSessions(userID int64, keepSessionID string) (int64, error)
 	DeleteExpired() (int64, error)
 }
 
@@ -137,6 +139,32 @@ func (a *AuthService) StartCleanup(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+func (a *AuthService) ChangePassword(currentPassword, newPassword, sessionID string) error {
+	user, err := a.users.GetByUsername("admin")
+	if err != nil {
+		return fmt.Errorf("get admin: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	if !verifyPassword(currentPassword, user.PasswordHash) {
+		return fmt.Errorf("invalid current password")
+	}
+
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := a.users.UpdatePassword("admin", hash); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	a.sessions.DeleteOtherSessions(user.ID, sessionID)
+	return nil
 }
 
 func (a *AuthService) createSession(userID int64) (*domain.Session, error) {

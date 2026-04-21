@@ -5,7 +5,7 @@
 	const links = [
 		{ href: "/files", label: "Files", icon: FolderOpen, disabled: false },
 		{ href: "/trash", label: "Trash", icon: Trash2, disabled: true },
-		{ href: "/settings", label: "Settings", icon: Settings, disabled: true },
+		{ href: "/settings", label: "Settings", icon: Settings, disabled: false },
 	];
 </script>
 

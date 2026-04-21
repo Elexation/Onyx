@@ -50,6 +50,17 @@ func (r *UserRepo) GetByUsername(username string) (*domain.User, error) {
 	return u, nil
 }
 
+func (r *UserRepo) UpdatePassword(username, passwordHash string) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET password_hash = ?, updated_at = ? WHERE username = ?",
+		passwordHash, time.Now().Unix(), username,
+	)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepo) Exists() (bool, error) {
 	var count int
 	err := r.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)

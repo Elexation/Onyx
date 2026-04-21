@@ -61,6 +61,17 @@ func (r *SessionRepo) Delete(id string) error {
 	return nil
 }
 
+func (r *SessionRepo) DeleteOtherSessions(userID int64, keepSessionID string) (int64, error) {
+	result, err := r.db.Exec(
+		"DELETE FROM sessions WHERE user_id = ? AND id != ?",
+		userID, keepSessionID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete other sessions: %w", err)
+	}
+	return result.RowsAffected()
+}
+
 func (r *SessionRepo) DeleteExpired() (int64, error) {
 	result, err := r.db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now().Unix())
 	if err != nil {

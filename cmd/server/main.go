@@ -46,6 +46,16 @@ func main() {
 	defer localStorage.Close()
 	fileService := service.NewFileService(localStorage)
 
+	trashDir := ".trash"
+	trashRepo := database.NewTrashRepo(db)
+	trashService, err := service.NewTrashService(trashRepo, settingsService, dataDir, trashDir)
+	if err != nil {
+		slog.Error("trash service init failed", "error", err)
+		os.Exit(1)
+	}
+	fileService.SetTrash(trashService, settingsService)
+	trashService.StartAutoPurge(1 * time.Hour)
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -57,7 +67,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, tusHandler)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, tusHandler)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

@@ -13,11 +13,18 @@ import (
 )
 
 type FileService struct {
-	storage *storage.LocalStorage
+	storage  *storage.LocalStorage
+	trash    *TrashService
+	settings *SettingsService
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
 	return &FileService{storage: storage}
+}
+
+func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
+	s.trash = trash
+	s.settings = settings
 }
 
 // ListDirectory returns the contents of a directory, optionally filtering
@@ -129,8 +136,24 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 	return s.storage.Copy(paths, destination), nil
 }
 
-// Delete removes files and directories.
-func (s *FileService) Delete(paths []string) []storage.OpResult {
+// Delete removes files and directories. When trash is enabled and permanent
+// is false, files are moved to the trash directory instead of being deleted.
+func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult {
+	if !permanent && s.trash != nil && s.settings != nil {
+		enabled, err := s.settings.Get(domain.SettingTrashEnabled)
+		if err == nil && domain.GetBool(enabled) {
+			trashResults := s.trash.MoveToTrash(paths)
+			results := make([]storage.OpResult, len(trashResults))
+			for i, tr := range trashResults {
+				results[i] = storage.OpResult{
+					Path:    tr.Path,
+					Success: tr.Success,
+					Error:   tr.Error,
+				}
+			}
+			return results
+		}
+	}
 	return s.storage.Delete(paths)
 }
 

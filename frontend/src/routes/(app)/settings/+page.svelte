@@ -15,6 +15,7 @@
 		"versions.max_count": { min: 0, max: 10000, label: "Max versions" },
 		"versions.max_age": { min: 0, max: 87600, label: "Max version age" },
 		"trash.purge_age": { min: 0, max: 87600, label: "Trash purge age" },
+		"trash.max_size": { min: 0, max: 102400, label: "Max trash size" },
 		"shares.default_expiry": { min: 0, max: 87600, label: "Share expiry" },
 		"session.lifetime": { min: 1, max: 87600, label: "Session lifetime" },
 		"upload.max_size": { min: 0, max: 102400, label: "Max file size" },
@@ -265,6 +266,20 @@
 							class="max-w-xs"
 						/>
 						<p class="text-xs text-muted-foreground">0 = never purge. Max: 87,600 hours (10 years). Default: 720 (30 days)</p>
+					</div>
+					<div class="space-y-2">
+						<Label for="trash-max-size">Maximum trash size (MB)</Label>
+						<Input
+							id="trash-max-size"
+							type="number"
+							min="0"
+							max="102400"
+							step="1"
+							value={bytesToMB(settings["trash.max_size"] ?? "0")}
+							onchange={(e) => validateAndSaveMB("trash.max_size", e.currentTarget.value)}
+							class="max-w-xs"
+						/>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB). Oldest items are purged when exceeded.</p>
 					</div>
 				</div>
 			</TabsContent>

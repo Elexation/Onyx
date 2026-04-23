@@ -21,3 +21,11 @@ export interface DirectoryListing {
 	path: string;
 	items: FileInfo[];
 }
+
+export interface TrashItem {
+	id: string;
+	originalPath: string;
+	deletedAt: number;
+	size: number;
+	isDir: boolean;
+}

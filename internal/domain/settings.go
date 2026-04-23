@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	SettingTrashEnabled = "trash.enabled"
+	SettingTrashEnabled  = "trash.enabled"
 	SettingTrashPurgeAge = "trash.purge_age"
+	SettingTrashMaxSize  = "trash.max_size"
 	SettingVersionsEnabled = "versions.enabled"
 	SettingVersionsMaxCount = "versions.max_count"
 	SettingVersionsMaxAge = "versions.max_age"
@@ -19,8 +20,9 @@ const (
 )
 
 var Defaults = map[string]string{
-	SettingTrashEnabled:        "true",
-	SettingTrashPurgeAge:       "720h",  // 30 days
+	SettingTrashEnabled:  "true",
+	SettingTrashPurgeAge: "720h",       // 30 days
+	SettingTrashMaxSize:  "0",          // 0 = unlimited, stored in bytes
 	SettingVersionsEnabled:     "true",
 	SettingVersionsMaxCount:    "10",
 	SettingVersionsMaxAge:      "2160h", // 90 days

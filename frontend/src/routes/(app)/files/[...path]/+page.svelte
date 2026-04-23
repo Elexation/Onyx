@@ -3,12 +3,14 @@
 	import { goto } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
 	import { checkConflicts } from "$lib/api/upload.js";
+	import { getSettings } from "$lib/api/settings.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { uploadState } from "$lib/stores/upload.svelte.js";
+	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
@@ -39,6 +41,10 @@
 	let moveOpen = $state(false);
 	let movePaths = $state<string[]>([]);
 	let moveMode = $state<"move" | "copy">("move");
+
+	// Trash setting
+	let trashEnabled = $state(true);
+	getSettings().then((s) => { trashEnabled = s["trash.enabled"] !== "false"; }).catch(() => {});
 
 	// Upload state
 	let conflictOpen = $state(false);
@@ -228,6 +234,7 @@
 	function handleDeleteSuccess() {
 		selection.clear();
 		refresh();
+		trashCount.refresh();
 	}
 
 	function handleRenameSuccess() {
@@ -451,6 +458,7 @@
 <DeleteDialog
 	bind:open={deleteOpen}
 	paths={deletePaths}
+	{trashEnabled}
 	onsuccess={handleDeleteSuccess}
 />
 

@@ -53,9 +53,29 @@
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
+		scrollbar-color: oklch(0.3 0 0) transparent;
+		scrollbar-width: thin;
 	}
 	body {
 		@apply bg-background text-foreground;
+	}
+
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	::-webkit-scrollbar-thumb {
+		background: oklch(0.3 0 0);
+		border-radius: 4px;
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: oklch(0.4 0 0);
+	}
+	::-webkit-scrollbar-corner {
+		background: transparent;
 	}
 
 	input[type="number"]::-webkit-inner-spin-button,

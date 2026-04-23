@@ -41,6 +41,6 @@ export async function copy(paths: string[], destination: string): Promise<{ resu
 	return request<{ results: BatchResult[] }>("POST", "/api/files/copy", { paths, destination });
 }
 
-export async function deleteFiles(paths: string[]): Promise<{ results: BatchResult[] }> {
-	return request<{ results: BatchResult[] }>("DELETE", "/api/files", { paths });
+export async function deleteFiles(paths: string[], permanent = false): Promise<{ results: BatchResult[] }> {
+	return request<{ results: BatchResult[] }>("DELETE", "/api/files", { paths, permanent });
 }

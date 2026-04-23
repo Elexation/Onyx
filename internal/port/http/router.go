@@ -14,7 +14,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, tus *upload.TusHandler) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, tus *upload.TusHandler) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
@@ -22,6 +22,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	fileOpsHandler := handler.NewFileOpsHandler(files)
 	uploadHandler := handler.NewUploadHandler(files)
 	settingsHandler := handler.NewSettingsHandler(settings, auth)
+	trashHandler := handler.NewTrashHandler(trash)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -54,6 +55,14 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		})
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
+
+		r.Route("/trash", func(r chi.Router) {
+			r.Get("/", trashHandler.List)
+			r.Get("/count", trashHandler.Count)
+			r.Post("/{id}/restore", trashHandler.Restore)
+			r.Delete("/{id}", trashHandler.PermanentDelete)
+			r.Delete("/", trashHandler.EmptyTrash)
+		})
 
 		r.Get("/settings", settingsHandler.GetAll)
 		r.Patch("/settings", settingsHandler.Update)

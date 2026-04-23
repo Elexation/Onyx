@@ -114,7 +114,8 @@ func (h *FileOpsHandler) Copy(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/files
 func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Paths []string `json:"paths"`
+		Paths     []string `json:"paths"`
+		Permanent bool     `json:"permanent"`
 	}
 	if !decodeBody(w, r, &req) {
 		return
@@ -124,7 +125,7 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := h.files.Delete(req.Paths)
+	results := h.files.Delete(req.Paths, req.Permanent)
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 

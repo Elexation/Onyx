@@ -6,6 +6,7 @@
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { ArrowUp, ArrowDown } from "lucide-svelte";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
+	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FileIcon from "./FileIcon.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import VirtualList from "./VirtualList.svelte";
@@ -35,6 +36,16 @@
 	} = $props();
 
 	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
+	const allSelected = $derived(allPaths.length > 0 && selection.count === allPaths.length && allPaths.every((p) => selection.has(p)));
+	const someSelected = $derived(selection.count > 0 && !allSelected);
+
+	function toggleSelectAll() {
+		if (allSelected) {
+			selection.clear();
+		} else {
+			selection.selectAll(allPaths);
+		}
+	}
 
 	const columns: { label: string; field: SortField; align: string; width: string }[] = [
 		{ label: "Name", field: "name", align: "text-left", width: "" },
@@ -88,7 +99,12 @@
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 	<div class="flex border-b border-border text-xs text-muted-foreground" onclick={(e) => e.stopPropagation()}>
-		<div class="w-10 py-2 pl-4"></div>
+		<div class="flex w-10 items-center py-2 pl-4">
+			<Checkbox
+				checked={allSelected ? true : someSelected ? "indeterminate" : false}
+				onCheckedChange={toggleSelectAll}
+			/>
+		</div>
 		{#each columns as col}
 			<button
 				class="flex items-center gap-1 py-2 font-medium transition-colors hover:text-foreground {col.align} {col.width} {col.width ? 'pr-4' : 'flex-1'}"
@@ -121,10 +137,11 @@
 					tabindex={0}
 					role="row"
 				>
-					<div class="w-10 py-2 pl-4">
+					<div class="w-10 py-2 pl-4"></div>
+					<div class="flex flex-1 items-center gap-2 py-2 text-sm">
 						<FileIcon isDir={true} class="size-4 opacity-50" />
+						..
 					</div>
-					<div class="flex-1 py-2 text-sm">..</div>
 				</div>
 			{:else}
 				{@const isSelected = selection.has(file.path)}
@@ -154,10 +171,16 @@
 							tabindex={0}
 							role="row"
 						>
-							<div class="w-10 py-2 pl-4">
-								<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+							<div class="flex w-10 items-center py-2 pl-4" onclick={(e) => e.stopPropagation()}>
+								<Checkbox
+									checked={isSelected}
+									onCheckedChange={() => selection.toggle(file.path)}
+								/>
 							</div>
-							<div class="flex-1 py-2 text-sm">{file.name}</div>
+							<div class="flex flex-1 items-center gap-2 py-2 text-sm">
+								<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+								{file.name}
+							</div>
 							<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
 								{file.isDir ? "\u2014" : formatFileSize(file.size)}
 							</div>

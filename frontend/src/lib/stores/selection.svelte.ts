@@ -13,9 +13,15 @@ export const selection = {
 	},
 
 	select(path: string) {
-		selected = new Set([path]);
-		lastSelected = path;
-		active = true;
+		if (selected.size === 1 && selected.has(path)) {
+			selected = new Set();
+			lastSelected = null;
+			active = false;
+		} else {
+			selected = new Set([path]);
+			lastSelected = path;
+			active = true;
+		}
 	},
 
 	toggle(path: string) {

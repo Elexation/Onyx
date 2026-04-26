@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/KarpelesLab/reflink v1.0.2 // indirect
 	github.com/ncruces/go-sqlite3-wasm v1.0.4-0.20260329114232-2491c387476c // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/tus/lockfile v1.2.0 // indirect

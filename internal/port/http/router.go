@@ -14,7 +14,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, tus *upload.TusHandler) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
@@ -23,6 +23,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	uploadHandler := handler.NewUploadHandler(files)
 	settingsHandler := handler.NewSettingsHandler(settings, auth)
 	trashHandler := handler.NewTrashHandler(trash)
+	versionHandler := handler.NewVersionHandler(versions)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -62,6 +63,12 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Post("/{id}/restore", trashHandler.Restore)
 			r.Delete("/{id}", trashHandler.PermanentDelete)
 			r.Delete("/", trashHandler.EmptyTrash)
+		})
+
+		r.Route("/versions", func(r chi.Router) {
+			r.Get("/", versionHandler.List)
+			r.Post("/{id}/restore", versionHandler.Restore)
+			r.Delete("/{id}", versionHandler.Delete)
 		})
 
 		r.Get("/settings", settingsHandler.GetAll)

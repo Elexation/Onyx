@@ -33,6 +33,7 @@ type TrashService struct {
 	settings *SettingsService
 	dataDir  string
 	trashDir string
+	versions *VersionService
 }
 
 func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDir string) (*TrashService, error) {
@@ -45,6 +46,12 @@ func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDi
 		dataDir:  dataDir,
 		trashDir: trashDir,
 	}, nil
+}
+
+// SetVersioning wires the version service in after construction to avoid a
+// circular init dependency with VersionService (constructed after trash).
+func (s *TrashService) SetVersioning(v *VersionService) {
+	s.versions = v
 }
 
 func (s *TrashService) MoveToTrash(paths []string) []MoveToTrashResult {
@@ -177,6 +184,17 @@ func (s *TrashService) PermanentDelete(id string) error {
 		return fmt.Errorf("remove trash record: %w", err)
 	}
 
+	// Cascade: drop any version history attached to this file's original
+	// path. Dir items don't have per-path versions of their own, but files
+	// inside the dir would — we don't walk those here because trash stores
+	// the dir as an opaque blob, so version cleanup for dir contents is
+	// left to retention.
+	if s.versions != nil && !item.IsDir {
+		if err := s.versions.DeleteAllVersions(item.OriginalPath); err != nil {
+			slog.Warn("trash permanent delete: cleanup versions", "path", item.OriginalPath, "error", err)
+		}
+	}
+
 	return nil
 }
 
@@ -190,6 +208,11 @@ func (s *TrashService) EmptyTrash() error {
 		trashAbs := filepath.Join(s.trashDir, item.TrashPath)
 		if err := os.RemoveAll(trashAbs); err != nil {
 			slog.Warn("failed to delete trash file", "path", item.TrashPath, "error", err)
+		}
+		if s.versions != nil && !item.IsDir {
+			if err := s.versions.DeleteAllVersions(item.OriginalPath); err != nil {
+				slog.Warn("empty trash: cleanup versions", "path", item.OriginalPath, "error", err)
+			}
 		}
 	}
 

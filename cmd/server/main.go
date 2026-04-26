@@ -56,6 +56,29 @@ func main() {
 	fileService.SetTrash(trashService, settingsService)
 	trashService.StartAutoPurge(1 * time.Hour)
 
+	versionsDir := ".versions"
+	versionRepo := database.NewVersionRepo(db)
+	versionStore, err := storage.NewVersionStore(dataDir, versionsDir)
+	if err != nil {
+		slog.Error("version store init failed", "error", err)
+		os.Exit(1)
+	}
+	versionStore.TestReflink()
+	versionService := service.NewVersionService(versionRepo, versionStore, settingsService, dataDir)
+	fileService.SetVersioning(versionService)
+	trashService.SetVersioning(versionService)
+
+	retentionInterval := 24 * time.Hour
+	if v := os.Getenv("ONYX_VERSION_RETENTION_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			slog.Error("invalid ONYX_VERSION_RETENTION_INTERVAL", "value", v, "error", err)
+			os.Exit(1)
+		}
+		retentionInterval = d
+	}
+	versionService.StartRetention(retentionInterval)
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -67,7 +90,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, trashService, tusHandler)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

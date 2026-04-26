@@ -1,3 +1,5 @@
+github.com/KarpelesLab/reflink v1.0.2 h1:hQ1aM3TmjU2kTNUx5p/HaobDoADYk+a6AuEinG4Cv88=
+github.com/KarpelesLab/reflink v1.0.2/go.mod h1:WGkTOKNjd1FsJKBw3mu4JvrPEDJyJJ+JPtxBkbPoCok=
 github.com/go-chi/chi/v5 v5.2.5 h1:Eg4myHZBjyvJmAFjFvWgrqDTXFyOzjj7YIm3L3mu6Ug=
 github.com/go-chi/chi/v5 v5.2.5/go.mod h1:X7Gx4mteadT3eDOMTsXzmI4/rwUpOwBHLpAfupzFJP0=
 github.com/ncruces/go-sqlite3 v0.33.2 h1:bzzdlEsURPqyQNU9OGKhYrL0k/9tEXrDCtNwa6n1aA0=

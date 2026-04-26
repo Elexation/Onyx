@@ -23,6 +23,7 @@
 		onpaste,
 		onmoveto,
 		oncopyto,
+		onversions,
 		ondrop,
 	}: {
 		items: FileInfo[];
@@ -32,6 +33,7 @@
 		onpaste: () => void;
 		onmoveto: (paths: string[]) => void;
 		oncopyto: (paths: string[]) => void;
+		onversions: (item: FileInfo) => void;
 		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 
@@ -154,6 +156,7 @@
 					{onpaste}
 					onmoveto={() => onmoveto(getContextPaths(file))}
 					oncopyto={() => oncopyto(getContextPaths(file))}
+					onversions={() => onversions(file)}
 				>
 					{#snippet children(triggerProps)}
 						<div

@@ -13,6 +13,7 @@
 		onmoveto,
 		oncopyto,
 		onpaste,
+		onversions,
 		children,
 	}: {
 		item: { name: string; path: string; isDir: boolean } | null;
@@ -22,6 +23,7 @@
 		onmoveto: () => void;
 		oncopyto: () => void;
 		onpaste: () => void;
+		onversions: () => void;
 		children: Snippet<[Record<string, any>]>;
 	} = $props();
 
@@ -92,6 +94,7 @@
 			{#if !item.isDir}
 				<ContextMenu.Separator />
 				<ContextMenu.Item onclick={handleDownload}>Download</ContextMenu.Item>
+				<ContextMenu.Item onclick={onversions}>Version history</ContextMenu.Item>
 			{/if}
 			<ContextMenu.Separator />
 			<ContextMenu.Item variant="destructive" onclick={ondelete}>

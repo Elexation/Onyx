@@ -29,3 +29,10 @@ export interface TrashItem {
 	size: number;
 	isDir: boolean;
 }
+
+export interface FileVersion {
+	id: number;
+	filePath: string;
+	createdAt: number;
+	size: number;
+}

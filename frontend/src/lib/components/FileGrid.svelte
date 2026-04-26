@@ -11,6 +11,7 @@
 		onpaste,
 		onmoveto,
 		oncopyto,
+		onversions,
 		ondrop,
 	}: {
 		items: FileInfo[];
@@ -20,6 +21,7 @@
 		onpaste: () => void;
 		onmoveto: (paths: string[]) => void;
 		oncopyto: (paths: string[]) => void;
+		onversions: (item: FileInfo) => void;
 		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 </script>
@@ -39,6 +41,7 @@
 				{onpaste}
 				{onmoveto}
 				{oncopyto}
+				{onversions}
 				{ondrop}
 			/>
 		{/snippet}

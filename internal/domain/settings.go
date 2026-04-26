@@ -9,9 +9,11 @@ const (
 	SettingTrashEnabled  = "trash.enabled"
 	SettingTrashPurgeAge = "trash.purge_age"
 	SettingTrashMaxSize  = "trash.max_size"
-	SettingVersionsEnabled = "versions.enabled"
-	SettingVersionsMaxCount = "versions.max_count"
-	SettingVersionsMaxAge = "versions.max_age"
+	SettingVersionsEnabled         = "versions.enabled"
+	SettingVersionsMaxCount        = "versions.max_count"
+	SettingVersionsMaxAge          = "versions.max_age"
+	SettingVersionsMaxFileSize     = "versions.max_file_size"
+	SettingVersionsMaxStorageBytes = "versions.max_storage"
 	SettingSharesEnabled = "shares.enabled"
 	SettingSharesDefaultExpiry = "shares.default_expiry"
 	SettingSessionLifetime = "session.lifetime"
@@ -23,9 +25,11 @@ var Defaults = map[string]string{
 	SettingTrashEnabled:  "true",
 	SettingTrashPurgeAge: "720h",       // 30 days
 	SettingTrashMaxSize:  "0",          // 0 = unlimited, stored in bytes
-	SettingVersionsEnabled:     "true",
-	SettingVersionsMaxCount:    "10",
-	SettingVersionsMaxAge:      "2160h", // 90 days
+	SettingVersionsEnabled:         "true",
+	SettingVersionsMaxCount:        "10",
+	SettingVersionsMaxAge:          "2160h",      // 90 days
+	SettingVersionsMaxFileSize:     "1073741824", // 1 GiB
+	SettingVersionsMaxStorageBytes: "0",          // 0 = unlimited, stored in bytes
 	SettingSharesEnabled:       "true",
 	SettingSharesDefaultExpiry: "168h",  // 7 days
 	SettingSessionLifetime:     "720h",  // 30 days

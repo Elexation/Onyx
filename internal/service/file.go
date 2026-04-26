@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 type FileService struct {
 	storage  *storage.LocalStorage
 	trash    *TrashService
+	versions *VersionService
 	settings *SettingsService
 }
 
@@ -25,6 +27,10 @@ func NewFileService(storage *storage.LocalStorage) *FileService {
 func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
 	s.trash = trash
 	s.settings = settings
+}
+
+func (s *FileService) SetVersioning(versions *VersionService) {
+	s.versions = versions
 }
 
 // ListDirectory returns the contents of a directory, optionally filtering
@@ -89,7 +95,8 @@ func (s *FileService) Rename(filePath, newName string) error {
 	}
 
 	// Check source exists
-	if _, err := s.storage.Stat(filePath); err != nil {
+	info, err := s.storage.Stat(filePath)
+	if err != nil {
 		return err
 	}
 
@@ -100,7 +107,22 @@ func (s *FileService) Rename(filePath, newName string) error {
 		return &ConflictError{Path: targetPath}
 	}
 
-	return s.storage.Rename(filePath, newName)
+	if err := s.storage.Rename(filePath, newName); err != nil {
+		return err
+	}
+
+	if s.versions != nil {
+		if info.IsDir {
+			if err := s.versions.RenameDirVersions(filePath, targetPath); err != nil {
+				slog.Warn("rename versions for directory", "path", filePath, "error", err)
+			}
+		} else {
+			if err := s.versions.RenameFileVersions(filePath, targetPath); err != nil {
+				slog.Warn("rename versions for file", "path", filePath, "error", err)
+			}
+		}
+	}
+	return nil
 }
 
 // Move relocates paths into a destination directory.
@@ -117,7 +139,47 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 		return nil, fmt.Errorf("destination is not a directory: %s", destination)
 	}
 
-	return s.storage.Move(paths, destination), nil
+	// Pre-stat each path so we can update version records after a successful
+	// rename (source is gone by then).
+	isDir := make(map[string]bool, len(paths))
+	if s.versions != nil {
+		for _, p := range paths {
+			if pi, err := s.storage.Stat(p); err == nil {
+				isDir[p] = pi.IsDir
+			}
+		}
+	}
+
+	results := s.storage.Move(paths, destination)
+
+	if s.versions != nil {
+		for i, r := range results {
+			if !r.Success {
+				continue
+			}
+			oldPath := ensureSlashPrefix(paths[i])
+			base := oldPath[strings.LastIndex(oldPath, "/")+1:]
+			newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+			if isDir[paths[i]] {
+				if err := s.versions.RenameDirVersions(oldPath, newPath); err != nil {
+					slog.Warn("move versions for directory", "path", oldPath, "error", err)
+				}
+			} else {
+				if err := s.versions.RenameFileVersions(oldPath, newPath); err != nil {
+					slog.Warn("move versions for file", "path", oldPath, "error", err)
+				}
+			}
+		}
+	}
+
+	return results, nil
+}
+
+func ensureSlashPrefix(p string) string {
+	if strings.HasPrefix(p, "/") {
+		return p
+	}
+	return "/" + p
 }
 
 // Copy duplicates paths into a destination directory.
@@ -187,7 +249,15 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 	if exists {
 		switch conflictStrategy {
 		case "replace":
-			// WriteFile will truncate
+			// Version the current file before overwriting. A hard failure
+			// here aborts the upload so we don't silently destroy the prior
+			// content (e.g. disk full). CreateVersion returns nil for legit
+			// skip cases (disabled, missing, oversized).
+			if s.versions != nil {
+				if err := s.versions.CreateVersion("/" + destPath); err != nil {
+					return "", fmt.Errorf("create version before replace: %w", err)
+				}
+			}
 		case "keepBoth":
 			destPath = s.storage.UniqueName(destPath)
 		default:

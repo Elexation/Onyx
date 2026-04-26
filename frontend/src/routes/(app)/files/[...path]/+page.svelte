@@ -25,6 +25,7 @@
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
 	import ConflictDialog from "$lib/components/dialogs/ConflictDialog.svelte";
+	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
 
 	const path = $derived(page.params.path ?? "");
 
@@ -41,6 +42,8 @@
 	let moveOpen = $state(false);
 	let movePaths = $state<string[]>([]);
 	let moveMode = $state<"move" | "copy">("move");
+	let versionHistoryOpen = $state(false);
+	let versionHistoryPath = $state("");
 
 	// Trash setting
 	let trashEnabled = $state(true);
@@ -198,6 +201,11 @@
 		movePaths = paths;
 		moveMode = "copy";
 		moveOpen = true;
+	}
+
+	function handleVersions(item: FileInfo) {
+		versionHistoryPath = item.path;
+		versionHistoryOpen = true;
 	}
 
 	async function handlePaste() {
@@ -421,6 +429,7 @@
 						onpaste={handlePaste}
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
+						onversions={handleVersions}
 						ondrop={handleDrop}
 					/>
 				{:else}
@@ -432,6 +441,7 @@
 						onpaste={handlePaste}
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
+						onversions={handleVersions}
 						ondrop={handleDrop}
 					/>
 				{/if}
@@ -475,3 +485,9 @@
 		onresolve={handleConflictResolve}
 	/>
 {/if}
+
+<VersionHistoryDialog
+	bind:open={versionHistoryOpen}
+	path={versionHistoryPath}
+	onrestored={refresh}
+/>

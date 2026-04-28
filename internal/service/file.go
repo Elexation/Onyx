@@ -239,7 +239,7 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 // conflictStrategy: "replace" overwrites, "keepBoth" auto-renames.
 // relativePath is the path relative to targetDir (supports nested dirs for folder uploads).
 func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy string, src io.Reader) (string, error) {
-	destPath := strings.TrimPrefix(targetDir+"/"+relativePath, "/")
+	destPath := strings.TrimLeft(targetDir+"/"+relativePath, "/")
 
 	exists, err := s.storage.Exists(destPath)
 	if err != nil {

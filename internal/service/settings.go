@@ -103,7 +103,19 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("cannot exceed 10000")
 		}
 
-	case domain.SettingTrashMaxSize:
+	case domain.SettingTrashMaxSize, domain.SettingVersionsMaxStorageBytes:
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("must be a number")
+		}
+		if n < 0 {
+			return fmt.Errorf("must be 0 or positive")
+		}
+		if n > 102400*1024*1024 {
+			return fmt.Errorf("cannot exceed 102400 MB")
+		}
+
+	case domain.SettingVersionsMaxFileSize:
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return fmt.Errorf("must be a number")

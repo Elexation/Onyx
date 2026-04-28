@@ -14,6 +14,8 @@
 	const caps: Record<string, { min: number; max: number; label: string }> = {
 		"versions.max_count": { min: 0, max: 10000, label: "Max versions" },
 		"versions.max_age": { min: 0, max: 87600, label: "Max version age" },
+		"versions.max_file_size": { min: 0, max: 102400, label: "Max file size to version" },
+		"versions.max_storage": { min: 0, max: 102400, label: "Max version storage" },
 		"trash.purge_age": { min: 0, max: 87600, label: "Trash purge age" },
 		"trash.max_size": { min: 0, max: 102400, label: "Max trash size" },
 		"shares.default_expiry": { min: 0, max: 87600, label: "Share expiry" },
@@ -235,6 +237,34 @@
 							class="max-w-xs"
 						/>
 						<p class="text-xs text-muted-foreground">0 = never expire. Max: 87,600 hours (10 years). Default: 2,160 (90 days)</p>
+					</div>
+					<div class="space-y-2">
+						<Label for="versions-max-file-size">Maximum file size to version (MB)</Label>
+						<Input
+							id="versions-max-file-size"
+							type="number"
+							min="0"
+							max="102400"
+							step="1"
+							value={bytesToMB(settings["versions.max_file_size"] ?? "1073741824")}
+							onchange={(e) => validateAndSaveMB("versions.max_file_size", e.currentTarget.value)}
+							class="max-w-xs"
+						/>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB). Default: 1,024 (1 GB). Files larger than this are not versioned.</p>
+					</div>
+					<div class="space-y-2">
+						<Label for="versions-max-storage">Maximum version storage (MB)</Label>
+						<Input
+							id="versions-max-storage"
+							type="number"
+							min="0"
+							max="102400"
+							step="1"
+							value={bytesToMB(settings["versions.max_storage"] ?? "0")}
+							onchange={(e) => validateAndSaveMB("versions.max_storage", e.currentTarget.value)}
+							class="max-w-xs"
+						/>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB). Oldest versions are purged when exceeded.</p>
 					</div>
 				</div>
 			</TabsContent>

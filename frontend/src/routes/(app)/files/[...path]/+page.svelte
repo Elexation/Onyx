@@ -26,6 +26,8 @@
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
 	import ConflictDialog from "$lib/components/dialogs/ConflictDialog.svelte";
 	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
+	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
+	import { canPreview } from "$lib/preview.js";
 
 	const path = $derived(page.params.path ?? "");
 
@@ -44,6 +46,8 @@
 	let moveMode = $state<"move" | "copy">("move");
 	let versionHistoryOpen = $state(false);
 	let versionHistoryPath = $state("");
+	let previewOpen = $state(false);
+	let previewFile = $state<FileInfo | null>(null);
 
 	// Trash setting
 	let trashEnabled = $state(true);
@@ -152,6 +156,9 @@
 	function handleOpen(item: FileInfo) {
 		if (item.isDir) {
 			goto(`/files/${item.path}`);
+		} else if (canPreview(item)) {
+			previewFile = item;
+			previewOpen = true;
 		} else {
 			const a = document.createElement("a");
 			a.href = getDownloadUrl(item.path);
@@ -373,7 +380,14 @@
 				if (item) handleOpen(item);
 			}
 		},
-		"escape": () => selection.clear(),
+		"escape": () => {
+			if (previewOpen) {
+				previewOpen = false;
+				previewFile = null;
+				return;
+			}
+			selection.clear();
+		},
 		"backspace": () => {
 			const parts = path.split("/").filter(Boolean);
 			if (parts.length > 0) {
@@ -491,3 +505,11 @@
 	path={versionHistoryPath}
 	onrestored={refresh}
 />
+
+{#if previewOpen && previewFile}
+	<PreviewModal
+		bind:file={previewFile}
+		items={listing?.items ?? []}
+		onclose={() => { previewOpen = false; previewFile = null; }}
+	/>
+{/if}

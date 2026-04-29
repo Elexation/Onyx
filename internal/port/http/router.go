@@ -56,6 +56,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		})
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
+		r.Get("/preview/*", fileHandler.Preview)
 
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)

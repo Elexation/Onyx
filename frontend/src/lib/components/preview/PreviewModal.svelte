@@ -6,6 +6,9 @@
 	import TextPreview from "./TextPreview.svelte";
 	import MarkdownPreview from "./MarkdownPreview.svelte";
 	import ImagePreview from "./ImagePreview.svelte";
+	import VideoPreview from "./VideoPreview.svelte";
+	import AudioPreview from "./AudioPreview.svelte";
+	import PdfPreview from "./PdfPreview.svelte";
 	import XIcon from "@lucide/svelte/icons/x";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 
@@ -84,6 +87,12 @@
 				siblings={imageSiblings}
 				onnavigate={(f) => { file = f; }}
 			/>
+		{:else if type === "video"}
+			<VideoPreview {file} />
+		{:else if type === "audio"}
+			<AudioPreview path={file.path} />
+		{:else if type === "pdf"}
+			<PdfPreview path={file.path} />
 		{/if}
 	</div>
 </div>

@@ -1,6 +1,6 @@
 import type { FileInfo } from "$lib/types";
 
-export type PreviewType = "text" | "markdown" | "image";
+export type PreviewType = "text" | "markdown" | "image" | "video" | "audio" | "pdf";
 
 const TEXT_MIME_PREFIXES = ["text/"];
 const TEXT_MIME_EXACT = [
@@ -17,6 +17,9 @@ const TEXT_MIME_EXACT = [
 const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdx"];
 
 const IMAGE_MIME_PREFIX = "image/";
+const VIDEO_MIME_PREFIX = "video/";
+const AUDIO_MIME_PREFIX = "audio/";
+const PDF_MIME = "application/pdf";
 
 const TEXT_SIZE_LIMIT = 1024 * 1024; // 1MB
 
@@ -39,6 +42,21 @@ export function getPreviewType(file: FileInfo): PreviewType | null {
 	// Images
 	if (mime.startsWith(IMAGE_MIME_PREFIX)) {
 		return "image";
+	}
+
+	// Video
+	if (mime.startsWith(VIDEO_MIME_PREFIX)) {
+		return "video";
+	}
+
+	// Audio
+	if (mime.startsWith(AUDIO_MIME_PREFIX)) {
+		return "audio";
+	}
+
+	// PDF
+	if (mime === PDF_MIME) {
+		return "pdf";
 	}
 
 	// Text/code

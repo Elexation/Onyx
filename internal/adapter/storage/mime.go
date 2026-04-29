@@ -52,6 +52,28 @@ var extMIME = map[string]string{
 	".ttf":   "font/ttf",
 	".otf":   "font/otf",
 
+	// Video
+	".mp4":  "video/mp4",
+	".m4v":  "video/mp4",
+	".webm": "video/webm",
+	".mov":  "video/quicktime",
+	".mkv":  "video/x-matroska",
+	".avi":  "video/x-msvideo",
+	".ogv":  "video/ogg",
+
+	// Audio
+	".mp3":  "audio/mpeg",
+	".ogg":  "audio/ogg",
+	".oga":  "audio/ogg",
+	".wav":  "audio/wav",
+	".m4a":  "audio/mp4",
+	".aac":  "audio/aac",
+	".flac": "audio/flac",
+	".opus": "audio/opus",
+
+	// Document
+	".pdf": "application/pdf",
+
 	// Binary / application
 	".wasm": "application/wasm",
 	".gz":   "application/gzip",

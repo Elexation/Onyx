@@ -66,6 +66,31 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, modTime, file)
 }
 
+// Preview handles GET /api/preview/* — serves a file inline for browser preview.
+func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/preview")
+
+	file, modTime, _, err := h.files.OpenFile(filePath)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	defer file.Close()
+
+	name := filePath
+	if idx := strings.LastIndex(filePath, "/"); idx >= 0 {
+		name = filePath[idx+1:]
+	}
+
+	// SVGs can contain scripts — sandbox them
+	if strings.HasSuffix(strings.ToLower(name), ".svg") {
+		w.Header().Set("Content-Security-Policy", "sandbox")
+	}
+
+	w.Header().Set("Content-Disposition", `inline; filename="`+name+`"`)
+	http.ServeContent(w, r, name, modTime, file)
+}
+
 // DownloadZip handles GET /api/download/zip?path=...&path=...
 // Streams a zip archive containing all requested files and directories.
 func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {

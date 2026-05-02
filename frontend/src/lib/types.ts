@@ -36,3 +36,9 @@ export interface FileVersion {
 	createdAt: number;
 	size: number;
 }
+
+export interface SearchResult {
+	name: string;
+	path: string;
+	isDir: boolean;
+}

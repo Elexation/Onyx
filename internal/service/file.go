@@ -18,6 +18,7 @@ type FileService struct {
 	trash    *TrashService
 	versions *VersionService
 	settings *SettingsService
+	indexer  *Indexer
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
@@ -31,6 +32,10 @@ func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
 
 func (s *FileService) SetVersioning(versions *VersionService) {
 	s.versions = versions
+}
+
+func (s *FileService) SetIndexer(indexer *Indexer) {
+	s.indexer = indexer
 }
 
 // ListDirectory returns the contents of a directory, optionally filtering
@@ -81,7 +86,13 @@ func (s *FileService) MakeDir(dirPath string) error {
 	if dirPath == "" || dirPath == "/" {
 		return fmt.Errorf("invalid directory path")
 	}
-	return s.storage.MakeDir(dirPath)
+	if err := s.storage.MakeDir(dirPath); err != nil {
+		return err
+	}
+	if s.indexer != nil {
+		s.indexer.NotifyCreated(ensureSlashPrefix(dirPath), true, 0, time.Now().Unix())
+	}
+	return nil
 }
 
 // Rename changes the name of a file or directory.
@@ -111,6 +122,9 @@ func (s *FileService) Rename(filePath, newName string) error {
 		return err
 	}
 
+	if s.indexer != nil {
+		s.indexer.NotifyRenamed(ensureSlashPrefix(filePath), ensureSlashPrefix(targetPath), info.IsDir)
+	}
 	if s.versions != nil {
 		if info.IsDir {
 			if err := s.versions.RenameDirVersions(filePath, targetPath); err != nil {
@@ -139,10 +153,10 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 		return nil, fmt.Errorf("destination is not a directory: %s", destination)
 	}
 
-	// Pre-stat each path so we can update version records after a successful
-	// rename (source is gone by then).
+	// Pre-stat each path so we can update version/index records after a
+	// successful rename (source is gone by then).
 	isDir := make(map[string]bool, len(paths))
-	if s.versions != nil {
+	if s.versions != nil || s.indexer != nil {
 		for _, p := range paths {
 			if pi, err := s.storage.Stat(p); err == nil {
 				isDir[p] = pi.IsDir
@@ -152,14 +166,17 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 
 	results := s.storage.Move(paths, destination)
 
-	if s.versions != nil {
-		for i, r := range results {
-			if !r.Success {
-				continue
-			}
-			oldPath := ensureSlashPrefix(paths[i])
-			base := oldPath[strings.LastIndex(oldPath, "/")+1:]
-			newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+	for i, r := range results {
+		if !r.Success {
+			continue
+		}
+		oldPath := ensureSlashPrefix(paths[i])
+		base := oldPath[strings.LastIndex(oldPath, "/")+1:]
+		newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+		if s.indexer != nil {
+			s.indexer.NotifyMoved(oldPath, newPath, isDir[paths[i]])
+		}
+		if s.versions != nil {
 			if isDir[paths[i]] {
 				if err := s.versions.RenameDirVersions(oldPath, newPath); err != nil {
 					slog.Warn("move versions for directory", "path", oldPath, "error", err)
@@ -195,17 +212,34 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 		return nil, fmt.Errorf("destination is not a directory: %s", destination)
 	}
 
-	return s.storage.Copy(paths, destination), nil
+	results := s.storage.Copy(paths, destination)
+	if s.indexer != nil {
+		for i, r := range results {
+			if !r.Success {
+				continue
+			}
+			base := paths[i]
+			if idx := strings.LastIndex(base, "/"); idx >= 0 {
+				base = base[idx+1:]
+			}
+			newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+			if info, err := s.storage.Stat(newPath); err == nil {
+				s.indexer.NotifyCopied(ensureSlashPrefix(newPath), info.IsDir, info.Size, info.ModTime)
+			}
+		}
+	}
+	return results, nil
 }
 
 // Delete removes files and directories. When trash is enabled and permanent
 // is false, files are moved to the trash directory instead of being deleted.
 func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult {
+	var results []storage.OpResult
 	if !permanent && s.trash != nil && s.settings != nil {
 		enabled, err := s.settings.Get(domain.SettingTrashEnabled)
 		if err == nil && domain.GetBool(enabled) {
 			trashResults := s.trash.MoveToTrash(paths)
-			results := make([]storage.OpResult, len(trashResults))
+			results = make([]storage.OpResult, len(trashResults))
 			for i, tr := range trashResults {
 				results[i] = storage.OpResult{
 					Path:    tr.Path,
@@ -213,10 +247,23 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 					Error:   tr.Error,
 				}
 			}
-			return results
 		}
 	}
-	return s.storage.Delete(paths)
+	if results == nil {
+		results = s.storage.Delete(paths)
+	}
+	if s.indexer != nil {
+		var deleted []string
+		for i, r := range results {
+			if r.Success {
+				deleted = append(deleted, ensureSlashPrefix(paths[i]))
+			}
+		}
+		if len(deleted) > 0 {
+			s.indexer.NotifyDeleted(deleted)
+		}
+	}
+	return results
 }
 
 // CheckConflicts returns the subset of paths that already exist in targetDir.
@@ -269,7 +316,13 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 		return "", fmt.Errorf("write upload: %w", err)
 	}
 
-	return "/" + destPath, nil
+	finalPath := "/" + destPath
+	if s.indexer != nil {
+		if info, err := s.storage.Stat(finalPath); err == nil {
+			s.indexer.NotifyCreated(finalPath, false, info.Size, info.ModTime)
+		}
+	}
+	return finalPath, nil
 }
 
 // ConflictError indicates a name collision.

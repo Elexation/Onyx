@@ -79,6 +79,12 @@ func main() {
 	}
 	versionService.StartRetention(retentionInterval)
 
+	searchRepo := database.NewSearchRepo(db)
+	indexer := service.NewIndexer(searchRepo, dataDir)
+	searchService := service.NewSearchService(searchRepo)
+	fileService.SetIndexer(indexer)
+	indexer.Start(5 * time.Minute)
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -90,7 +96,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

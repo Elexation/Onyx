@@ -144,7 +144,7 @@ func buildFTSQuery(input string) string {
 	// Strip FTS5 special characters
 	replacer := strings.NewReplacer(
 		`"`, "", `*`, "", `(`, "", `)`, "",
-		`+`, "", `-`, "", `^`, "", `{`, "",
+		`+`, "", `-`, " ", `^`, "", `{`, "",
 		`}`, "", `:`, "",
 	)
 	cleaned := replacer.Replace(input)

@@ -16,6 +16,7 @@ frontend/scripts/*
 
 # Build artifacts
 web/build/
+web/csp_hash.go
 
 # App directories
 config/

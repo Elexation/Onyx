@@ -26,6 +26,7 @@
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
 	import ConflictDialog from "$lib/components/dialogs/ConflictDialog.svelte";
 	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
+	import ShareDialog from "$lib/components/dialogs/ShareDialog.svelte";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
 	import { canPreview } from "$lib/preview.js";
 
@@ -48,6 +49,8 @@
 	let versionHistoryPath = $state("");
 	let previewOpen = $state(false);
 	let previewFile = $state<FileInfo | null>(null);
+	let shareOpen = $state(false);
+	let shareTarget = $state<FileInfo | null>(null);
 
 	// Trash setting
 	let trashEnabled = $state(true);
@@ -213,6 +216,11 @@
 	function handleVersions(item: FileInfo) {
 		versionHistoryPath = item.path;
 		versionHistoryOpen = true;
+	}
+
+	function handleShare(item: FileInfo) {
+		shareTarget = item;
+		shareOpen = true;
 	}
 
 	async function handlePaste() {
@@ -444,6 +452,7 @@
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
 						onversions={handleVersions}
+						onshare={handleShare}
 						ondrop={handleDrop}
 					/>
 				{:else}
@@ -456,6 +465,7 @@
 						onmoveto={handleMoveTo}
 						oncopyto={handleCopyTo}
 						onversions={handleVersions}
+						onshare={handleShare}
 						ondrop={handleDrop}
 					/>
 				{/if}
@@ -505,6 +515,14 @@
 	path={versionHistoryPath}
 	onrestored={refresh}
 />
+
+{#if shareTarget}
+	<ShareDialog
+		bind:open={shareOpen}
+		path={shareTarget.path}
+		isDir={shareTarget.isDir}
+	/>
+{/if}
 
 {#if previewOpen && previewFile}
 	<PreviewModal

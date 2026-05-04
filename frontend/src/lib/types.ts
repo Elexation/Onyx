@@ -42,3 +42,15 @@ export interface SearchResult {
 	path: string;
 	isDir: boolean;
 }
+
+export interface ShareLink {
+	id: number;
+	token?: string;
+	tokenLast8: string;
+	filePath: string;
+	isDir: boolean;
+	createdAt: number;
+	expiresAt?: number;
+	hasPassword: boolean;
+	downloadCount: number;
+}

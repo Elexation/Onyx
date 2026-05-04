@@ -14,6 +14,7 @@
 		oncopyto,
 		onpaste,
 		onversions,
+		onshare,
 		children,
 	}: {
 		item: { name: string; path: string; isDir: boolean } | null;
@@ -24,6 +25,7 @@
 		oncopyto: () => void;
 		onpaste: () => void;
 		onversions: () => void;
+		onshare: () => void;
 		children: Snippet<[Record<string, any>]>;
 	} = $props();
 
@@ -91,6 +93,8 @@
 			<ContextMenu.Separator />
 			<ContextMenu.Item onclick={onmoveto}>Move to...</ContextMenu.Item>
 			<ContextMenu.Item onclick={oncopyto}>Copy to...</ContextMenu.Item>
+			<ContextMenu.Separator />
+			<ContextMenu.Item onclick={onshare}>Share</ContextMenu.Item>
 			{#if !item.isDir}
 				<ContextMenu.Separator />
 				<ContextMenu.Item onclick={handleDownload}>Download</ContextMenu.Item>

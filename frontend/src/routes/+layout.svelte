@@ -21,7 +21,7 @@
 
 		if (auth.firstRun && path !== "/setup") {
 			goto("/setup");
-		} else if (!auth.firstRun && !auth.authenticated && path !== "/login") {
+		} else if (!auth.firstRun && !auth.authenticated && path !== "/login" && !path.startsWith("/s/")) {
 			goto("/login");
 		} else if (auth.authenticated && (path === "/login" || path === "/setup")) {
 			goto("/files");

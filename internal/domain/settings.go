@@ -18,7 +18,6 @@ const (
 	SettingSharesDefaultExpiry = "shares.default_expiry"
 	SettingSessionLifetime = "session.lifetime"
 	SettingUploadMaxSize = "upload.max_size"
-	SettingBrandingName = "branding.name"
 )
 
 var Defaults = map[string]string{
@@ -34,7 +33,6 @@ var Defaults = map[string]string{
 	SettingSharesDefaultExpiry: "168h",  // 7 days
 	SettingSessionLifetime:     "720h",  // 30 days
 	SettingUploadMaxSize:       "0",     // 0 = unlimited
-	SettingBrandingName:        "Onyx",
 }
 
 func GetBool(value string) bool {

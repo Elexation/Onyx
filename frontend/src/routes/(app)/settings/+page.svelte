@@ -171,9 +171,8 @@
 	{#if loading}
 		<p class="text-muted-foreground">Loading settings…</p>
 	{:else}
-		<Tabs value="general">
+		<Tabs value="versioning">
 			<TabsList class="mb-6">
-				<TabsTrigger value="general">General</TabsTrigger>
 				<TabsTrigger value="versioning">Versioning</TabsTrigger>
 				<TabsTrigger value="trash">Trash</TabsTrigger>
 				<TabsTrigger value="sharing">Sharing</TabsTrigger>
@@ -181,20 +180,6 @@
 				<TabsTrigger value="security">Security</TabsTrigger>
 			</TabsList>
 
-			<!-- General -->
-			<TabsContent value="general">
-				<div class="space-y-4">
-					<div class="space-y-2">
-						<Label for="branding-name">Application name</Label>
-						<Input
-							id="branding-name"
-							value={settings["branding.name"] ?? ""}
-							onchange={(e) => save("branding.name", e.currentTarget.value)}
-							class="max-w-xs"
-						/>
-					</div>
-				</div>
-			</TabsContent>
 
 			<!-- Versioning -->
 			<TabsContent value="versioning">

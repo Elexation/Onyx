@@ -139,10 +139,6 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("cannot exceed 102400 MB")
 		}
 
-	case domain.SettingBrandingName:
-		if value == "" {
-			return fmt.Errorf("must not be empty")
-		}
 	}
 
 	return nil

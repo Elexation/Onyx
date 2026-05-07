@@ -41,6 +41,13 @@ var extMIME = map[string]string{
 	".sql":   "text/x-sql",
 
 	// Images
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+	".gif":  "image/gif",
+	".bmp":  "image/bmp",
+	".tiff": "image/tiff",
+	".tif":  "image/tiff",
 	".svg":  "image/svg+xml",
 	".webp": "image/webp",
 	".avif": "image/avif",

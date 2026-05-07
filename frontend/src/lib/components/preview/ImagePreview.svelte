@@ -12,6 +12,13 @@
 		onnavigate: (file: FileInfo) => void;
 	} = $props();
 
+	let failed = $state(false);
+
+	$effect(() => {
+		file.path;
+		failed = false;
+	});
+
 	const currentIndex = $derived(siblings.findIndex((s) => s.path === file.path));
 
 	const hasPrev = $derived(currentIndex > 0);
@@ -40,11 +47,16 @@
 
 <div class="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden">
 	<div class="flex max-h-full max-w-full flex-1 items-center justify-center overflow-hidden">
-		<img
-			src={getPreviewUrl(file.path)}
-			alt={file.name}
-			class="h-full w-full object-contain"
-		/>
+		{#if failed}
+			<p class="text-sm text-muted-foreground">Unable to load image</p>
+		{:else}
+			<img
+				src={getPreviewUrl(file.path)}
+				alt={file.name}
+				class="max-h-full max-w-full object-contain"
+				onerror={() => failed = true}
+			/>
+		{/if}
 	</div>
 
 	{#if siblings.length > 1}

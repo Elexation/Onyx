@@ -83,5 +83,5 @@ export function isPreviewTooLarge(file: FileInfo): boolean {
 }
 
 export function getPreviewUrl(path: string): string {
-	return `/api/preview/${path}`;
+	return `/api/preview${path}`;
 }

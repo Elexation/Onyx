@@ -8,7 +8,7 @@ export async function listDirectory(path: string, showHidden = false): Promise<D
 }
 
 export function getDownloadUrl(path: string): string {
-	return `/api/download/${path}`;
+	return `/api/download${path}`;
 }
 
 export function getZipDownloadUrl(paths: string[]): string {

@@ -30,7 +30,9 @@
 	);
 
 	function handleBackdropClick(e: MouseEvent) {
-		if (e.target === e.currentTarget) onclose();
+		const target = e.target as HTMLElement;
+		if (target.closest("img, video, audio, button, a, pre, code, iframe, [data-preview-content]")) return;
+		onclose();
 	}
 
 	function handleDownload() {
@@ -46,7 +48,8 @@
 	class="fixed inset-0 z-50 flex flex-col bg-black/80"
 	onclick={handleBackdropClick}
 >
-	<div class="flex items-center justify-between border-b border-border/50 bg-background/90 px-4 py-3 backdrop-blur-sm">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="flex items-center justify-between border-b border-border/50 bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
 		<h2 class="min-w-0 flex-1 truncate text-sm font-medium">{file.name}</h2>
 		<div class="flex items-center gap-2">
 			<button
@@ -66,7 +69,7 @@
 		</div>
 	</div>
 
-	<div class="flex min-h-0 flex-1 flex-col p-4" onclick={(e) => e.stopPropagation()}>
+	<div class="flex min-h-0 flex-1 flex-col p-4">
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
 				<p class="text-sm">File too large to preview ({formatFileSize(file.size)})</p>

@@ -96,7 +96,7 @@
 		<p class="text-sm">{error}</p>
 	</div>
 {:else}
-	<div class="preview-text flex-1 overflow-auto rounded-md bg-[#1e1e1e] p-4 text-sm">
+	<div class="preview-text flex-1 overflow-auto rounded-md bg-[#1e1e1e] p-4 text-sm" data-preview-content>
 		{@html html}
 	</div>
 {/if}

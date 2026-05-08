@@ -55,12 +55,13 @@
 				alt={file.name}
 				class="max-h-full max-w-full object-contain"
 				onerror={() => failed = true}
+				data-preview-content
 			/>
 		{/if}
 	</div>
 
 	{#if siblings.length > 1}
-		<div class="flex items-center gap-3 text-sm text-muted-foreground">
+		<div class="flex items-center gap-3 text-sm text-muted-foreground" data-preview-content>
 			<button
 				class="rounded px-2 py-1 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasPrev}

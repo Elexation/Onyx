@@ -76,7 +76,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="flex flex-1 items-center justify-center">
-	<div class="w-full max-w-md rounded-lg bg-card p-6">
+	<div class="w-full max-w-md rounded-lg bg-card p-6" data-preview-content>
 		<audio
 			bind:this={audioEl}
 			src={getPreviewUrl(path)}

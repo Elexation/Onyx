@@ -180,6 +180,7 @@
 		src={getPreviewUrl(file.path)}
 		class="max-h-full max-w-full"
 		preload="metadata"
+		data-preview-content
 		onclick={togglePlay}
 		ondblclick={toggleFullscreen}
 		onplay={() => { playing = true; resetControlsTimer(); }}
@@ -194,6 +195,7 @@
 		<button
 			class="absolute inset-0 flex items-center justify-center"
 			onclick={togglePlay}
+			data-preview-content
 		>
 			<div class="flex size-16 items-center justify-center rounded-full bg-black/60 text-white">
 				<PlayIcon class="size-8 translate-x-0.5" />

@@ -39,7 +39,7 @@
 		<p class="text-sm">{error}</p>
 	</div>
 {:else}
-	<div class="flex-1 overflow-auto rounded-md bg-[#1e1e1e] p-6">
+	<div class="flex-1 overflow-auto rounded-md bg-[#1e1e1e] p-6" data-preview-content>
 		<article class="prose prose-invert max-w-none">
 			{@html html}
 		</article>

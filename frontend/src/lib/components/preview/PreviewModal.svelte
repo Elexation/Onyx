@@ -31,7 +31,7 @@
 
 	function handleBackdropClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
-		if (target.closest("img, video, audio, button, a, pre, code, iframe, [data-preview-content]")) return;
+		if (target.closest("[data-preview-content]")) return;
 		onclose();
 	}
 

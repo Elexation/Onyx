@@ -211,7 +211,7 @@
 		<p class="text-sm">{error}</p>
 	</div>
 {:else}
-	<div class="flex flex-1 flex-col overflow-hidden">
+	<div class="flex flex-1 flex-col overflow-hidden" data-preview-content>
 		<div class="flex items-center gap-2 border-b border-border/50 bg-background/90 px-3 py-1.5 text-sm backdrop-blur-sm">
 			<button
 				class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"

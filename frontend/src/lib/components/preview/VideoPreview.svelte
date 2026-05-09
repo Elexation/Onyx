@@ -8,7 +8,7 @@
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
 
-	let { file }: { file: FileInfo } = $props();
+	let { file, onclose }: { file: FileInfo; onclose: () => void } = $props();
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let playing = $state(false);
@@ -18,6 +18,7 @@
 	let muted = $state(false);
 	let bufferedEnd = $state(0);
 	let showControls = $state(true);
+	let failed = $state(false);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
 
@@ -55,8 +56,8 @@
 	}
 
 	function togglePlay() {
-		if (!videoEl) return;
-		if (videoEl.paused) videoEl.play();
+		if (!videoEl || failed) return;
+		if (videoEl.paused) videoEl.play().catch(() => { failed = true; });
 		else videoEl.pause();
 	}
 
@@ -189,20 +190,28 @@
 		onloadedmetadata={() => { if (videoEl) duration = videoEl.duration; }}
 		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; } }}
 		onended={() => { playing = false; showControls = true; clearPosition(); }}
+		onerror={() => { failed = true; }}
 	></video>
 
-	{#if !playing && currentTime === 0}
-		<button
-			class="absolute inset-0 flex items-center justify-center"
-			onclick={togglePlay}
-			data-preview-content
-		>
-			<div class="flex size-16 items-center justify-center rounded-full bg-black/60 text-white">
-				<PlayIcon class="size-8 translate-x-0.5" />
-			</div>
+	{#if failed}
+		<button class="absolute inset-0 flex items-center justify-center" onclick={onclose}>
+			<p class="text-sm text-muted-foreground">Unable to play video</p>
 		</button>
+	{:else}
+		{#if !playing && currentTime === 0}
+			<button
+				class="absolute inset-0 flex items-center justify-center"
+				onclick={togglePlay}
+				data-preview-content
+			>
+				<div class="flex size-16 items-center justify-center rounded-full bg-black/60 text-white">
+					<PlayIcon class="size-8 translate-x-0.5" />
+				</div>
+			</button>
+		{/if}
 	{/if}
 
+	{#if !failed}
 	<div
 		class="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-black/70 px-3 py-2 backdrop-blur-sm transition-opacity duration-200"
 		class:opacity-0={!showControls}
@@ -277,6 +286,7 @@
 			</button>
 		</div>
 	</div>
+	{/if}
 </div>
 
 <style>

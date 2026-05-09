@@ -91,7 +91,7 @@
 				onnavigate={(f) => { file = f; }}
 			/>
 		{:else if type === "video"}
-			<VideoPreview {file} />
+			<VideoPreview {file} {onclose} />
 		{:else if type === "audio"}
 			<AudioPreview path={file.path} />
 		{:else if type === "pdf"}

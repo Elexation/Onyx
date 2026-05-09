@@ -14,10 +14,11 @@
 	let duration = $state(0);
 	let volume = $state(1);
 	let muted = $state(false);
+	let failed = $state(false);
 
 	function togglePlay() {
-		if (!audioEl) return;
-		if (audioEl.paused) audioEl.play();
+		if (!audioEl || failed) return;
+		if (audioEl.paused) audioEl.play().catch(() => { failed = true; });
 		else audioEl.pause();
 	}
 
@@ -87,67 +88,72 @@
 			onloadedmetadata={() => { if (audioEl) duration = audioEl.duration; }}
 			onvolumechange={() => { if (audioEl) { volume = audioEl.volume; muted = audioEl.muted; } }}
 			onended={() => { playing = false; }}
+			onerror={() => { failed = true; }}
 			class="hidden"
 		></audio>
 
-		<div class="flex flex-col gap-4">
-			<div class="flex items-center justify-center">
-				<button
-					class="flex size-12 items-center justify-center rounded-full bg-accent text-foreground transition-colors hover:bg-accent/80"
-					onclick={togglePlay}
-				>
-					{#if playing}
-						<PauseIcon class="size-5" />
-					{:else}
-						<PlayIcon class="size-5 translate-x-0.5" />
-					{/if}
-				</button>
-			</div>
+		{#if failed}
+			<p class="text-center text-sm text-muted-foreground">Unable to play audio</p>
+		{:else}
+			<div class="flex flex-col gap-4">
+				<div class="flex items-center justify-center">
+					<button
+						class="flex size-12 items-center justify-center rounded-full bg-accent text-foreground transition-colors hover:bg-accent/80"
+						onclick={togglePlay}
+					>
+						{#if playing}
+							<PauseIcon class="size-5" />
+						{:else}
+							<PlayIcon class="size-5 translate-x-0.5" />
+						{/if}
+					</button>
+				</div>
 
-			<div class="flex flex-col gap-1">
-				<div class="seek-bar relative h-1.5 w-full cursor-pointer rounded-full bg-muted">
-					<div
-						class="absolute left-0 top-0 h-full rounded-full bg-foreground"
-						style="width: {seekPercent}%"
-					></div>
+				<div class="flex flex-col gap-1">
+					<div class="seek-bar relative h-1.5 w-full cursor-pointer rounded-full bg-muted">
+						<div
+							class="absolute left-0 top-0 h-full rounded-full bg-foreground"
+							style="width: {seekPercent}%"
+						></div>
+						<input
+							type="range"
+							min="0"
+							max={duration}
+							step="0.1"
+							value={currentTime}
+							oninput={handleSeekInput}
+							class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+						/>
+					</div>
+					<div class="flex justify-between text-xs text-muted-foreground">
+						<span>{formatMediaTime(currentTime)}</span>
+						<span>{formatMediaTime(duration)}</span>
+					</div>
+				</div>
+
+				<div class="flex items-center gap-2">
+					<button
+						class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+						onclick={toggleMute}
+					>
+						{#if muted || volume === 0}
+							<VolumeXIcon class="size-4" />
+						{:else}
+							<Volume2Icon class="size-4" />
+						{/if}
+					</button>
 					<input
 						type="range"
 						min="0"
-						max={duration}
-						step="0.1"
-						value={currentTime}
-						oninput={handleSeekInput}
-						class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+						max="1"
+						step="0.05"
+						value={muted ? 0 : volume}
+						oninput={handleVolumeInput}
+						class="volume-slider h-1 w-full cursor-pointer appearance-none rounded-full bg-muted"
 					/>
 				</div>
-				<div class="flex justify-between text-xs text-muted-foreground">
-					<span>{formatMediaTime(currentTime)}</span>
-					<span>{formatMediaTime(duration)}</span>
-				</div>
 			</div>
-
-			<div class="flex items-center gap-2">
-				<button
-					class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-					onclick={toggleMute}
-				>
-					{#if muted || volume === 0}
-						<VolumeXIcon class="size-4" />
-					{:else}
-						<Volume2Icon class="size-4" />
-					{/if}
-				</button>
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.05"
-					value={muted ? 0 : volume}
-					oninput={handleVolumeInput}
-					class="volume-slider h-1 w-full cursor-pointer appearance-none rounded-full bg-muted"
-				/>
-			</div>
-		</div>
+		{/if}
 	</div>
 </div>
 

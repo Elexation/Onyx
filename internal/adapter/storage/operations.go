@@ -16,6 +16,19 @@ func (s *LocalStorage) MakeDir(dirPath string) error {
 	return s.root.Mkdir(dirPath, 0755)
 }
 
+// SameFile reports whether two paths refer to the same underlying file.
+func (s *LocalStorage) SameFile(path1, path2 string) bool {
+	fi1, err := s.root.Stat(cleanPath(path1))
+	if err != nil {
+		return false
+	}
+	fi2, err := s.root.Stat(cleanPath(path2))
+	if err != nil {
+		return false
+	}
+	return os.SameFile(fi1, fi2)
+}
+
 // Rename changes the name of a file or directory within the same parent.
 // newName must not contain path separators.
 func (s *LocalStorage) Rename(filePath, newName string) error {

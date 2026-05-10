@@ -115,7 +115,10 @@ func (s *FileService) Rename(filePath, newName string) error {
 	parent := filePath[:strings.LastIndex(filePath, "/")+1]
 	targetPath := parent + newName
 	if _, err := s.storage.Stat(targetPath); err == nil {
-		return &ConflictError{Path: targetPath}
+		// Allow case-only renames (same file on case-insensitive FS)
+		if !s.storage.SameFile(filePath, targetPath) {
+			return &ConflictError{Path: targetPath}
+		}
 	}
 
 	if err := s.storage.Rename(filePath, newName); err != nil {

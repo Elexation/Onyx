@@ -16,10 +16,14 @@
 		file = $bindable(),
 		items,
 		onclose,
+		url,
+		downloadUrl,
 	}: {
 		file: FileInfo;
 		items: FileInfo[];
 		onclose: () => void;
+		url?: string;
+		downloadUrl?: string;
 	} = $props();
 
 	const type = $derived(getPreviewType(file));
@@ -37,7 +41,7 @@
 
 	function handleDownload() {
 		const a = document.createElement("a");
-		a.href = getDownloadUrl(file.path);
+		a.href = downloadUrl ?? getDownloadUrl(file.path);
 		a.download = file.name;
 		a.click();
 	}
@@ -81,21 +85,22 @@
 				</button>
 			</div>
 		{:else if type === "text"}
-			<TextPreview path={file.path} />
+			<TextPreview path={file.path} {url} />
 		{:else if type === "markdown"}
-			<MarkdownPreview path={file.path} />
+			<MarkdownPreview path={file.path} {url} />
 		{:else if type === "image"}
 			<ImagePreview
 				{file}
 				siblings={imageSiblings}
 				onnavigate={(f) => { file = f; }}
+				{url}
 			/>
 		{:else if type === "video"}
-			<VideoPreview {file} {onclose} />
+			<VideoPreview {file} {onclose} {url} />
 		{:else if type === "audio"}
-			<AudioPreview path={file.path} />
+			<AudioPreview path={file.path} {url} />
 		{:else if type === "pdf"}
-			<PdfPreview path={file.path} />
+			<PdfPreview path={file.path} {url} />
 		{/if}
 	</div>
 </div>

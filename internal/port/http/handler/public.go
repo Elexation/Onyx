@@ -149,6 +149,56 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, modTime, file)
 }
 
+// Raw handles GET /s/{token}/raw or GET /s/{token}/raw/* — serves a file inline for preview.
+func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
+	token := extractToken(r)
+	link, _, err := h.shares.Validate(token)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if link == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
+		return
+	}
+
+	if link.HasPassword && !h.hasValidSession(r, token) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
+		return
+	}
+
+	filePath := link.FilePath
+	if link.IsDir {
+		subPath := extractSubPath2(r, token, "raw")
+		if subPath == "" || subPath == "/" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify a file to preview"})
+			return
+		}
+		filePath = path.Join(link.FilePath, subPath)
+		if !strings.HasPrefix(filePath, link.FilePath) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
+			return
+		}
+	}
+
+	file, modTime, _, err := h.files.OpenFile(filePath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
+		return
+	}
+	defer file.Close()
+
+	name := path.Base(filePath)
+
+	// SVGs can contain scripts — sandbox them
+	if strings.HasSuffix(strings.ToLower(name), ".svg") {
+		w.Header().Set("Content-Security-Policy", "sandbox")
+	}
+
+	w.Header().Set("Content-Disposition", `inline; filename="`+name+`"`)
+	http.ServeContent(w, r, name, modTime, file)
+}
+
 func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.ShareLink) {
 	resp := map[string]any{
 		"filePath": link.FilePath,
@@ -163,6 +213,12 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 			return
 		}
 		resp["items"] = items
+	} else {
+		info, err := h.files.GetFileInfo(link.FilePath)
+		if err == nil {
+			resp["mimeType"] = info.MIMEType
+			resp["size"] = info.Size
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -218,6 +274,15 @@ func extractToken(r *http.Request) string {
 
 func extractSubPath(r *http.Request, token string) string {
 	prefix := "/api/public/s/" + token + "/dl"
+	p := strings.TrimPrefix(r.URL.Path, prefix)
+	if p == "" {
+		return "/"
+	}
+	return p
+}
+
+func extractSubPath2(r *http.Request, token string, segment string) string {
+	prefix := "/api/public/s/" + token + "/" + segment
 	p := strings.TrimPrefix(r.URL.Path, prefix)
 	if p == "" {
 		return "/"

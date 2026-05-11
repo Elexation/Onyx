@@ -10,7 +10,7 @@
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-	let { path }: { path: string } = $props();
+	let { path, url }: { path: string; url?: string } = $props();
 
 	let containerEl = $state<HTMLDivElement | null>(null);
 	let pdfDoc = $state<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -155,7 +155,7 @@
 		renderingPages.clear();
 
 		const loadingTask = pdfjsLib.getDocument({
-			url: getPreviewUrl(path),
+			url: url ?? getPreviewUrl(path),
 			withCredentials: true,
 		});
 

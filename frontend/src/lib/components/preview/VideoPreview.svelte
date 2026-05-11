@@ -8,7 +8,7 @@
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
 
-	let { file, onclose }: { file: FileInfo; onclose: () => void } = $props();
+	let { file, onclose, url }: { file: FileInfo; onclose: () => void; url?: string } = $props();
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let playing = $state(false);
@@ -178,7 +178,7 @@
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video
 		bind:this={videoEl}
-		src={getPreviewUrl(file.path)}
+		src={url ?? getPreviewUrl(file.path)}
 		class="max-h-full max-w-full"
 		preload="metadata"
 		data-preview-content

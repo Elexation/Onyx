@@ -6,10 +6,12 @@
 		file,
 		siblings,
 		onnavigate,
+		url,
 	}: {
 		file: FileInfo;
 		siblings: FileInfo[];
 		onnavigate: (file: FileInfo) => void;
+		url?: string;
 	} = $props();
 
 	let failed = $state(false);
@@ -51,7 +53,7 @@
 			<p class="text-sm text-muted-foreground">Unable to load image</p>
 		{:else}
 			<img
-				src={getPreviewUrl(file.path)}
+				src={url ?? getPreviewUrl(file.path)}
 				alt={file.name}
 				class="max-h-full max-w-full object-contain"
 				onerror={() => failed = true}

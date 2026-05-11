@@ -5,8 +5,10 @@
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
-	import { Download, FolderOpen, FileIcon, Lock } from "lucide-svelte";
+	import { Download, FolderOpen, FileIcon, Lock, Eye } from "lucide-svelte";
 	import type { FileInfo } from "$lib/types.js";
+	import { canPreview } from "$lib/preview.js";
+	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
 
 	const token = $derived(page.params.token);
 
@@ -20,7 +22,18 @@
 	let fileName = $state("");
 	let filePath = $state("");
 	let isDir = $state(false);
+	let mimeType = $state("");
+	let fileSize = $state(0);
 	let items = $state<FileInfo[]>([]);
+
+	let showPreview = $state(false);
+
+	const fileInfo: FileInfo = $derived({ name: fileName, path: filePath, isDir: false, size: fileSize, modTime: 0, mimeType });
+	const previewable = $derived(!isDir && fileName && canPreview(fileInfo));
+
+	function rawUrl() {
+		return `/api/public/s/${token}/raw`;
+	}
 
 	$effect(() => {
 		if (token) loadShare();
@@ -80,6 +93,8 @@
 		fileName = data.fileName;
 		filePath = data.filePath;
 		isDir = data.isDir;
+		mimeType = data.mimeType || "";
+		fileSize = data.size || 0;
 		items = data.items || [];
 	}
 
@@ -186,14 +201,32 @@
 				</Card.Title>
 			</Card.Header>
 			<Card.Content>
-				<a href={downloadUrl()} class="block">
-					<Button class="w-full">
-						<Download class="mr-2 size-4" />
-						Download
-					</Button>
-				</a>
+				<div class="flex flex-col gap-2">
+					{#if previewable}
+						<Button class="w-full" onclick={() => showPreview = true}>
+							<Eye class="mr-2 size-4" />
+							Preview
+						</Button>
+					{/if}
+					<a href={downloadUrl()} class="block">
+						<Button variant={previewable ? "secondary" : "default"} class="w-full">
+							<Download class="mr-2 size-4" />
+							Download
+						</Button>
+					</a>
+				</div>
 			</Card.Content>
 		</Card.Root>
 	{/if}
 </div>
+
+{#if showPreview}
+	<PreviewModal
+		file={fileInfo}
+		items={[]}
+		onclose={() => showPreview = false}
+		url={rawUrl()}
+		downloadUrl={downloadUrl()}
+	/>
+{/if}
 <Toaster theme="dark" />

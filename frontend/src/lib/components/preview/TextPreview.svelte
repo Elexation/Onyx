@@ -2,7 +2,7 @@
 	import { getPreviewUrl } from "$lib/preview.js";
 	import { codeToHtml } from "shiki";
 
-	let { path }: { path: string } = $props();
+	let { path, url }: { path: string; url?: string } = $props();
 
 	let html = $state("");
 	let loading = $state(true);
@@ -73,7 +73,7 @@
 		loading = true;
 		error = "";
 		try {
-			const res = await fetch(getPreviewUrl(p), { credentials: "include" });
+			const res = await fetch(url ?? getPreviewUrl(p), { credentials: "include" });
 			if (!res.ok) throw new Error("Failed to load file");
 			const code = await res.text();
 			const filename = p.split("/").pop() ?? p;

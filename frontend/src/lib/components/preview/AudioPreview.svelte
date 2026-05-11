@@ -6,7 +6,7 @@
 	import Volume2Icon from "@lucide/svelte/icons/volume-2";
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 
-	let { path }: { path: string } = $props();
+	let { path, url }: { path: string; url?: string } = $props();
 
 	let audioEl = $state<HTMLAudioElement | null>(null);
 	let playing = $state(false);
@@ -80,7 +80,7 @@
 	<div class="w-full max-w-md rounded-lg bg-card p-6" data-preview-content>
 		<audio
 			bind:this={audioEl}
-			src={getPreviewUrl(path)}
+			src={url ?? getPreviewUrl(path)}
 			preload="metadata"
 			onplay={() => { playing = true; }}
 			onpause={() => { playing = false; }}

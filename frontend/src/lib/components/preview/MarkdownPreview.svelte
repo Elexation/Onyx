@@ -3,7 +3,7 @@
 	import { marked } from "marked";
 	import DOMPurify from "dompurify";
 
-	let { path }: { path: string } = $props();
+	let { path, url }: { path: string; url?: string } = $props();
 
 	let html = $state("");
 	let loading = $state(true);
@@ -17,7 +17,7 @@
 		loading = true;
 		error = "";
 		try {
-			const res = await fetch(getPreviewUrl(p), { credentials: "include" });
+			const res = await fetch(url ?? getPreviewUrl(p), { credentials: "include" });
 			if (!res.ok) throw new Error("Failed to load file");
 			const raw = await res.text();
 			const rendered = marked.parse(raw, { async: false }) as string;

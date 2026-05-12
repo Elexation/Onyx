@@ -95,6 +95,16 @@ func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"shares": links})
 }
 
+// Count handles GET /api/shares/count
+func (h *ShareHandler) Count(w http.ResponseWriter, r *http.Request) {
+	count, err := h.shares.Count()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to count shares"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": count})
+}
+
 // Delete handles DELETE /api/shares/{id}
 func (h *ShareHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")

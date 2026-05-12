@@ -24,3 +24,7 @@ export async function getShareByPath(path: string): Promise<ShareLink | null> {
 export async function deleteShare(id: number): Promise<{ status: string }> {
 	return request<{ status: string }>("DELETE", `/api/shares/${id}`);
 }
+
+export async function shareCount(): Promise<{ count: number }> {
+	return request<{ count: number }>("GET", "/api/shares/count");
+}

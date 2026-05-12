@@ -11,6 +11,7 @@
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { uploadState } from "$lib/stores/upload.svelte.js";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
+	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
@@ -219,6 +220,7 @@
 	}
 
 	function handleShare(item: FileInfo) {
+		if (!sharesEnabled.enabled) return;
 		shareTarget = item;
 		shareOpen = true;
 	}

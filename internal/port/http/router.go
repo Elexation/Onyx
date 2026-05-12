@@ -21,7 +21,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
 	uploadHandler := handler.NewUploadHandler(files)
-	settingsHandler := handler.NewSettingsHandler(settings, auth)
+	settingsHandler := handler.NewSettingsHandler(settings, auth, shares)
 	trashHandler := handler.NewTrashHandler(trash)
 	versionHandler := handler.NewVersionHandler(versions)
 	searchHandler := handler.NewSearchHandler(search)
@@ -81,6 +81,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Post("/", shareHandler.Create)
 			r.Get("/", shareHandler.List)
 			r.Get("/by-path", shareHandler.GetByPath)
+			r.Get("/count", shareHandler.Count)
 			r.Delete("/{id}", shareHandler.Delete)
 		})
 

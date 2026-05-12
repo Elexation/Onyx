@@ -15,7 +15,6 @@ const (
 	SettingVersionsMaxFileSize     = "versions.max_file_size"
 	SettingVersionsMaxStorageBytes = "versions.max_storage"
 	SettingSharesEnabled = "shares.enabled"
-	SettingSharesDefaultExpiry = "shares.default_expiry"
 	SettingSessionLifetime = "session.lifetime"
 	SettingUploadMaxSize = "upload.max_size"
 )
@@ -29,9 +28,8 @@ var Defaults = map[string]string{
 	SettingVersionsMaxAge:          "2160h",      // 90 days
 	SettingVersionsMaxFileSize:     "1073741824", // 1 GiB
 	SettingVersionsMaxStorageBytes: "0",          // 0 = unlimited, stored in bytes
-	SettingSharesEnabled:       "true",
-	SettingSharesDefaultExpiry: "168h",  // 7 days
-	SettingSessionLifetime:     "720h",  // 30 days
+	SettingSharesEnabled:   "true",
+	SettingSessionLifetime: "720h", // 30 days
 	SettingUploadMaxSize:       "0",     // 0 = unlimited
 }
 

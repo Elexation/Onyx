@@ -53,6 +53,29 @@ func (r *ShareRepo) GetByTokenHash(tokenHash string) (*domain.ShareLink, *string
 	return &link, pwHash, nil
 }
 
+func (r *ShareRepo) GetByPath(filePath string) (*domain.ShareLink, error) {
+	var link domain.ShareLink
+	var isDir int
+	var expiresAt sql.NullInt64
+	var passwordHash sql.NullString
+	err := r.db.QueryRow(
+		"SELECT id, token_last8, file_path, is_dir, created_at, expires_at, password_hash, download_count FROM share_links WHERE file_path = ?",
+		filePath,
+	).Scan(&link.ID, &link.TokenLast8, &link.FilePath, &isDir, &link.CreatedAt, &expiresAt, &passwordHash, &link.DownloadCount)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get share by path: %w", err)
+	}
+	link.IsDir = isDir != 0
+	if expiresAt.Valid {
+		link.ExpiresAt = expiresAt.Int64
+	}
+	link.HasPassword = passwordHash.Valid
+	return &link, nil
+}
+
 func (r *ShareRepo) List() ([]domain.ShareLink, error) {
 	rows, err := r.db.Query(
 		"SELECT id, token_last8, file_path, is_dir, created_at, expires_at, password_hash, download_count FROM share_links ORDER BY created_at DESC",

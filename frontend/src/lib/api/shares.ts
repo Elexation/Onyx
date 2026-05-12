@@ -16,6 +16,11 @@ export async function listShares(): Promise<{ shares: ShareLink[] }> {
 	return request<{ shares: ShareLink[] }>("GET", "/api/shares");
 }
 
+export async function getShareByPath(path: string): Promise<ShareLink | null> {
+	const res = await request<{ share: ShareLink | null }>("GET", `/api/shares/by-path?path=${encodeURIComponent(path)}`);
+	return res.share;
+}
+
 export async function deleteShare(id: number): Promise<{ status: string }> {
 	return request<{ status: string }>("DELETE", `/api/shares/${id}`);
 }

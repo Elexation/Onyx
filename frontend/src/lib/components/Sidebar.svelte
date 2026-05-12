@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { page } from "$app/state";
-	import { FolderOpen, Trash2, Settings } from "lucide-svelte";
+	import { FolderOpen, Link, Trash2, Settings } from "lucide-svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 
 	const links = [
 		{ href: "/files", label: "Files", icon: FolderOpen },
+		{ href: "/shares", label: "Shares", icon: Link },
 		{ href: "/trash", label: "Trash", icon: Trash2 },
 		{ href: "/settings", label: "Settings", icon: Settings },
 	];

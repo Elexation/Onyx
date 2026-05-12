@@ -49,12 +49,37 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	link, fullToken, err := h.shares.Create(req.Path, req.IsDir, expiresIn, req.Password)
 	if err != nil {
+		if err.Error() == "a share link already exists for this path" {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	link.Token = fullToken
 	writeJSON(w, http.StatusCreated, link)
+}
+
+// GetByPath handles GET /api/shares/by-path?path=...
+func (h *ShareHandler) GetByPath(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path is required"})
+		return
+	}
+
+	link, err := h.shares.GetByPath(path)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up share"})
+		return
+	}
+	if link == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"share": nil})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"share": link})
 }
 
 // List handles GET /api/shares

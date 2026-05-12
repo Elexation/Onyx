@@ -80,6 +80,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Route("/shares", func(r chi.Router) {
 			r.Post("/", shareHandler.Create)
 			r.Get("/", shareHandler.List)
+			r.Get("/by-path", shareHandler.GetByPath)
 			r.Delete("/{id}", shareHandler.Delete)
 		})
 

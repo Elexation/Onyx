@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -15,6 +16,7 @@ import (
 type ShareRepo interface {
 	Create(tokenHash, tokenLast8, filePath string, isDir bool, createdAt int64, expiresAt *int64, passwordHash *string) (int64, error)
 	GetByTokenHash(tokenHash string) (*domain.ShareLink, *string, error)
+	GetByPath(filePath string) (*domain.ShareLink, error)
 	List() ([]domain.ShareLink, error)
 	Delete(id int64) error
 	IncrementDownloadCount(id int64) error
@@ -30,10 +32,33 @@ func NewShareService(repo ShareRepo, settings *SettingsService) *ShareService {
 	return &ShareService{repo: repo, settings: settings}
 }
 
+func (s *ShareService) GetByPath(filePath string) (*domain.ShareLink, error) {
+	link, err := s.repo.GetByPath(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if link != nil && link.ExpiresAt > 0 && link.ExpiresAt < time.Now().Unix() {
+		_ = s.repo.Delete(link.ID)
+		return nil, nil
+	}
+	return link, nil
+}
+
 func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Duration, password string) (*domain.ShareLink, string, error) {
 	enabledStr, _ := s.settings.Get(domain.SettingSharesEnabled)
 	if !domain.GetBool(enabledStr) {
 		return nil, "", fmt.Errorf("sharing is disabled")
+	}
+
+	existing, err := s.repo.GetByPath(filePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("check existing share: %w", err)
+	}
+	if existing != nil {
+		if existing.ExpiresAt == 0 || existing.ExpiresAt >= time.Now().Unix() {
+			return nil, "", fmt.Errorf("a share link already exists for this path")
+		}
+		_ = s.repo.Delete(existing.ID)
 	}
 
 	tokenBytes := make([]byte, 16)
@@ -72,6 +97,9 @@ func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Durat
 
 	id, err := s.repo.Create(tokenHash, tokenLast8, filePath, isDir, now, expiresAt, pwHash)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil, "", fmt.Errorf("a share link already exists for this path")
+		}
 		return nil, "", err
 	}
 

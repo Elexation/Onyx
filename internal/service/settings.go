@@ -67,7 +67,7 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("must be true or false")
 		}
 
-	case domain.SettingTrashPurgeAge, domain.SettingVersionsMaxAge, domain.SettingSharesDefaultExpiry:
+	case domain.SettingTrashPurgeAge, domain.SettingVersionsMaxAge:
 		d, err := time.ParseDuration(value)
 		if err != nil {
 			return fmt.Errorf("invalid duration format")
@@ -75,8 +75,8 @@ func validateSetting(key, value string) error {
 		if d < 0 {
 			return fmt.Errorf("must be 0 or positive")
 		}
-		if d > 87600*time.Hour {
-			return fmt.Errorf("cannot exceed 87600 hours")
+		if d > 8760*time.Hour {
+			return fmt.Errorf("cannot exceed 8760 hours")
 		}
 
 	case domain.SettingSessionLifetime:
@@ -87,8 +87,8 @@ func validateSetting(key, value string) error {
 		if d < time.Hour {
 			return fmt.Errorf("must be at least 1 hour")
 		}
-		if d > 87600*time.Hour {
-			return fmt.Errorf("cannot exceed 87600 hours")
+		if d > 720*time.Hour {
+			return fmt.Errorf("cannot exceed 720 hours")
 		}
 
 	case domain.SettingVersionsMaxCount:
@@ -99,11 +99,11 @@ func validateSetting(key, value string) error {
 		if n < 0 {
 			return fmt.Errorf("must be 0 or positive")
 		}
-		if n > 10000 {
-			return fmt.Errorf("cannot exceed 10000")
+		if n > 100 {
+			return fmt.Errorf("cannot exceed 100")
 		}
 
-	case domain.SettingTrashMaxSize, domain.SettingVersionsMaxStorageBytes:
+	case domain.SettingTrashMaxSize:
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return fmt.Errorf("must be a number")
@@ -115,7 +115,7 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("cannot exceed 102400 MB")
 		}
 
-	case domain.SettingVersionsMaxFileSize:
+	case domain.SettingVersionsMaxStorageBytes, domain.SettingVersionsMaxFileSize:
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return fmt.Errorf("must be a number")
@@ -123,8 +123,8 @@ func validateSetting(key, value string) error {
 		if n < 0 {
 			return fmt.Errorf("must be 0 or positive")
 		}
-		if n > 102400*1024*1024 {
-			return fmt.Errorf("cannot exceed 102400 MB")
+		if n > 20480*1024*1024 {
+			return fmt.Errorf("cannot exceed 20480 MB")
 		}
 
 	case domain.SettingUploadMaxSize:

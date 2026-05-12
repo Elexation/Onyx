@@ -124,6 +124,23 @@ func (r *ShareRepo) IncrementDownloadCount(id int64) error {
 	return nil
 }
 
+func (r *ShareRepo) DeleteAll() (int64, error) {
+	res, err := r.db.Exec("DELETE FROM share_links")
+	if err != nil {
+		return 0, fmt.Errorf("delete all shares: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+func (r *ShareRepo) Count() (int64, error) {
+	var n int64
+	err := r.db.QueryRow("SELECT COUNT(*) FROM share_links").Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count shares: %w", err)
+	}
+	return n, nil
+}
+
 func (r *ShareRepo) DeleteExpired(now int64) (int64, error) {
 	res, err := r.db.Exec("DELETE FROM share_links WHERE expires_at IS NOT NULL AND expires_at < ?", now)
 	if err != nil {

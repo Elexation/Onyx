@@ -2,6 +2,7 @@
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
+	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { getDownloadUrl } from "$lib/api/files.js";
 	import type { Snippet } from "svelte";
 
@@ -93,8 +94,10 @@
 			<ContextMenu.Separator />
 			<ContextMenu.Item onclick={onmoveto}>Move to...</ContextMenu.Item>
 			<ContextMenu.Item onclick={oncopyto}>Copy to...</ContextMenu.Item>
-			<ContextMenu.Separator />
-			<ContextMenu.Item onclick={onshare}>Share</ContextMenu.Item>
+			{#if sharesEnabled.enabled}
+				<ContextMenu.Separator />
+				<ContextMenu.Item onclick={onshare}>Share</ContextMenu.Item>
+			{/if}
 			{#if !item.isDir}
 				<ContextMenu.Separator />
 				<ContextMenu.Item onclick={handleDownload}>Download</ContextMenu.Item>

@@ -2,10 +2,11 @@
 	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { listShares, deleteShare } from "$lib/api/shares.js";
+	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { formatDate } from "$lib/utils/format.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-	import { Link, Trash2, FolderOpen, FileText, Lock } from "lucide-svelte";
+	import { Link, Link2Off, Trash2, FolderOpen, FileText, Lock } from "lucide-svelte";
 	import type { ShareLink } from "$lib/types.js";
 
 	let shares = $state<ShareLink[]>([]);
@@ -79,7 +80,13 @@
 	</div>
 
 	<!-- Content -->
-	{#if loading}
+	{#if !sharesEnabled.enabled}
+		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
+			<Link2Off class="size-12 opacity-30" />
+			<p class="text-sm">Sharing is disabled</p>
+			<p class="text-xs">Enable it in Settings to create share links.</p>
+		</div>
+	{:else if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
 			Loading...
 		</div>

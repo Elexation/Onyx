@@ -2,24 +2,26 @@
 	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { getSettings, updateSettings, changePassword } from "$lib/api/settings";
+	import { shareCount } from "$lib/api/shares";
+	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from "$lib/components/ui/tabs/index.js";
 	import { Switch } from "$lib/components/ui/switch/index.js";
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Separator } from "$lib/components/ui/separator/index.js";
+	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 
 	const MIN_PASSWORD_LENGTH = 8;
 
 	const caps: Record<string, { min: number; max: number; label: string }> = {
-		"versions.max_count": { min: 0, max: 10000, label: "Max versions" },
-		"versions.max_age": { min: 0, max: 87600, label: "Max version age" },
-		"versions.max_file_size": { min: 0, max: 102400, label: "Max file size to version" },
-		"versions.max_storage": { min: 0, max: 102400, label: "Max version storage" },
-		"trash.purge_age": { min: 0, max: 87600, label: "Trash purge age" },
+		"versions.max_count": { min: 0, max: 100, label: "Max versions" },
+		"versions.max_age": { min: 0, max: 8760, label: "Max version age" },
+		"versions.max_file_size": { min: 0, max: 20480, label: "Max file size to version" },
+		"versions.max_storage": { min: 0, max: 20480, label: "Max version storage" },
+		"trash.purge_age": { min: 0, max: 8760, label: "Trash purge age" },
 		"trash.max_size": { min: 0, max: 102400, label: "Max trash size" },
-		"shares.default_expiry": { min: 0, max: 87600, label: "Share expiry" },
-		"session.lifetime": { min: 1, max: 87600, label: "Session lifetime" },
+		"session.lifetime": { min: 1, max: 720, label: "Session lifetime" },
 		"upload.max_size": { min: 0, max: 102400, label: "Max file size" },
 	};
 
@@ -31,6 +33,7 @@
 	let confirmPassword = $state("");
 	let changingPassword = $state(false);
 
+	let shareDisableConfirmOpen = $state(false);
 	let debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 	onMount(async () => {
@@ -62,6 +65,29 @@
 
 	function toggleBool(key: string, checked: boolean) {
 		save(key, checked ? "true" : "false");
+		if (key === "shares.enabled") {
+			sharesEnabled.set(checked);
+		}
+	}
+
+	async function handleShareToggle(checked: boolean) {
+		if (checked) {
+			toggleBool("shares.enabled", true);
+			return;
+		}
+		try {
+			const res = await shareCount();
+			if (res.count > 0) {
+				shareDisableConfirmOpen = true;
+				return;
+			}
+		} catch {}
+		toggleBool("shares.enabled", false);
+	}
+
+	function confirmDisableSharing() {
+		shareDisableConfirmOpen = false;
+		toggleBool("shares.enabled", false);
 	}
 
 	function validateAndSaveInt(key: string, raw: string) {
@@ -201,13 +227,13 @@
 							id="versions-max-count"
 							type="number"
 							min="0"
-							max="10000"
+							max="100"
 							step="1"
 							value={settings["versions.max_count"] ?? "10"}
 							onchange={(e) => validateAndSaveInt("versions.max_count", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 10,000</p>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 100</p>
 					</div>
 					<div class="space-y-2">
 						<Label for="versions-max-age">Maximum version age (hours)</Label>
@@ -215,13 +241,13 @@
 							id="versions-max-age"
 							type="number"
 							min="0"
-							max="87600"
+							max="8760"
 							step="1"
 							value={durationToHours(settings["versions.max_age"] ?? "2160h")}
 							onchange={(e) => validateAndSaveDuration("versions.max_age", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">0 = never expire. Max: 87,600 hours (10 years). Default: 2,160 (90 days)</p>
+						<p class="text-xs text-muted-foreground">0 = never expire. Max: 8,760 hours (1 year). Default: 2,160 (90 days)</p>
 					</div>
 					<div class="space-y-2">
 						<Label for="versions-max-file-size">Maximum file size to version (MB)</Label>
@@ -229,13 +255,13 @@
 							id="versions-max-file-size"
 							type="number"
 							min="0"
-							max="102400"
+							max="20480"
 							step="1"
 							value={bytesToMB(settings["versions.max_file_size"] ?? "1073741824")}
 							onchange={(e) => validateAndSaveMB("versions.max_file_size", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB). Default: 1,024 (1 GB). Files larger than this are not versioned.</p>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 20,480 MB (20 GB). Default: 1,024 (1 GB). Files larger than this are not versioned.</p>
 					</div>
 					<div class="space-y-2">
 						<Label for="versions-max-storage">Maximum version storage (MB)</Label>
@@ -243,13 +269,13 @@
 							id="versions-max-storage"
 							type="number"
 							min="0"
-							max="102400"
+							max="20480"
 							step="1"
 							value={bytesToMB(settings["versions.max_storage"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("versions.max_storage", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB). Oldest versions are purged when exceeded.</p>
+						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 20,480 MB (20 GB). Oldest versions are purged when exceeded.</p>
 					</div>
 				</div>
 			</TabsContent>
@@ -274,13 +300,13 @@
 							id="trash-purge-age"
 							type="number"
 							min="0"
-							max="87600"
+							max="8760"
 							step="1"
 							value={durationToHours(settings["trash.purge_age"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("trash.purge_age", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">0 = never purge. Max: 87,600 hours (10 years). Default: 720 (30 days)</p>
+						<p class="text-xs text-muted-foreground">0 = never purge. Max: 8,760 hours (1 year). Default: 720 (30 days)</p>
 					</div>
 					<div class="space-y-2">
 						<Label for="trash-max-size">Maximum trash size (MB)</Label>
@@ -309,23 +335,8 @@
 						</div>
 						<Switch
 							checked={settings["shares.enabled"] === "true"}
-							onCheckedChange={(checked: boolean) => toggleBool("shares.enabled", checked)}
+							onCheckedChange={(checked: boolean) => handleShareToggle(checked)}
 						/>
-					</div>
-					<Separator />
-					<div class="space-y-2">
-						<Label for="shares-default-expiry">Default share expiry (hours)</Label>
-						<Input
-							id="shares-default-expiry"
-							type="number"
-							min="0"
-							max="87600"
-							step="1"
-							value={durationToHours(settings["shares.default_expiry"] ?? "168h")}
-							onchange={(e) => validateAndSaveDuration("shares.default_expiry", e.currentTarget.value)}
-							class="max-w-xs"
-						/>
-						<p class="text-xs text-muted-foreground">0 = never expire. Max: 87,600 hours (10 years). Default: 168 (7 days)</p>
 					</div>
 				</div>
 			</TabsContent>
@@ -359,13 +370,13 @@
 							id="session-lifetime"
 							type="number"
 							min="1"
-							max="87600"
+							max="720"
 							step="1"
 							value={durationToHours(settings["session.lifetime"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("session.lifetime", e.currentTarget.value)}
 							class="max-w-xs"
 						/>
-						<p class="text-xs text-muted-foreground">1–87,600 hours (10 years). Default: 720 (30 days). Only affects new sessions.</p>
+						<p class="text-xs text-muted-foreground">1–720 hours (30 days). Default: 720 (30 days). Only affects new sessions.</p>
 					</div>
 
 					<Separator />
@@ -411,3 +422,20 @@
 		</Tabs>
 	{/if}
 </div>
+
+<AlertDialog.Root bind:open={shareDisableConfirmOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Disable sharing?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This will delete all existing share links. Anyone with a link will no longer be able to access shared files.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmDisableSharing}>
+				Disable & Delete Links
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

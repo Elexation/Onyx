@@ -20,6 +20,8 @@ type ShareRepo interface {
 	List() ([]domain.ShareLink, error)
 	Delete(id int64) error
 	IncrementDownloadCount(id int64) error
+	DeleteAll() (int64, error)
+	Count() (int64, error)
 	DeleteExpired(now int64) (int64, error)
 }
 
@@ -77,13 +79,6 @@ func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Durat
 	if expiresIn != nil {
 		exp := now + int64(expiresIn.Seconds())
 		expiresAt = &exp
-	} else {
-		defaultStr, _ := s.settings.Get(domain.SettingSharesDefaultExpiry)
-		d := domain.GetDuration(defaultStr)
-		if d > 0 {
-			exp := now + int64(d.Seconds())
-			expiresAt = &exp
-		}
 	}
 
 	var pwHash *string
@@ -153,6 +148,14 @@ func (s *ShareService) RecordAccess(id int64) {
 	if err := s.repo.IncrementDownloadCount(id); err != nil {
 		slog.Warn("failed to increment share download count", "id", id, "error", err)
 	}
+}
+
+func (s *ShareService) DeleteAll() (int64, error) {
+	return s.repo.DeleteAll()
+}
+
+func (s *ShareService) Count() (int64, error) {
+	return s.repo.Count()
 }
 
 func (s *ShareService) CleanExpired() {

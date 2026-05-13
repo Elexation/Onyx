@@ -106,6 +106,15 @@ func (r *VersionRepo) TotalSize() (int64, error) {
 	return total.Int64, nil
 }
 
+func (r *VersionRepo) Count() (int64, error) {
+	var n int64
+	err := r.db.QueryRow("SELECT COUNT(*) FROM file_versions").Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count versions: %w", err)
+	}
+	return n, nil
+}
+
 func (r *VersionRepo) ListOldestFirst() ([]domain.FileVersion, error) {
 	rows, err := r.db.Query(
 		"SELECT id, file_path, version_path, created_at, size FROM file_versions ORDER BY created_at ASC",

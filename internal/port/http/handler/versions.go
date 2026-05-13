@@ -51,6 +51,16 @@ func (h *VersionHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
 
+// Count handles GET /api/versions/count
+func (h *VersionHandler) Count(w http.ResponseWriter, r *http.Request) {
+	count, err := h.versions.Count()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to count versions"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": count})
+}
+
 // Delete handles DELETE /api/versions/{id}
 func (h *VersionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)

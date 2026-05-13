@@ -14,10 +14,11 @@ type SettingsHandler struct {
 	settings *service.SettingsService
 	auth     *service.AuthService
 	shares   *service.ShareService
+	versions *service.VersionService
 }
 
-func NewSettingsHandler(settings *service.SettingsService, auth *service.AuthService, shares *service.ShareService) *SettingsHandler {
-	return &SettingsHandler{settings: settings, auth: auth, shares: shares}
+func NewSettingsHandler(settings *service.SettingsService, auth *service.AuthService, shares *service.ShareService, versions *service.VersionService) *SettingsHandler {
+	return &SettingsHandler{settings: settings, auth: auth, shares: shares, versions: versions}
 }
 
 func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,17 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("failed to delete shares on disable", "error", err)
 			} else if count > 0 {
 				slog.Info("deleted all shares on sharing disable", "count", count)
+			}
+		}
+	}
+
+	// Delete all version files when versioning is disabled
+	if v, ok := updates[domain.SettingVersionsEnabled]; ok && v == "false" {
+		if _, exists := errors[domain.SettingVersionsEnabled]; !exists {
+			if count, err := h.versions.PurgeAll(); err != nil {
+				slog.Warn("failed to purge versions on disable", "error", err)
+			} else if count > 0 {
+				slog.Info("purged all versions on versioning disable", "count", count)
 			}
 		}
 	}

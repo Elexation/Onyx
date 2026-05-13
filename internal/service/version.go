@@ -26,6 +26,7 @@ type VersionRepo interface {
 	Delete(id int64) error
 	ListAllPaths() ([]string, error)
 	TotalSize() (int64, error)
+	Count() (int64, error)
 	ListOldestFirst() ([]domain.FileVersion, error)
 	RenameFile(oldPath, newPath string) error
 	RenameDir(oldDir, newDir string) error
@@ -222,6 +223,27 @@ func (s *VersionService) RenameDirVersions(oldPath, newPath string) error {
 		return fmt.Errorf("rename version dir records: %w", err)
 	}
 	return nil
+}
+
+func (s *VersionService) Count() (int64, error) {
+	return s.repo.Count()
+}
+
+// PurgeAll deletes every version record and its backing file.
+func (s *VersionService) PurgeAll() (int64, error) {
+	versions, err := s.repo.ListOldestFirst()
+	if err != nil {
+		return 0, fmt.Errorf("list all versions for purge: %w", err)
+	}
+	var deleted int64
+	for _, v := range versions {
+		if err := s.deleteVersionRow(v); err != nil {
+			slog.Warn("purge-all: delete version", "id", v.ID, "error", err)
+			continue
+		}
+		deleted++
+	}
+	return deleted, nil
 }
 
 // ApplyRetention prunes versions according to MaxCount (per-file),

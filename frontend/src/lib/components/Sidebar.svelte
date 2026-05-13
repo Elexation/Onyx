@@ -4,6 +4,7 @@
 	import { FolderOpen, Link, Trash2, Settings } from "lucide-svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 
 	const links = [
 		{ href: "/files", label: "Files", icon: FolderOpen },
@@ -15,6 +16,7 @@
 	onMount(() => {
 		trashCount.startPolling();
 		sharesEnabled.refresh();
+		versioningEnabled.refresh();
 		return () => trashCount.stopPolling();
 	});
 </script>

@@ -3,6 +3,7 @@
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { getDownloadUrl } from "$lib/api/files.js";
 	import type { Snippet } from "svelte";
 
@@ -101,7 +102,9 @@
 			{#if !item.isDir}
 				<ContextMenu.Separator />
 				<ContextMenu.Item onclick={handleDownload}>Download</ContextMenu.Item>
-				<ContextMenu.Item onclick={onversions}>Version history</ContextMenu.Item>
+				{#if versioningEnabled.enabled}
+					<ContextMenu.Item onclick={onversions}>Version history</ContextMenu.Item>
+				{/if}
 			{/if}
 			<ContextMenu.Separator />
 			<ContextMenu.Item variant="destructive" onclick={ondelete}>

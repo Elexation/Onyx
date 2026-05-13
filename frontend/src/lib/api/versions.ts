@@ -13,3 +13,7 @@ export async function restoreVersion(id: number): Promise<{ status: string }> {
 export async function deleteVersion(id: number): Promise<{ status: string }> {
 	return request<{ status: string }>("DELETE", `/api/versions/${id}`);
 }
+
+export async function versionCount(): Promise<{ count: number }> {
+	return request<{ count: number }>("GET", "/api/versions/count");
+}

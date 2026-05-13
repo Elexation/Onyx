@@ -3,7 +3,9 @@
 	import { toast } from "svelte-sonner";
 	import { getSettings, updateSettings, changePassword } from "$lib/api/settings";
 	import { shareCount } from "$lib/api/shares";
+	import { versionCount } from "$lib/api/versions";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from "$lib/components/ui/tabs/index.js";
 	import { Switch } from "$lib/components/ui/switch/index.js";
 	import { Input } from "$lib/components/ui/input/index.js";
@@ -34,6 +36,7 @@
 	let changingPassword = $state(false);
 
 	let shareDisableConfirmOpen = $state(false);
+	let versionDisableConfirmOpen = $state(false);
 	let debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 	onMount(async () => {
@@ -68,6 +71,9 @@
 		if (key === "shares.enabled") {
 			sharesEnabled.set(checked);
 		}
+		if (key === "versions.enabled") {
+			versioningEnabled.set(checked);
+		}
 	}
 
 	async function handleShareToggle(checked: boolean) {
@@ -88,6 +94,26 @@
 	function confirmDisableSharing() {
 		shareDisableConfirmOpen = false;
 		toggleBool("shares.enabled", false);
+	}
+
+	async function handleVersionToggle(checked: boolean) {
+		if (checked) {
+			toggleBool("versions.enabled", true);
+			return;
+		}
+		try {
+			const res = await versionCount();
+			if (res.count > 0) {
+				versionDisableConfirmOpen = true;
+				return;
+			}
+		} catch {}
+		toggleBool("versions.enabled", false);
+	}
+
+	function confirmDisableVersioning() {
+		versionDisableConfirmOpen = false;
+		toggleBool("versions.enabled", false);
 	}
 
 	function validateAndSaveInt(key: string, raw: string) {
@@ -217,7 +243,7 @@
 						</div>
 						<Switch
 							checked={settings["versions.enabled"] === "true"}
-							onCheckedChange={(checked: boolean) => toggleBool("versions.enabled", checked)}
+							onCheckedChange={(checked: boolean) => handleVersionToggle(checked)}
 						/>
 					</div>
 					<Separator />
@@ -435,6 +461,23 @@
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={confirmDisableSharing}>
 				Disable & Delete Links
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<AlertDialog.Root bind:open={versionDisableConfirmOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Disable versioning?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This will permanently delete all stored version files. You will not be able to restore previous versions of any file.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmDisableVersioning}>
+				Disable & Delete Versions
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

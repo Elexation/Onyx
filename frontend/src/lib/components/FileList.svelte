@@ -135,7 +135,7 @@
 				<div
 					class="flex cursor-pointer items-center border-b border-border/50 text-muted-foreground transition-colors select-none hover:bg-accent/50"
 					{style}
-					onclick={(e) => { e.stopPropagation(); onopen(file); }}
+					ondblclick={(e) => { e.stopPropagation(); onopen(file); }}
 					onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(file); } }}
 					use:droppable={{ path: file.path, ondrop }}
 					tabindex={0}

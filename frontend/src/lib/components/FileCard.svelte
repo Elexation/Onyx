@@ -69,7 +69,7 @@
 {#if item.name === ".."}
 	<div
 		class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 text-muted-foreground transition-colors select-none hover:bg-accent/50"
-		onclick={(e) => { e.stopPropagation(); onopen(item); }}
+		ondblclick={(e) => { e.stopPropagation(); onopen(item); }}
 		onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(item); } }}
 		use:droppable={{ path: item.path, ondrop }}
 		tabindex={0}

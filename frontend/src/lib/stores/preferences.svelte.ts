@@ -7,7 +7,6 @@ interface Preferences {
 	sortField: SortField;
 	sortDir: SortDir;
 	showHidden: boolean;
-	directoryOverrides: Record<string, ViewMode>;
 }
 
 const STORAGE_KEY = "onyx-preferences";
@@ -17,7 +16,6 @@ const DEFAULTS: Preferences = {
 	sortField: "name",
 	sortDir: "asc",
 	showHidden: false,
-	directoryOverrides: {},
 };
 
 function loadPreferences(): Preferences {
@@ -48,18 +46,4 @@ export const preferences = {
 
 	get showHidden() { return prefs.showHidden; },
 	set showHidden(v: boolean) { prefs.showHidden = v; save(prefs); },
-
-	getDirectoryOverride(dirPath: string): ViewMode | undefined {
-		return prefs.directoryOverrides[dirPath];
-	},
-
-	setDirectoryViewMode(dirPath: string, mode: ViewMode) {
-		prefs.directoryOverrides[dirPath] = mode;
-		save(prefs);
-	},
-
-	clearDirectoryOverride(dirPath: string) {
-		delete prefs.directoryOverrides[dirPath];
-		save(prefs);
-	},
 };

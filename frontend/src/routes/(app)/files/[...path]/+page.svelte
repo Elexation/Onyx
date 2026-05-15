@@ -110,7 +110,7 @@
 		const parts = path.split("/").filter(Boolean);
 		return {
 			name: "..",
-			path: parts.slice(0, -1).join("/"),
+			path: "/" + parts.slice(0, -1).join("/"),
 			isDir: true,
 			size: 0,
 			modTime: 0,
@@ -141,14 +141,9 @@
 		return mediaCount / listing.items.length > 0.5 ? "grid" : preferences.viewMode;
 	});
 
-	const activeView = $derived(preferences.getDirectoryOverride(path) ?? smartView);
+	const activeView = $derived(smartView);
 
 	function handleViewChange(mode: ViewMode) {
-		if (mode !== smartView) {
-			preferences.setDirectoryViewMode(path, mode);
-		} else {
-			preferences.clearDirectoryOverride(path);
-		}
 		preferences.viewMode = mode;
 	}
 
@@ -159,7 +154,7 @@
 	// Actions
 	function handleOpen(item: FileInfo) {
 		if (item.isDir) {
-			goto(`/files/${item.path}`);
+			goto(`/files${item.path}`);
 		} else if (canPreview(item)) {
 			previewFile = item;
 			previewOpen = true;

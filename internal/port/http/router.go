@@ -93,6 +93,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	// Public share API routes (no auth)
 	r.Get("/api/public/s/{token}", publicHandler.Info)
 	r.Post("/api/public/s/{token}/verify", publicHandler.Verify)
+	r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
 	r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
 	r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
 	r.Get("/api/public/s/{token}/dl", publicHandler.Download)

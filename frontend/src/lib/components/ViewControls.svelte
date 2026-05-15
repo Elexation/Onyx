@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { List, LayoutGrid, Eye, EyeOff, ArrowUpDown } from "lucide-svelte";
-	import { preferences, type SortField, type SortDir, type ViewMode } from "$lib/stores/preferences.svelte.js";
+	import { List, LayoutGrid, Eye, EyeOff } from "lucide-svelte";
+	import { preferences, type ViewMode } from "$lib/stores/preferences.svelte.js";
 
 	let {
 		viewMode,
@@ -10,21 +10,6 @@
 		onviewchange: (mode: ViewMode) => void;
 	} = $props();
 
-	const sortOptions: { label: string; field: SortField }[] = [
-		{ label: "Name", field: "name" },
-		{ label: "Size", field: "size" },
-		{ label: "Modified", field: "modified" },
-		{ label: "Type", field: "type" },
-	];
-
-	function cycleSort(field: SortField) {
-		if (preferences.sortField === field) {
-			preferences.sortDir = preferences.sortDir === "asc" ? "desc" : "asc";
-		} else {
-			preferences.sortField = field;
-			preferences.sortDir = "asc";
-		}
-	}
 </script>
 
 <div class="flex items-center gap-2">
@@ -43,22 +28,6 @@
 		>
 			<LayoutGrid class="size-4" />
 		</button>
-	</div>
-
-	<div class="flex items-center gap-1">
-		<ArrowUpDown class="size-3.5 text-muted-foreground" />
-		{#each sortOptions as opt}
-			<button
-				class="rounded px-2 py-1 text-xs transition-colors {preferences.sortField === opt.field ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => cycleSort(opt.field)}
-				title="Sort by {opt.label}"
-			>
-				{opt.label}
-				{#if preferences.sortField === opt.field}
-					<span class="ml-0.5">{preferences.sortDir === "asc" ? "\u2191" : "\u2193"}</span>
-				{/if}
-			</button>
-		{/each}
 	</div>
 
 	<button

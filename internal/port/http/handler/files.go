@@ -145,6 +145,10 @@ func writeFileError(w http.ResponseWriter, err error) {
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 			return
 		}
+		if os.IsExist(err) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "directory already exists"})
+			return
+		}
 		// Path traversal attempts from os.Root
 		http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
 		return

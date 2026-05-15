@@ -159,7 +159,7 @@
 	// Actions
 	function handleOpen(item: FileInfo) {
 		if (item.isDir) {
-			goto(`/files${item.path}`);
+			goto(`/files/${item.path}`);
 		} else if (canPreview(item)) {
 			previewFile = item;
 			previewOpen = true;

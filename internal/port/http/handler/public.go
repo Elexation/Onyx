@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"path"
 	"strings"
@@ -147,6 +148,40 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	name := path.Base(filePath)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(w, r, name, modTime, file)
+}
+
+// DownloadZip handles GET /s/{token}/zip — streams the entire shared directory as a zip archive.
+func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
+	token := extractToken(r)
+	link, _, err := h.shares.Validate(token)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if link == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
+		return
+	}
+
+	if !link.IsDir {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a directory share"})
+		return
+	}
+
+	if link.HasPassword && !h.hasValidSession(r, token) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
+		return
+	}
+
+	h.shares.RecordAccess(link.ID)
+
+	zipName := path.Base(link.FilePath) + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+zipName+`"`)
+
+	if err := h.files.WriteZip(w, []string{link.FilePath}); err != nil {
+		slog.Error("share zip stream error", "error", err)
+	}
 }
 
 // Raw handles GET /s/{token}/raw or GET /s/{token}/raw/* — serves a file inline for preview.

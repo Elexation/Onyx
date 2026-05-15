@@ -165,7 +165,13 @@
 				</Card.Title>
 				<Card.Description>{items.length} item{items.length !== 1 ? "s" : ""}</Card.Description>
 			</Card.Header>
-			<Card.Content>
+			<Card.Content class="flex flex-col gap-4">
+				<a href={`/api/public/s/${token}/zip`} class="block">
+					<Button variant="secondary" class="w-full">
+						<Download class="mr-2 size-4" />
+						Download All
+					</Button>
+				</a>
 				{#if items.length === 0}
 					<p class="text-sm text-muted-foreground">This folder is empty.</p>
 				{:else}

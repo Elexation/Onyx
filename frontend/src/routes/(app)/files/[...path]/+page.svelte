@@ -397,6 +397,7 @@
 	{:else}
 		<FileToolbar
 			onnewfolder={() => (newFolderOpen = true)}
+			onrefresh={refresh}
 			ondelete={() => handleDelete([...selection.items])}
 			onpaste={handlePaste}
 			oncopy={handleCopy}

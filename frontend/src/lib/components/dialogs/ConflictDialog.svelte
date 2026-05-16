@@ -33,7 +33,7 @@
 				{#if conflicts.length === 1}
 					<span class="font-medium">{conflicts[0]}</span> already exists in this folder.
 				{:else}
-					The following files already exist:
+					Choose how to handle these conflicts:
 				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
@@ -48,13 +48,13 @@
 
 		<AlertDialog.Footer>
 			<Button variant="outline" size="sm" onclick={() => resolveAll("skip")}>
-				Skip
+				{conflicts.length === 1 ? "Skip" : "Skip All"}
 			</Button>
 			<Button variant="outline" size="sm" onclick={() => resolveAll("keepBoth")}>
-				Keep Both
+				{conflicts.length === 1 ? "Keep Both" : "Keep All"}
 			</Button>
 			<Button size="sm" onclick={() => resolveAll("replace")}>
-				Replace
+				{conflicts.length === 1 ? "Replace" : "Replace All"}
 			</Button>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

@@ -1,9 +1,72 @@
 import Uppy from "@uppy/core";
 import Tus from "@uppy/tus";
-import GoldenRetriever from "@uppy/golden-retriever";
+import { emaFilter } from "@uppy/utils";
 import { uploadState } from "$lib/stores/upload.svelte.js";
 
 let instance: Uppy | null = null;
+
+// Raw progress buffer — not reactive. Uppy events write here freely.
+// The flush timer reads from here and batch-updates reactive uploadState.
+const rawProgress = new Map<string, number>();
+let progressDirty = false;
+
+// Speed tracking (non-reactive)
+let flushInterval: ReturnType<typeof setInterval> | null = null;
+let prevTotalUploaded = 0;
+let prevFlushTime = 0;
+let smoothedSpeed = 0;
+const SPEED_HALF_LIFE = 2000;
+const FLUSH_INTERVAL_MS = 500;
+
+function startFlushTimer() {
+	if (flushInterval) return;
+	prevFlushTime = Date.now();
+	prevTotalUploaded = uploadState.totalBytesUploaded;
+	smoothedSpeed = 0;
+
+	flushInterval = setInterval(() => {
+		if (!progressDirty) return;
+		progressDirty = false;
+
+		const now = Date.now();
+		const dt = now - prevFlushTime;
+		prevFlushTime = now;
+
+		// Flush per-file progress to reactive state
+		for (const [id, bytesUploaded] of rawProgress) {
+			uploadState.updateProgress(id, bytesUploaded);
+		}
+
+		// Compute speed with EMA smoothing
+		const totalUploaded = uploadState.totalBytesUploaded;
+		const bytesDelta = totalUploaded - prevTotalUploaded;
+		prevTotalUploaded = totalUploaded;
+
+		if (dt > 0) {
+			const instantSpeed = (bytesDelta / dt) * 1000;
+			smoothedSpeed = smoothedSpeed === 0
+				? instantSpeed
+				: emaFilter(instantSpeed, smoothedSpeed, SPEED_HALF_LIFE, dt);
+		}
+
+		// Compute ETA
+		const remaining = uploadState.totalBytes - totalUploaded;
+		const eta = smoothedSpeed > 0 ? remaining / smoothedSpeed : null;
+
+		uploadState.updateSpeedAndEta(smoothedSpeed, eta);
+	}, FLUSH_INTERVAL_MS);
+}
+
+function stopFlushTimer() {
+	if (flushInterval) {
+		clearInterval(flushInterval);
+		flushInterval = null;
+	}
+	rawProgress.clear();
+	progressDirty = false;
+	smoothedSpeed = 0;
+	prevTotalUploaded = 0;
+}
 
 export function getUppy(): Uppy {
 	if (instance) return instance;
@@ -22,24 +85,21 @@ export function getUppy(): Uppy {
 		removeFingerprintOnSuccess: true,
 	});
 
-	instance.use(GoldenRetriever, {
-		expires: 24 * 60 * 60 * 1000,
-	});
-
-	instance.on("file-added", (file) => {
-		uploadState.addFile(file.id, file.name ?? "unknown", file.size ?? 0);
+	instance.on("upload", () => {
+		startFlushTimer();
 	});
 
 	instance.on("upload-progress", (file, progress) => {
 		if (!file) return;
-		const pct = progress.bytesTotal
-			? Math.round((progress.bytesUploaded / progress.bytesTotal) * 100)
-			: 0;
-		uploadState.updateProgress(file.id, pct);
+		rawProgress.set(file.id, progress.bytesUploaded);
+		progressDirty = true;
 	});
 
 	instance.on("upload-success", (file) => {
-		if (file) uploadState.markComplete(file.id);
+		if (file) {
+			rawProgress.delete(file.id);
+			uploadState.markComplete(file.id);
+		}
 	});
 
 	instance.on("upload-error", (file, error) => {
@@ -48,8 +108,15 @@ export function getUppy(): Uppy {
 
 	// Clear completed files from Uppy after batch finishes so duplicates can be re-uploaded
 	instance.on("complete", (result) => {
+		// Final flush to ensure UI shows latest progress
+		for (const [id, bytesUploaded] of rawProgress) {
+			uploadState.updateProgress(id, bytesUploaded);
+		}
+
+		stopFlushTimer();
+		uploadState.updateSpeedAndEta(0, null);
+
 		for (const file of result.successful ?? []) {
-			uploadState.markComplete(file.id);
 			instance!.removeFile(file.id);
 		}
 
@@ -72,20 +139,22 @@ export interface ConflictResolution {
 	[filename: string]: "replace" | "keepBoth" | "skip";
 }
 
-export function addFiles(
+export async function addFiles(
 	files: File[],
 	targetDir: string,
 	resolutions?: ConflictResolution,
 ) {
 	const uppy = getUppy();
+	const CHUNK_SIZE = 50;
 
+	// Build file descriptors, filtering out skipped files
+	const descriptors: any[] = [];
 	for (const file of files) {
-		const relativePath = (file as any).webkitRelativePath || file.name;
+		const relativePath = (file as any).webkitRelativePath || (file as any).relativePath || file.name;
 		const resolution = resolutions?.[relativePath];
-
 		if (resolution === "skip") continue;
 
-		const fileOpts = {
+		descriptors.push({
 			name: file.name,
 			type: file.type,
 			data: file,
@@ -95,19 +164,31 @@ export function addFiles(
 				relativePath,
 				conflictStrategy: resolution ?? "",
 			},
-		};
+		});
+	}
+
+	// Process in chunks for browser responsiveness
+	for (let i = 0; i < descriptors.length; i += CHUNK_SIZE) {
+		const chunk = descriptors.slice(i, i + CHUNK_SIZE);
+		const before = new Set(uppy.getFiles().map((f) => f.id));
 
 		try {
-			uppy.addFile(fileOpts);
+			uppy.addFiles(chunk);
 		} catch {
-			// Duplicate — remove existing and re-add
-			const existing = uppy.getFiles().find((f) => f.name === file.name);
-			if (existing) uppy.removeFile(existing.id);
-			try {
-				uppy.addFile(fileOpts);
-			} catch {
-				// give up
-			}
+			// Duplicates are handled as restriction errors (files still added).
+			// AggregateError only for non-restriction errors — shouldn't happen.
+		}
+
+		const added = uppy.getFiles()
+			.filter((f) => !before.has(f.id))
+			.map((f) => ({ id: f.id, name: f.name, size: f.size }));
+
+		if (added.length > 0) {
+			uploadState.addFiles(added);
+		}
+
+		if (i + CHUNK_SIZE < descriptors.length) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
 	}
 }
@@ -126,6 +207,7 @@ export function cancelUpload(fileId: string) {
 export function cancelAll() {
 	const uppy = getUppy();
 	uppy.cancelAll();
+	stopFlushTimer();
 	uploadState.clear();
 }
 

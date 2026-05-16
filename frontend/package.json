@@ -27,8 +27,6 @@
 		"@tailwindcss/typography": "^0.5.19",
 		"@tanstack/svelte-virtual": "^3.13.23",
 		"@uppy/core": "^5.2.0",
-		"@uppy/drop-target": "^4.1.0",
-		"@uppy/golden-retriever": "^5.2.1",
 		"@uppy/tus": "^5.1.1",
 		"bits-ui": "^2.17.2",
 		"clsx": "^2.1.1",

@@ -9,7 +9,7 @@
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { uploadState } from "$lib/stores/upload.svelte.js";
+
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
@@ -61,7 +61,6 @@
 	let conflictOpen = $state(false);
 	let conflictNames = $state<string[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
-	let pendingDropFileIds = $state<string[]>([]);
 
 	async function load(dirPath: string, showHidden: boolean) {
 		loading = true;
@@ -292,7 +291,7 @@
 	async function handleUpload(files: File[]) {
 		const targetDir = path || "/";
 		const relativePaths = files.map(
-			(f) => (f as any).webkitRelativePath || f.name,
+			(f) => (f as any).webkitRelativePath || (f as any).relativePath || f.name,
 		);
 
 		try {
@@ -302,48 +301,22 @@
 				conflictNames = conflicts;
 				conflictOpen = true;
 			} else {
-				addFiles(files, targetDir);
-				startUpload();
+				await addFiles(files, targetDir);
+				startUpload().catch(() => {});
 			}
 		} catch {
 			// If conflict check fails, upload anyway without conflict resolution
-			addFiles(files, targetDir);
+			await addFiles(files, targetDir);
 			startUpload();
 		}
 	}
 
-	function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
+	async function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
 		conflictOpen = false;
 		const targetDir = path || "/";
-
-		if (pendingDropFileIds.length > 0) {
-			// Resolve conflicts for files already in Uppy (from drag-and-drop)
-			const uppy = getUppy();
-			for (const fileId of pendingDropFileIds) {
-				const file = uppy.getFile(fileId);
-				if (!file) continue;
-				const rp = (file.meta as any).relativePath || file.name;
-				const resolution = resolutions[rp];
-				if (resolution === "skip") {
-					uppy.removeFile(fileId);
-				} else if (resolution) {
-					uppy.setFileMeta(fileId, { conflictStrategy: resolution });
-				}
-			}
-			pendingDropFileIds = [];
-			startUpload();
-		} else {
-			// Resolve conflicts for files from the picker button
-			addFiles(pendingUploadFiles, targetDir, resolutions);
-			startUpload();
-			pendingUploadFiles = [];
-		}
-	}
-
-	function handleDropConflicts(fileIds: string[], conflicts: string[]) {
-		pendingDropFileIds = fileIds;
-		conflictNames = conflicts;
-		conflictOpen = true;
+		await addFiles(pendingUploadFiles, targetDir, resolutions);
+		startUpload().catch(() => {});
+		pendingUploadFiles = [];
 	}
 
 	// Refresh file list when uploads complete
@@ -436,7 +409,7 @@
 			{/snippet}
 		</FileToolbar>
 
-		<UploadZone currentDir={path || "/"} onconflicts={handleDropConflicts}>
+		<UploadZone currentDir={path || "/"} onupload={handleUpload}>
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 			<div class="flex min-h-0 flex-1 flex-col" onclick={() => selection.clear()}>
 				{#if activeView === "grid"}

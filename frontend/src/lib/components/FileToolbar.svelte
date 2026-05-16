@@ -4,6 +4,7 @@
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import UploadButton from "$lib/components/UploadButton.svelte";
 	import FolderPlusIcon from "@lucide/svelte/icons/folder-plus";
+	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import ScissorsIcon from "@lucide/svelte/icons/scissors";
 	import ClipboardPasteIcon from "@lucide/svelte/icons/clipboard-paste";
@@ -13,6 +14,7 @@
 
 	let {
 		onnewfolder,
+		onrefresh,
 		ondelete,
 		onpaste,
 		oncopy,
@@ -22,6 +24,7 @@
 		viewControls,
 	}: {
 		onnewfolder: () => void;
+		onrefresh: () => void;
 		ondelete: () => void;
 		onpaste: () => void;
 		oncopy: () => void;
@@ -37,6 +40,9 @@
 	<Button variant="outline" size="sm" onclick={onnewfolder}>
 		<FolderPlusIcon class="size-4" />
 		New Folder
+	</Button>
+	<Button variant="outline" size="sm" onclick={onrefresh} title="Refresh">
+		<RefreshCwIcon class="size-4" />
 	</Button>
 
 	{#if selection.isActive}

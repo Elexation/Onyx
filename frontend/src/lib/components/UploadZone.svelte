@@ -1,86 +1,70 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import DropTarget from "@uppy/drop-target";
+	import { getDroppedFiles } from "@uppy/utils";
 	import UploadIcon from "@lucide/svelte/icons/upload";
-	import { getUppy, startUpload } from "$lib/upload/uppy.js";
-	import { checkConflicts } from "$lib/api/upload.js";
 	import type { Snippet } from "svelte";
 
 	let {
 		currentDir,
-		onconflicts,
+		onupload,
 		children,
 	}: {
 		currentDir: string;
-		onconflicts: (fileIds: string[], conflicts: string[]) => void;
+		onupload: (files: File[]) => void;
 		children: Snippet;
 	} = $props();
 
-	let container: HTMLDivElement;
 	let dragging = $state(false);
+	let dragCounter = 0;
 
-	onMount(() => {
-		const uppy = getUppy();
+	function isFileDrag(event: DragEvent) {
+		return (
+			event.dataTransfer?.types?.includes("Files") &&
+			!document.body.classList.contains("onyx-internal-drag")
+		);
+	}
 
-		uppy.use(DropTarget, {
-			target: container,
-			onDragOver: () => {
-				if (!document.body.classList.contains("onyx-internal-drag")) {
-					dragging = true;
-				}
-			},
-			onDragLeave: () => {
-				dragging = false;
-			},
-			onDrop: () => {
-				dragging = false;
-			},
-		});
+	function handleDragEnter(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		dragCounter++;
+		dragging = true;
+	}
 
-		// When DropTarget adds files, set metadata and run conflict check
-		const handler = async (files: any[]) => {
-			// Only process files that lack our targetDir metadata (i.e. from drops)
-			const dropped = files.filter((f) => !f.meta.targetDir);
-			if (dropped.length === 0) return;
+	function handleDragOver(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		event.dataTransfer!.dropEffect = "copy";
+	}
 
-			const dir = currentDir || "/";
-			const fileIds: string[] = [];
-			const relativePaths: string[] = [];
+	function handleDragLeave() {
+		dragCounter--;
+		if (dragCounter <= 0) {
+			dragCounter = 0;
+			dragging = false;
+		}
+	}
 
-			for (const file of dropped) {
-				const rp = file.meta.relativePath || file.name;
-				uppy.setFileMeta(file.id, {
-					targetDir: dir,
-					name: file.name,
-					relativePath: rp,
-				});
-				fileIds.push(file.id);
-				relativePaths.push(rp);
-			}
+	async function handleDrop(event: DragEvent) {
+		if (!isFileDrag(event)) return;
+		event.preventDefault();
+		dragCounter = 0;
+		dragging = false;
 
-			try {
-				const { conflicts } = await checkConflicts(dir, relativePaths);
-				if (conflicts.length > 0) {
-					onconflicts(fileIds, conflicts);
-				} else {
-					startUpload();
-				}
-			} catch {
-				startUpload();
-			}
-		};
-
-		uppy.on("files-added", handler);
-
-		return () => {
-			uppy.off("files-added", handler);
-			const plugin = uppy.getPlugin("DropTarget");
-			if (plugin) uppy.removePlugin(plugin);
-		};
-	});
+		const files = await getDroppedFiles(event.dataTransfer!);
+		if (files.length > 0) {
+			onupload(files);
+		}
+	}
 </script>
 
-<div bind:this={container} class="relative flex min-h-0 flex-1 flex-col">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="relative flex min-h-0 flex-1 flex-col"
+	ondragenter={handleDragEnter}
+	ondragover={handleDragOver}
+	ondragleave={handleDragLeave}
+	ondrop={handleDrop}
+>
 	{@render children()}
 
 	{#if dragging}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { uploadState } from "$lib/stores/upload.svelte.js";
-	import { cancelUpload, retryUpload } from "$lib/upload/uppy.js";
+	import { cancelUpload, cancelGroup, retryUpload } from "$lib/upload/uppy.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
@@ -8,12 +8,72 @@
 	import RotateCwIcon from "@lucide/svelte/icons/rotate-cw";
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import AlertCircleIcon from "@lucide/svelte/icons/alert-circle";
+	import FolderIcon from "@lucide/svelte/icons/folder";
+
+	interface DisplayEntry {
+		type: "file" | "directory";
+		id: string;
+		name: string;
+		size: number;
+		bytesUploaded: number;
+		progress: number;
+		status: "pending" | "uploading" | "complete" | "error";
+		fileCount?: number;
+		completedCount?: number;
+		error?: string;
+	}
+
+	const displayItems = $derived.by((): DisplayEntry[] => {
+		const entries: DisplayEntry[] = [];
+		const seenGroups = new Set<string>();
+
+		for (const item of uploadState.items) {
+			if (item.group) {
+				if (seenGroups.has(item.group)) continue;
+				seenGroups.add(item.group);
+
+				const groupItems = uploadState.items.filter((i) => i.group === item.group);
+				const meta = uploadState.groupMeta[item.group];
+				const totalSize = groupItems.reduce((s, i) => s + i.size, 0);
+				const totalUploaded = groupItems.reduce((s, i) => s + i.bytesUploaded, 0);
+				const completed = groupItems.filter((i) => i.status === "complete").length;
+				const allComplete = completed === groupItems.length;
+				const hasError = groupItems.some((i) => i.status === "error");
+				const hasUploading = groupItems.some((i) => i.status === "uploading");
+
+				entries.push({
+					type: "directory",
+					id: item.group,
+					name: meta?.name ?? "Directory",
+					size: totalSize,
+					bytesUploaded: totalUploaded,
+					progress: totalSize > 0 ? Math.round((totalUploaded / totalSize) * 100) : 0,
+					status: allComplete ? "complete" : hasError ? "error" : hasUploading ? "uploading" : "pending",
+					fileCount: groupItems.length,
+					completedCount: completed,
+				});
+			} else {
+				entries.push({
+					type: "file",
+					id: item.id,
+					name: item.name,
+					size: item.size,
+					bytesUploaded: item.bytesUploaded,
+					progress: item.progress,
+					status: item.status,
+					error: item.error,
+				});
+			}
+		}
+
+		return entries;
+	});
 
 	const DETAIL_THRESHOLD = 20;
 
-	const errorItems = $derived(uploadState.items.filter((i) => i.status === "error"));
-	const completedCount = $derived(uploadState.items.filter((i) => i.status === "complete").length);
-	const isLargeBatch = $derived(uploadState.items.length > DETAIL_THRESHOLD);
+	const errorEntries = $derived(displayItems.filter((i) => i.status === "error"));
+	const completedCount = $derived(displayItems.filter((i) => i.status === "complete").length);
+	const isLargeBatch = $derived(displayItems.length > DETAIL_THRESHOLD);
 	const isStalled = $derived(
 		uploadState.activeCount > 0 && uploadState.speed < 1024 && uploadState.totalProgress > 0,
 	);
@@ -44,6 +104,14 @@
 		const h = Math.floor(seconds / 3600);
 		const m = Math.ceil((seconds % 3600) / 60);
 		return `${h}h ${m}m left`;
+	}
+
+	function handleCancel(entry: DisplayEntry) {
+		if (entry.type === "directory") {
+			cancelGroup(entry.id);
+		} else {
+			cancelUpload(entry.id);
+		}
 	}
 </script>
 
@@ -107,7 +175,7 @@
 				<!-- Summary view for large batches -->
 				<div class="border-t border-border px-3 py-2">
 					<div class="text-xs text-muted-foreground">
-						{completedCount} of {uploadState.items.length} files complete
+						{completedCount} of {displayItems.length} items complete
 					</div>
 					{#if uploadState.activeCount > 0 && uploadState.speed > 0}
 						<div class="text-[10px] text-muted-foreground">
@@ -119,26 +187,28 @@
 						</div>
 					{/if}
 				</div>
-				{#if errorItems.length > 0}
+				{#if errorEntries.length > 0}
 					<div class="max-h-40 overflow-y-auto">
-						{#each errorItems as item (item.id)}
+						{#each errorEntries as entry (entry.id)}
 							<div class="flex items-center gap-2 border-t border-border px-3 py-1.5">
 								<div class="shrink-0">
 									<AlertCircleIcon class="size-3.5 text-destructive" />
 								</div>
 								<div class="min-w-0 flex-1">
-									<div class="truncate text-xs">{item.name}</div>
-									<span class="truncate text-[10px] text-destructive">{item.error}</span>
+									<div class="truncate text-xs">{entry.name}</div>
+									<span class="truncate text-[10px] text-destructive">{entry.error ?? "Upload failed"}</span>
 								</div>
 								<div class="shrink-0">
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										onclick={() => retryUpload(item.id)}
-										title="Retry"
-									>
-										<RotateCwIcon class="size-3" />
-									</Button>
+									{#if entry.type === "file"}
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => retryUpload(entry.id)}
+											title="Retry"
+										>
+											<RotateCwIcon class="size-3" />
+										</Button>
+									{/if}
 								</div>
 							</div>
 						{/each}
@@ -146,57 +216,71 @@
 				{/if}
 			{:else}
 				<div class="max-h-64 overflow-y-auto">
-					{#each uploadState.items as item (item.id)}
+					{#each displayItems as entry (entry.id)}
 						<div class="flex items-center gap-2 border-t border-border px-3 py-1.5">
 							<!-- Status icon -->
 							<div class="shrink-0">
-								{#if item.status === "complete"}
+								{#if entry.status === "complete"}
 									<CheckIcon class="size-3.5 text-green-500" />
-								{:else if item.status === "error"}
+								{:else if entry.status === "error"}
 									<AlertCircleIcon class="size-3.5 text-destructive" />
+								{:else if entry.type === "directory"}
+									<FolderIcon class="size-3.5 text-muted-foreground" />
 								{:else}
 									<div class="size-3.5 animate-spin rounded-full border-2 border-muted-foreground border-t-primary"></div>
 								{/if}
 							</div>
 
-							<!-- File info -->
+							<!-- File/directory info -->
 							<div class="min-w-0 flex-1">
-								<div class="truncate text-xs">{item.name}</div>
+								<div class="truncate text-xs">
+									{entry.name}{entry.type === "directory" ? "/" : ""}
+								</div>
 								<div class="flex items-center gap-2">
-									{#if item.status === "error"}
-										<span class="truncate text-[10px] text-destructive">{item.error}</span>
-									{:else if item.status === "complete"}
-										<span class="text-[10px] text-muted-foreground">{formatSize(item.size)}</span>
+									{#if entry.status === "error"}
+										<span class="truncate text-[10px] text-destructive">{entry.error ?? "Upload failed"}</span>
+									{:else if entry.status === "complete"}
+										<span class="text-[10px] text-muted-foreground">
+											{#if entry.type === "directory"}
+												{entry.fileCount} file{entry.fileCount !== 1 ? "s" : ""} · {formatSize(entry.size)}
+											{:else}
+												{formatSize(entry.size)}
+											{/if}
+										</span>
 									{:else}
 										<div class="h-1 flex-1 rounded-full bg-muted">
 											<div
 												class="h-full rounded-full bg-primary transition-all"
-												style="width: {item.progress}%"
+												style="width: {entry.progress}%"
 											></div>
 										</div>
 										<span class="text-[10px] text-muted-foreground">
-										{formatSize(item.bytesUploaded)} / {formatSize(item.size)}
-									</span>
+											{#if entry.type === "directory"}
+												{entry.completedCount}/{entry.fileCount} · {formatSize(entry.bytesUploaded)} / {formatSize(entry.size)}
+											{:else}
+												{formatSize(entry.bytesUploaded)} / {formatSize(entry.size)}
+											{/if}
+										</span>
 									{/if}
 								</div>
 							</div>
 
 							<!-- Actions -->
 							<div class="shrink-0">
-								{#if item.status === "error"}
+								{#if entry.status === "error" && entry.type === "file"}
 									<Button
 										variant="ghost"
 										size="icon-xs"
-										onclick={() => retryUpload(item.id)}
+										onclick={() => retryUpload(entry.id)}
 										title="Retry"
 									>
 										<RotateCwIcon class="size-3" />
 									</Button>
-								{:else if item.status !== "complete"}
+								{:else if entry.status !== "complete"}
 									<Button
 										variant="ghost"
 										size="icon-xs"
-										onclick={() => cancelUpload(item.id)}
+										onclick={() => handleCancel(entry)}
 										title="Cancel"
 									>
 										<XIcon class="size-3" />

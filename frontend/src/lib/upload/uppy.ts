@@ -2,6 +2,7 @@ import Uppy from "@uppy/core";
 import Tus from "@uppy/tus";
 import { emaFilter } from "@uppy/utils";
 import { uploadState } from "$lib/stores/upload.svelte.js";
+import { deleteFiles } from "$lib/api/files.js";
 
 let instance: Uppy | null = null;
 
@@ -139,6 +140,8 @@ export interface ConflictResolution {
 	[filename: string]: "replace" | "keepBoth" | "skip";
 }
 
+let groupCounter = 0;
+
 export async function addFiles(
 	files: File[],
 	targetDir: string,
@@ -146,6 +149,18 @@ export async function addFiles(
 ) {
 	const uppy = getUppy();
 	const CHUNK_SIZE = 50;
+
+	// Detect directory upload: check if any file has a relativePath with /
+	let groupId: string | undefined;
+	for (const file of files) {
+		const relPath = (file as any).webkitRelativePath || "";
+		if (relPath && relPath.includes("/")) {
+			const dirName = relPath.split("/")[0];
+			groupId = `dir-${++groupCounter}-${dirName}`;
+			uploadState.addGroup(groupId, dirName, targetDir);
+			break;
+		}
+	}
 
 	// Build file descriptors, filtering out skipped files
 	const descriptors: any[] = [];
@@ -181,10 +196,10 @@ export async function addFiles(
 
 		const added = uppy.getFiles()
 			.filter((f) => !before.has(f.id))
-			.map((f) => ({ id: f.id, name: f.name, size: f.size }));
+			.map((f) => ({ id: f.id, name: f.name, size: f.size ?? 0 }));
 
 		if (added.length > 0) {
-			uploadState.addFiles(added);
+			uploadState.addFiles(added, groupId);
 		}
 
 		if (i + CHUNK_SIZE < descriptors.length) {
@@ -202,6 +217,36 @@ export function cancelUpload(fileId: string) {
 	const uppy = getUppy();
 	uppy.removeFile(fileId);
 	uploadState.removeFile(fileId);
+}
+
+export async function cancelGroup(groupId: string) {
+	const uppy = getUppy();
+	const meta = uploadState.groupMeta[groupId];
+
+	// Cancel all files in the group from Uppy
+	const groupItems = uploadState.items.filter((i) => i.group === groupId);
+	for (const item of groupItems) {
+		try {
+			uppy.removeFile(item.id);
+		} catch {
+			// File may already have been removed (completed and cleaned up)
+		}
+	}
+
+	// Remove from upload state
+	uploadState.removeGroup(groupId);
+
+	// Delete the partially uploaded directory from the server
+	if (meta) {
+		const dirPath = meta.targetDir === "/"
+			? `/${meta.name}`
+			: `${meta.targetDir}/${meta.name}`;
+		try {
+			await deleteFiles([dirPath], true);
+		} catch {
+			// Directory may not exist yet if no files completed
+		}
+	}
 }
 
 export function cancelAll() {

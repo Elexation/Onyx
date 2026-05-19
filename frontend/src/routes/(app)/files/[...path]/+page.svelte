@@ -57,6 +57,17 @@
 	let trashEnabled = $state(true);
 	getSettings().then((s) => { trashEnabled = s["trash.enabled"] !== "false"; }).catch(() => {});
 
+	// Background context menu state
+	let bgMenuOpen = $state(false);
+	let bgMenuPos = $state({ x: 0, y: 0 });
+
+	function handleBgContextMenu(e: MouseEvent) {
+		if (e.defaultPrevented) return;
+		e.preventDefault();
+		bgMenuPos = { x: e.clientX, y: e.clientY };
+		bgMenuOpen = true;
+	}
+
 	// Upload state
 	let conflictOpen = $state(false);
 	let conflictNames = $state<string[]>([]);
@@ -359,6 +370,10 @@
 			}
 		},
 		"escape": () => {
+			if (bgMenuOpen) {
+				bgMenuOpen = false;
+				return;
+			}
 			if (previewOpen) {
 				previewOpen = false;
 				previewFile = null;
@@ -412,7 +427,7 @@
 
 		<UploadZone currentDir={path || "/"} onupload={handleUpload}>
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-			<div class="flex min-h-0 flex-1 flex-col" onclick={() => selection.clear()}>
+			<div class="flex min-h-0 flex-1 flex-col" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
 				{#if activeView === "grid"}
 					<FileGrid
 						items={sorted}
@@ -444,6 +459,33 @@
 		</UploadZone>
 	{/if}
 </div>
+
+{#if bgMenuOpen}
+	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<div class="fixed inset-0 z-50" onclick={() => (bgMenuOpen = false)} oncontextmenu={(e) => { e.preventDefault(); bgMenuOpen = false; }}></div>
+	<div
+		class="fixed z-50 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+		style="left: {bgMenuPos.x}px; top: {bgMenuPos.y}px"
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+		<div
+			class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground"
+			onclick={() => { bgMenuOpen = false; newFolderOpen = true; }}
+		>
+			New Folder
+		</div>
+		{#if clipboard.hasItems}
+			<div class="my-1 h-px bg-border"></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+			<div
+				class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground"
+				onclick={() => { bgMenuOpen = false; handlePaste(); }}
+			>
+				Paste
+			</div>
+		{/if}
+	</div>
+{/if}
 
 {#if renameTarget}
 	<RenameDialog

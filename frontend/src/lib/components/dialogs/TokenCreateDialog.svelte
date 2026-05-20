@@ -4,7 +4,6 @@
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { Label } from "$lib/components/ui/label/index.js";
-	import { Switch } from "$lib/components/ui/switch/index.js";
 	import { createToken } from "$lib/api/tokens.js";
 	import { toast } from "svelte-sonner";
 	import { Check, Copy, KeyRound } from "lucide-svelte";
@@ -20,8 +19,7 @@
 
 	let name = $state("");
 	let scope = $state<string>("full");
-	let noExpiry = $state(true);
-	let expiryDate = $state(defaultExpiryDate());
+	let expiryOption = $state<string>("90");
 	let submitting = $state(false);
 	let createdToken = $state<PersonalAccessToken | null>(null);
 	let closeEnabled = $state(false);
@@ -34,22 +32,30 @@
 		{ value: "full", label: "Full access", description: "All file operations (cannot manage tokens/settings)" },
 	];
 
+	const expiryOptions: { value: string; label: string }[] = [
+		{ value: "7", label: "7 days" },
+		{ value: "30", label: "30 days" },
+		{ value: "60", label: "60 days" },
+		{ value: "90", label: "90 days" },
+		{ value: "180", label: "180 days" },
+		{ value: "365", label: "1 year" },
+		{ value: "730", label: "2 years" },
+		{ value: "none", label: "No expiration" },
+	];
+
 	const selectedScopeLabel = $derived(
 		scopeOptions.find((o) => o.value === scope)?.label ?? "Full access"
 	);
 
-	function defaultExpiryDate(): string {
-		const d = new Date();
-		d.setDate(d.getDate() + 90);
-		return d.toISOString().slice(0, 10);
-	}
+	const selectedExpiryLabel = $derived(
+		expiryOptions.find((o) => o.value === expiryOption)?.label ?? "90 days"
+	);
 
 	$effect(() => {
 		if (open) {
 			name = "";
 			scope = "full";
-			noExpiry = true;
-			expiryDate = defaultExpiryDate();
+			expiryOption = "90";
 			submitting = false;
 			createdToken = null;
 			closeEnabled = false;
@@ -76,18 +82,9 @@
 			return;
 		}
 		let expiresAt: number | null = null;
-		if (!noExpiry) {
-			const date = new Date(expiryDate + "T00:00:00Z");
-			if (isNaN(date.getTime())) {
-				toast.error("Invalid expiration date");
-				return;
-			}
-			const seconds = Math.floor(date.getTime() / 1000);
-			if (seconds <= Math.floor(Date.now() / 1000)) {
-				toast.error("Expiration must be in the future");
-				return;
-			}
-			expiresAt = seconds;
+		if (expiryOption !== "none") {
+			const days = parseInt(expiryOption, 10);
+			expiresAt = Math.floor((Date.now() + days * 86400 * 1000) / 1000);
 		}
 
 		submitting = true;
@@ -213,19 +210,15 @@
 				</div>
 
 				<div class="space-y-2">
-					<div class="flex items-center justify-between">
-						<Label for="token-expiry">Expiration</Label>
-						<div class="flex items-center gap-2">
-							<Label for="no-expiry" class="text-sm text-muted-foreground">No expiry</Label>
-							<Switch id="no-expiry" bind:checked={noExpiry} />
-						</div>
-					</div>
-					<Input
-						id="token-expiry"
-						type="date"
-						bind:value={expiryDate}
-						disabled={noExpiry}
-					/>
+					<Label>Expiration</Label>
+					<Select.Root type="single" bind:value={expiryOption}>
+						<Select.Trigger>{selectedExpiryLabel}</Select.Trigger>
+						<Select.Content>
+							{#each expiryOptions as opt}
+								<Select.Item value={opt.value}>{opt.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 

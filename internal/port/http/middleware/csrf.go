@@ -13,6 +13,13 @@ func CSRF(next http.Handler) http.Handler {
 			return
 		}
 
+		// Bearer (PAT) auth is immune to CSRF: tokens are not auto-sent by
+		// browsers, so the cross-origin attack vector doesn't apply.
+		if IsBearerAuth(r.Context()) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		session := SessionFromContext(r.Context())
 		if session == nil {
 			// No session means auth middleware already rejected or this is a public route

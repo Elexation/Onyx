@@ -54,3 +54,16 @@ export interface ShareLink {
 	hasPassword: boolean;
 	downloadCount: number;
 }
+
+export type TokenScope = "read" | "upload" | "full";
+
+export interface PersonalAccessToken {
+	id: number;
+	name: string;
+	token?: string;
+	tokenLast8: string;
+	scope: TokenScope;
+	createdAt: number;
+	lastUsedAt?: number;
+	expiresAt?: number;
+}

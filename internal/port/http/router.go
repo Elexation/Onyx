@@ -14,7 +14,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
@@ -27,6 +27,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	searchHandler := handler.NewSearchHandler(search)
 	shareHandler := handler.NewShareHandler(shares)
 	publicHandler := handler.NewPublicHandler(shares, files)
+	tokenHandler := handler.NewTokenHandler(tokens)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -39,13 +40,13 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/status", optionalAuth(auth, authHandler.Status))
 		r.With(rl.Middleware).Post("/login", authHandler.Login)
 		r.Post("/setup", authHandler.Setup)
-		r.With(middleware.Auth(auth), middleware.CSRF).Post("/logout", authHandler.Logout)
-		r.With(middleware.Auth(auth), middleware.CSRF).Post("/change-password", settingsHandler.ChangePassword)
+		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/logout", authHandler.Logout)
+		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/change-password", settingsHandler.ChangePassword)
 	})
 
 	// Protected API routes
 	r.Route("/api", func(r chi.Router) {
-		r.Use(middleware.Auth(auth))
+		r.Use(middleware.Auth(auth, tokens))
 		r.Use(middleware.CSRF)
 
 		r.Route("/files", func(r chi.Router) {
@@ -88,6 +89,12 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 		r.Get("/settings", settingsHandler.GetAll)
 		r.Patch("/settings", settingsHandler.Update)
+
+		r.Route("/tokens", func(r chi.Router) {
+			r.Post("/", tokenHandler.Create)
+			r.Get("/", tokenHandler.List)
+			r.Delete("/{id}", tokenHandler.Delete)
+		})
 	})
 
 	// Public share API routes (no auth)
@@ -103,14 +110,14 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	// Intercept /api/upload before Chi to avoid path mangling.
 	// OPTIONS pass through without auth (tus CORS preflight).
-	return uploadInterceptor(auth, tus, r)
+	return uploadInterceptor(auth, tokens, tus, r)
 }
 
 // uploadInterceptor routes /api/upload requests directly to tusd,
 // bypassing Chi's routing which modifies URL paths.
-func uploadInterceptor(auth middleware.SessionValidator, tus http.Handler, next http.Handler) http.Handler {
+func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.Auth(auth)(stripped)
+	authed := middleware.Auth(auth, tokens)(stripped)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/upload") {
 			next.ServeHTTP(w, r)

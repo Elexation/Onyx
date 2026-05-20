@@ -89,6 +89,10 @@ func main() {
 	shareService := service.NewShareService(shareRepo, settingsService)
 	shareService.StartCleanup(24 * time.Hour)
 
+	tokenRepo := database.NewTokenRepo(db)
+	tokenService := service.NewTokenService(tokenRepo)
+	tokenService.StartCleanup(24 * time.Hour)
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -100,7 +104,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

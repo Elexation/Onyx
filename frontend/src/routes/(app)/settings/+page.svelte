@@ -4,6 +4,7 @@
 	import { getSettings, updateSettings, changePassword } from "$lib/api/settings";
 	import { shareCount } from "$lib/api/shares";
 	import { versionCount } from "$lib/api/versions";
+	import { listTokens, revokeToken } from "$lib/api/tokens";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from "$lib/components/ui/tabs/index.js";
@@ -13,6 +14,9 @@
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Separator } from "$lib/components/ui/separator/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
+	import TokenCreateDialog from "$lib/components/dialogs/TokenCreateDialog.svelte";
+	import type { PersonalAccessToken, TokenScope } from "$lib/types.js";
+	import { Trash2 } from "lucide-svelte";
 
 	const MIN_PASSWORD_LENGTH = 8;
 
@@ -38,6 +42,13 @@
 	let shareDisableConfirmOpen = $state(false);
 	let versionDisableConfirmOpen = $state(false);
 	let debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+	let tokens = $state<PersonalAccessToken[]>([]);
+	let tokenMax = $state(50);
+	let tokensLoading = $state(false);
+	let tokenCreateOpen = $state(false);
+	let tokenRevokeConfirmOpen = $state(false);
+	let tokenToRevoke = $state<PersonalAccessToken | null>(null);
 
 	onMount(async () => {
 		try {
@@ -185,6 +196,67 @@
 		return Math.round(n / (1024 * 1024));
 	}
 
+	async function loadTokens() {
+		tokensLoading = true;
+		try {
+			const res = await listTokens();
+			tokens = res.tokens ?? [];
+			tokenMax = res.max;
+		} catch {
+			toast.error("Failed to load tokens");
+		} finally {
+			tokensLoading = false;
+		}
+	}
+
+	function handleTokenCreated(tok: PersonalAccessToken) {
+		tokens = [tok, ...tokens];
+	}
+
+	function askRevokeToken(tok: PersonalAccessToken) {
+		tokenToRevoke = tok;
+		tokenRevokeConfirmOpen = true;
+	}
+
+	async function confirmRevokeToken() {
+		if (!tokenToRevoke) return;
+		const id = tokenToRevoke.id;
+		tokenRevokeConfirmOpen = false;
+		tokenToRevoke = null;
+		try {
+			await revokeToken(id);
+			tokens = tokens.filter((t) => t.id !== id);
+			toast.success("Token revoked");
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Failed to revoke token");
+		}
+	}
+
+	function scopeBadgeLabel(s: TokenScope): string {
+		if (s === "read") return "Read-only";
+		if (s === "upload") return "Upload + list";
+		return "Full access";
+	}
+
+	function formatTokenDate(unix: number | undefined): string {
+		if (!unix) return "Never";
+		return new Date(unix * 1000).toLocaleDateString(undefined, {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+		});
+	}
+
+	function formatLastUsed(unix: number | undefined): string {
+		if (!unix) return "Never";
+		const now = Date.now() / 1000;
+		const diff = now - unix;
+		if (diff < 60) return "Just now";
+		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+		return formatTokenDate(unix);
+	}
+
 	async function handleChangePassword() {
 		if (!currentPassword || !newPassword) {
 			toast.error("All password fields are required");
@@ -223,13 +295,19 @@
 	{#if loading}
 		<p class="text-muted-foreground">Loading settings…</p>
 	{:else}
-		<Tabs value="versioning">
+		<Tabs
+			value="versioning"
+			onValueChange={(v) => {
+				if (v === "tokens" && tokens.length === 0 && !tokensLoading) loadTokens();
+			}}
+		>
 			<TabsList class="mb-6">
 				<TabsTrigger value="versioning">Versioning</TabsTrigger>
 				<TabsTrigger value="trash">Trash</TabsTrigger>
 				<TabsTrigger value="sharing">Sharing</TabsTrigger>
 				<TabsTrigger value="uploads">Uploads</TabsTrigger>
 				<TabsTrigger value="security">Security</TabsTrigger>
+				<TabsTrigger value="tokens">Tokens</TabsTrigger>
 			</TabsList>
 
 
@@ -445,6 +523,69 @@
 					</div>
 				</div>
 			</TabsContent>
+
+			<!-- Tokens -->
+			<TabsContent value="tokens">
+				<div class="space-y-6">
+					<div class="flex items-start justify-between gap-4">
+						<div>
+							<p class="text-sm font-medium">Personal access tokens</p>
+							<p class="text-sm text-muted-foreground">
+								For authenticating scripts and automation. {tokens.length} of {tokenMax} used.
+							</p>
+						</div>
+						<Button
+							onclick={() => (tokenCreateOpen = true)}
+							disabled={tokens.length >= tokenMax}
+						>
+							Create Token
+						</Button>
+					</div>
+
+					<Separator />
+
+					{#if tokensLoading}
+						<p class="text-sm text-muted-foreground">Loading tokens…</p>
+					{:else if tokens.length === 0}
+						<p class="text-sm text-muted-foreground">
+							No tokens yet. Create one to authenticate scripts against the Onyx API.
+						</p>
+					{:else}
+						<div class="flex flex-col gap-3">
+							{#each tokens as tok (tok.id)}
+								<div class="rounded-md border p-3">
+									<div class="flex items-start justify-between gap-3">
+										<div class="min-w-0 flex-1 space-y-1">
+											<div class="flex items-center gap-2 text-sm font-medium">
+												<span class="truncate">{tok.name}</span>
+												<span class="rounded bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+													{scopeBadgeLabel(tok.scope)}
+												</span>
+											</div>
+											<p class="font-mono text-xs text-muted-foreground">
+												onyx_…{tok.tokenLast8}
+											</p>
+											<div class="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+												<span>Created {formatTokenDate(tok.createdAt)}</span>
+												<span>Last used {formatLastUsed(tok.lastUsedAt)}</span>
+												<span>Expires {formatTokenDate(tok.expiresAt)}</span>
+											</div>
+										</div>
+										<Button
+											variant="ghost"
+											size="icon"
+											onclick={() => askRevokeToken(tok)}
+											class="shrink-0"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</TabsContent>
 		</Tabs>
 	{/if}
 </div>
@@ -482,3 +623,24 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<AlertDialog.Root bind:open={tokenRevokeConfirmOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Revoke token?</AlertDialog.Title>
+			<AlertDialog.Description>
+				{tokenToRevoke
+					? `"${tokenToRevoke.name}" will stop working immediately. Any script using it will fail.`
+					: ""}
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmRevokeToken}>
+				Revoke
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<TokenCreateDialog bind:open={tokenCreateOpen} onCreated={handleTokenCreated} />

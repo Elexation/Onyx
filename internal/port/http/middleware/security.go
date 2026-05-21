@@ -7,7 +7,7 @@ import (
 )
 
 func SecurityHeaders(next http.Handler) http.Handler {
-	csp := "default-src 'self'; script-src 'self' " + web.ScriptHash + "; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'self'"
+	csp := "default-src 'self'; script-src 'self' " + web.ScriptHash + "; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; object-src 'none'; frame-ancestors 'self'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", csp)
 		w.Header().Set("X-Content-Type-Options", "nosniff")

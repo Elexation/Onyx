@@ -14,6 +14,9 @@ frontend/tests/
 frontend/scripts/*
 !frontend/scripts/extract-csp-hash.js
 
+# Go tests
+*_test.go
+
 # Build artifacts
 web/build/
 web/csp_hash.go

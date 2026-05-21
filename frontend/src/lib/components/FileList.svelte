@@ -8,6 +8,7 @@
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
 	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FileIcon from "./FileIcon.svelte";
+	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import VirtualList from "./VirtualList.svelte";
 	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
@@ -184,7 +185,15 @@
 								/>
 							</div>
 							<div class="flex flex-1 items-center gap-2 py-2 text-sm">
-								<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+								{#if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
+									<ThumbnailImage path={file.path} size="small" class="flex size-5 items-center justify-center overflow-hidden rounded">
+										{#snippet children()}
+											<FileIcon mimeType={file.mimeType} isDir={false} />
+										{/snippet}
+									</ThumbnailImage>
+								{:else}
+									<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
+								{/if}
 								{file.name}
 							</div>
 							<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">

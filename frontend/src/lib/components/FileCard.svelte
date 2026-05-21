@@ -4,6 +4,7 @@
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import FileIcon from "./FileIcon.svelte";
+	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
 	import { longpress } from "$lib/actions/longpress.js";
@@ -36,6 +37,10 @@
 
 	const isSelected = $derived(selection.has(item.path));
 	const isCut = $derived(clipboard.isCut(item.path));
+	const hasThumbnail = $derived(
+		!item.isDir &&
+			(item.mimeType?.startsWith("image/") || item.mimeType?.startsWith("video/")),
+	);
 
 	function handleClick(e: MouseEvent) {
 		e.stopPropagation();
@@ -118,7 +123,15 @@
 						<EllipsisVerticalIcon class="size-4" />
 					</button>
 				</div>
-				<FileIcon mimeType={item.mimeType} isDir={item.isDir} class="size-10 text-muted-foreground" />
+				{#if hasThumbnail}
+					<ThumbnailImage path={item.path} size="large" class="flex size-20 items-center justify-center overflow-hidden rounded">
+						{#snippet children()}
+							<FileIcon mimeType={item.mimeType} isDir={false} class="size-10 text-muted-foreground" />
+						{/snippet}
+					</ThumbnailImage>
+				{:else}
+					<FileIcon mimeType={item.mimeType} isDir={item.isDir} class="size-10 text-muted-foreground" />
+				{/if}
 				<span class="w-full truncate text-center text-xs">{item.name}</span>
 				{#if !item.isDir}
 					<span class="text-[10px] text-muted-foreground">{formatFileSize(item.size)}</span>

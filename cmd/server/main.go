@@ -93,6 +93,15 @@ func main() {
 	tokenService := service.NewTokenService(tokenRepo)
 	tokenService.StartCleanup(24 * time.Hour)
 
+	thumbsDir := filepath.Join(cacheDir, "thumbs")
+	thumbService, err := service.NewThumbnailService(localStorage, dataDir, thumbsDir)
+	if err != nil {
+		slog.Error("thumbnail service init failed", "error", err)
+		os.Exit(1)
+	}
+	thumbService.Start()
+	thumbService.StartJanitor(6 * time.Hour)
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -104,7 +113,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

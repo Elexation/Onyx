@@ -14,7 +14,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
@@ -28,6 +28,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	shareHandler := handler.NewShareHandler(shares)
 	publicHandler := handler.NewPublicHandler(shares, files)
 	tokenHandler := handler.NewTokenHandler(tokens)
+	thumbsHandler := handler.NewThumbsHandler(thumbs)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -61,6 +62,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
 		r.Get("/preview/*", fileHandler.Preview)
+		r.Get("/thumbs/*", thumbsHandler.Get)
 
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)

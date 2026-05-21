@@ -31,7 +31,6 @@
 			getScrollElement: makeGetScrollElement(scrollEl),
 			estimateSize: () => itemHeight + gap,
 			overscan,
-			lanes: columns,
 		}),
 	);
 </script>

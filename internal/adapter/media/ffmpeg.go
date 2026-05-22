@@ -3,6 +3,7 @@ package media
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -32,6 +33,112 @@ func Detect() *FFmpeg {
 // Available reports whether both ffmpeg and ffprobe are on PATH.
 func (f *FFmpeg) Available() bool {
 	return f.ffmpegPath != "" && f.ffprobePath != ""
+}
+
+// ProbeInfo describes the first video stream of a media file.
+type ProbeInfo struct {
+	Codec     string  `json:"codec"`
+	Width     int     `json:"width"`
+	Height    int     `json:"height"`
+	Duration  float64 `json:"duration"`
+	Bitrate   int64   `json:"bitrate"`
+	Framerate float64 `json:"framerate"`
+	HasAudio  bool    `json:"hasAudio"`
+}
+
+// ErrNoVideoStream is returned when ffprobe succeeds but the file has no
+// video stream (e.g. audio-only container, corrupt file).
+var ErrNoVideoStream = fmt.Errorf("no video stream")
+
+// ProbeVideo runs ffprobe and returns the first video stream's metadata.
+// Returns ErrNoVideoStream if the file has no video stream.
+func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, error) {
+	if f.ffprobePath == "" {
+		return nil, fmt.Errorf("ffprobe not available")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, f.ffprobePath,
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_streams",
+		"-show_format",
+		srcPath,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe: %w", err)
+	}
+
+	var raw struct {
+		Streams []struct {
+			CodecType  string `json:"codec_type"`
+			CodecName  string `json:"codec_name"`
+			Width      int    `json:"width"`
+			Height     int    `json:"height"`
+			RFrameRate string `json:"r_frame_rate"`
+			BitRate    string `json:"bit_rate"`
+			Duration   string `json:"duration"`
+		} `json:"streams"`
+		Format struct {
+			Duration string `json:"duration"`
+			BitRate  string `json:"bit_rate"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parse ffprobe json: %w", err)
+	}
+
+	var hasAudio bool
+	for _, s := range raw.Streams {
+		if s.CodecType == "audio" {
+			hasAudio = true
+		}
+	}
+	for _, s := range raw.Streams {
+		if s.CodecType != "video" {
+			continue
+		}
+		info := &ProbeInfo{
+			Codec:     s.CodecName,
+			Width:     s.Width,
+			Height:    s.Height,
+			Framerate: parseFraction(s.RFrameRate),
+			HasAudio:  hasAudio,
+		}
+		if d, err := strconv.ParseFloat(s.Duration, 64); err == nil && d > 0 {
+			info.Duration = d
+		} else if d, err := strconv.ParseFloat(raw.Format.Duration, 64); err == nil {
+			info.Duration = d
+		}
+		if b, err := strconv.ParseInt(s.BitRate, 10, 64); err == nil && b > 0 {
+			info.Bitrate = b
+		} else if b, err := strconv.ParseInt(raw.Format.BitRate, 10, 64); err == nil {
+			info.Bitrate = b
+		}
+		return info, nil
+	}
+	return nil, ErrNoVideoStream
+}
+
+// parseFraction parses ffprobe's "num/den" framerate strings (e.g. "30000/1001"
+// → 29.97). Returns 0 on malformed input.
+func parseFraction(s string) float64 {
+	if s == "" || s == "0/0" {
+		return 0
+	}
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 {
+		v, _ := strconv.ParseFloat(s, 64)
+		return v
+	}
+	num, err1 := strconv.ParseFloat(parts[0], 64)
+	den, err2 := strconv.ParseFloat(parts[1], 64)
+	if err1 != nil || err2 != nil || den == 0 {
+		return 0
+	}
+	return num / den
 }
 
 // Probe returns the duration of the input file in seconds.

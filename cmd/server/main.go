@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
+	"github.com/Elexation/onyx/internal/adapter/media"
 	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/adapter/upload"
 	server "github.com/Elexation/onyx/internal/port/http"
@@ -102,6 +105,41 @@ func main() {
 	thumbService.Start()
 	thumbService.StartJanitor(6 * time.Hour)
 
+	probeService, err := service.NewProbeService(localStorage, dataDir)
+	if err != nil {
+		slog.Error("probe service init failed", "error", err)
+		os.Exit(1)
+	}
+	probeService.StartJanitor(10 * time.Minute)
+
+	hwaccelPref := env("ONYX_HWACCEL", "auto")
+	maxHeight := 2160
+	if v := os.Getenv("ONYX_MAX_TRANSCODE_HEIGHT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			slog.Error("invalid ONYX_MAX_TRANSCODE_HEIGHT", "value", v, "error", err)
+			os.Exit(1)
+		}
+		switch n {
+		case 0, 480, 720, 1080, 1440, 2160:
+			maxHeight = n
+		default:
+			slog.Error("ONYX_MAX_TRANSCODE_HEIGHT must be one of 0 (unlimited), 480, 720, 1080, 1440, 2160", "value", v)
+			os.Exit(1)
+		}
+	}
+
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	hwProbe := media.RunStartupProbe(probeCtx, media.Detect())
+	probeCancel()
+
+	transcodeService, err := service.NewTranscodeService(localStorage, probeService, dataDir, cacheDir, hwProbe, hwaccelPref, maxHeight)
+	if err != nil {
+		slog.Error("transcode service init failed", "error", err)
+		os.Exit(1)
+	}
+	defer transcodeService.Shutdown()
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
@@ -113,7 +151,7 @@ func main() {
 	}
 	defer tusHandler.Close()
 
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

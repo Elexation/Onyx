@@ -14,7 +14,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
@@ -29,6 +29,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	publicHandler := handler.NewPublicHandler(shares, files)
 	tokenHandler := handler.NewTokenHandler(tokens)
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
+	streamHandler := handler.NewStreamHandler(probe, transcode)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -63,6 +64,11 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/download/*", fileHandler.Download)
 		r.Get("/preview/*", fileHandler.Preview)
 		r.Get("/thumbs/*", thumbsHandler.Get)
+		r.Get("/stream/info/*", streamHandler.Info)
+		r.Get("/stream/master/*", streamHandler.Master)
+		r.Get("/stream/playlist/{v}/*", streamHandler.Playlist)
+		r.Get("/stream/init/{v}/*", streamHandler.Init)
+		r.Get("/stream/segment/{v}/{n}/*", streamHandler.Segment)
 
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)

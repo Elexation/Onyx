@@ -17,6 +17,7 @@ const (
 	SettingSharesEnabled = "shares.enabled"
 	SettingSessionLifetime = "session.lifetime"
 	SettingUploadMaxSize = "upload.max_size"
+	SettingPlaybackDefaultQualityCeiling = "playback.default_quality_ceiling"
 )
 
 var Defaults = map[string]string{
@@ -31,6 +32,7 @@ var Defaults = map[string]string{
 	SettingSharesEnabled:   "true",
 	SettingSessionLifetime: "720h", // 30 days
 	SettingUploadMaxSize:       "0",     // 0 = unlimited
+	SettingPlaybackDefaultQualityCeiling: "1080", // pixel height; 0 = unlimited
 }
 
 func GetBool(value string) bool {

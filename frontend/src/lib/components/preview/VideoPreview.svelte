@@ -1,14 +1,21 @@
 <script lang="ts">
 	import { getPreviewUrl } from "$lib/preview.js";
 	import { formatMediaTime } from "$lib/utils/format.js";
+	import { fetchProbeInfo, canPlayNative, type ProbeInfo } from "$lib/media/capabilities";
+	import { getSettings } from "$lib/api/settings";
 	import type { FileInfo } from "$lib/types";
+	import type { HlsHandle, HlsLevel } from "$lib/media/hls";
+	import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import PauseIcon from "@lucide/svelte/icons/pause";
 	import Volume2Icon from "@lucide/svelte/icons/volume-2";
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
+	import SettingsIcon from "@lucide/svelte/icons/settings";
 
 	let { file, onclose, url }: { file: FileInfo; onclose: () => void; url?: string } = $props();
+
+	type PlaybackMode = "loading" | "native" | "transcode-required" | "no-video";
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let playing = $state(false);
@@ -19,8 +26,19 @@
 	let bufferedEnd = $state(0);
 	let showControls = $state(true);
 	let failed = $state(false);
+	let playback = $state<PlaybackMode>("loading");
+	let probeInfo = $state<ProbeInfo | null>(null);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
+
+	let hlsHandle: HlsHandle | null = null;
+	let qualityLevels = $state<HlsLevel[]>([]);
+	// -1 = auto (ABR), otherwise a level index from qualityLevels.
+	let selectedQuality = $state<number>(-1);
+	// currentAutoLevel tracks the level hls.js is actually playing while
+	// in auto mode — used to label the menu as e.g. "Auto (1080p)".
+	let currentAutoLevel = $state<number>(-1);
+	let defaultQualityCeiling = $state<number>(1080);
 
 	const STORAGE_PREFIX = "onyx-video-pos:";
 
@@ -163,6 +181,126 @@
 		};
 	});
 
+	$effect(() => {
+		// Load the admin-configured default quality ceiling once per mount.
+		// Failures fall back to 1080 — non-fatal, playback still works.
+		getSettings()
+			.then((s) => {
+				const raw = s["playback.default_quality_ceiling"];
+				const n = raw ? parseInt(raw, 10) : NaN;
+				if (!isNaN(n)) {
+					defaultQualityCeiling = n;
+					hlsHandle?.setAutoLevelCap(n);
+				}
+			})
+			.catch(() => { /* default stays 1080 */ });
+	});
+
+	$effect(() => {
+		const path = file.path;
+		// Share-link playback uses a caller-provided URL and skips the probe;
+		// direct play is the best-effort fallback in that context.
+		if (url) {
+			playback = "native";
+			return;
+		}
+		playback = "loading";
+		probeInfo = null;
+		fetchProbeInfo(path).then(async (result) => {
+			if (path !== file.path) return;
+			if (result.status === "no-video") {
+				playback = "no-video";
+				return;
+			}
+			if (result.status !== "ok" || !result.info) {
+				playback = "native";
+				return;
+			}
+			probeInfo = result.info;
+			const native = await canPlayNative(result.info);
+			if (path !== file.path) return;
+			playback = native ? "native" : "transcode-required";
+		});
+	});
+
+	$effect(() => {
+		const el = videoEl;
+		if (!el) return;
+		if (playback !== "transcode-required") return;
+
+		const masterUrl = `/api/stream/master${file.path}`;
+		let localHandle: HlsHandle | null = null;
+		let cancelled = false;
+
+		(async () => {
+			const { createHlsPlayer, isHlsSupported, canPlayHlsNatively } = await import("$lib/media/hls");
+			if (cancelled) return;
+			if (isHlsSupported()) {
+				const handle = createHlsPlayer(el, masterUrl);
+				if (cancelled) {
+					handle?.destroy();
+					return;
+				}
+				if (!handle) {
+					failed = true;
+					return;
+				}
+				localHandle = handle;
+				hlsHandle = handle;
+				handle.onLevelsLoaded((levels) => {
+					qualityLevels = levels;
+					handle.setAutoLevelCap(defaultQualityCeiling);
+				});
+				handle.onLevelSwitched((idx) => {
+					currentAutoLevel = idx;
+				});
+				return;
+			}
+			if (canPlayHlsNatively(el)) {
+				// Native HLS (Safari) — hls.js is bypassed, so the quality
+				// menu has nothing to drive and stays hidden.
+				el.src = masterUrl;
+				return;
+			}
+			failed = true;
+		})();
+
+		return () => {
+			cancelled = true;
+			localHandle?.destroy();
+			if (hlsHandle === localHandle) {
+				hlsHandle = null;
+				qualityLevels = [];
+				selectedQuality = -1;
+				currentAutoLevel = -1;
+			}
+		};
+	});
+
+	function pickQuality(index: number) {
+		if (!hlsHandle) return;
+		selectedQuality = index;
+		hlsHandle.setLevel(index);
+	}
+
+	function qualityLabel(level: HlsLevel): string {
+		return `${level.height}p`;
+	}
+
+	const qualityButtonLabel = $derived.by(() => {
+		if (qualityLevels.length === 0) return "";
+		if (selectedQuality < 0) {
+			if (currentAutoLevel >= 0 && currentAutoLevel < qualityLevels.length) {
+				return `Auto (${qualityLabel(qualityLevels[currentAutoLevel])})`;
+			}
+			return "Auto";
+		}
+		if (selectedQuality < qualityLevels.length) {
+			return qualityLabel(qualityLevels[selectedQuality]);
+		}
+		return "";
+	});
+
 	const seekPercent = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
 	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
 </script>
@@ -175,10 +313,15 @@
 	onmousemove={resetControlsTimer}
 	onmouseleave={() => { if (playing) showControls = false; }}
 >
+	{#if playback === "loading"}
+		<p class="text-sm text-muted-foreground" data-preview-content>Loading…</p>
+	{:else if playback === "no-video"}
+		<p class="text-sm text-muted-foreground" data-preview-content>No playable video stream in this file.</p>
+	{:else}
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video
 		bind:this={videoEl}
-		src={url ?? getPreviewUrl(file.path)}
+		src={playback === "native" ? (url ?? getPreviewUrl(file.path)) : undefined}
 		class="max-h-full max-w-full"
 		preload="metadata"
 		data-preview-content
@@ -278,6 +421,42 @@
 				/>
 			</div>
 
+			{#if qualityLevels.length > 0}
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								class="flex items-center gap-1 rounded p-1 text-xs text-white/80 transition-colors hover:text-white"
+							>
+								<SettingsIcon class="size-4" />
+								<span class="hidden sm:inline">{qualityButtonLabel}</span>
+							</button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="min-w-36">
+						<DropdownMenu.Item onclick={() => pickQuality(-1)}>
+							{#if selectedQuality < 0}
+								<span class="mr-1">✓</span>
+							{:else}
+								<span class="mr-1 opacity-0">✓</span>
+							{/if}
+							Auto
+						</DropdownMenu.Item>
+						{#each qualityLevels as level (level.index)}
+							<DropdownMenu.Item onclick={() => pickQuality(level.index)}>
+								{#if selectedQuality === level.index}
+									<span class="mr-1">✓</span>
+								{:else}
+									<span class="mr-1 opacity-0">✓</span>
+								{/if}
+								{qualityLabel(level)}
+							</DropdownMenu.Item>
+						{/each}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			{/if}
+
 			<button
 				class="rounded p-1 text-white/80 transition-colors hover:text-white"
 				onclick={toggleFullscreen}
@@ -286,6 +465,7 @@
 			</button>
 		</div>
 	</div>
+	{/if}
 	{/if}
 </div>
 

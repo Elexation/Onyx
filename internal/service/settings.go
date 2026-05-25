@@ -139,6 +139,17 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("cannot exceed 102400 MB")
 		}
 
+	case domain.SettingPlaybackDefaultQualityCeiling:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("must be a number")
+		}
+		switch n {
+		case 0, 480, 720, 1080, 1440, 2160:
+		default:
+			return fmt.Errorf("must be one of 0, 480, 720, 1080, 1440, 2160")
+		}
+
 	}
 
 	return nil

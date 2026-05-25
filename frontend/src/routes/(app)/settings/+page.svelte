@@ -13,6 +13,7 @@
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Separator } from "$lib/components/ui/separator/index.js";
+	import * as Select from "$lib/components/ui/select/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import TokenCreateDialog from "$lib/components/dialogs/TokenCreateDialog.svelte";
 	import type { PersonalAccessToken, TokenScope } from "$lib/types.js";
@@ -196,6 +197,19 @@
 		return Math.round(n / (1024 * 1024));
 	}
 
+	const qualityOptions = [
+		{ value: "0", label: "Unlimited (source)" },
+		{ value: "2160", label: "2160p" },
+		{ value: "1440", label: "1440p" },
+		{ value: "1080", label: "1080p" },
+		{ value: "720", label: "720p" },
+		{ value: "480", label: "480p" },
+	];
+
+	function qualityLabel(value: string): string {
+		return qualityOptions.find((o) => o.value === value)?.label ?? "1080p";
+	}
+
 	async function loadTokens() {
 		tokensLoading = true;
 		try {
@@ -306,6 +320,7 @@
 				<TabsTrigger value="trash">Trash</TabsTrigger>
 				<TabsTrigger value="sharing">Sharing</TabsTrigger>
 				<TabsTrigger value="uploads">Uploads</TabsTrigger>
+				<TabsTrigger value="playback">Playback</TabsTrigger>
 				<TabsTrigger value="security">Security</TabsTrigger>
 				<TabsTrigger value="tokens">Tokens</TabsTrigger>
 			</TabsList>
@@ -461,6 +476,32 @@
 							class="max-w-xs"
 						/>
 						<p class="text-xs text-muted-foreground">0 = unlimited. Max: 102,400 MB (100 GB)</p>
+					</div>
+				</div>
+			</TabsContent>
+
+			<!-- Playback -->
+			<TabsContent value="playback">
+				<div class="space-y-6">
+					<div class="space-y-2">
+						<Label>Default quality ceiling</Label>
+						<Select.Root
+							type="single"
+							value={settings["playback.default_quality_ceiling"] ?? "1080"}
+							onValueChange={(v) => save("playback.default_quality_ceiling", v)}
+						>
+							<Select.Trigger class="max-w-xs">
+								{qualityLabel(settings["playback.default_quality_ceiling"] ?? "1080")}
+							</Select.Trigger>
+							<Select.Content>
+								{#each qualityOptions as opt}
+									<Select.Item value={opt.value}>{opt.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							Caps the highest rendition produced when transcoding videos. Viewers can still pick a lower quality manually. "Unlimited" encodes up to the source resolution.
+						</p>
 					</div>
 				</div>
 			</TabsContent>

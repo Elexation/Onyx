@@ -12,8 +12,33 @@ services:
     environment:
       - ONYX_DATA=/srv
       - ONYX_CONFIG=/config
+      # Hardware-accelerated video transcoding. Values: auto (default —
+      # probes NVENC / QSV / VAAPI / AMF in that order), nvenc, qsv,
+      # vaapi, amf, or none (force libx264). Unavailable forced encoders
+      # fall back to software with a WARN log.
+      # - ONYX_HWACCEL=auto
+      # Caps the highest ABR rung produced per transcode. Values: 480,
+      # 720, 1080, 1440, 2160. Defaults to 2160.
+      # - ONYX_MAX_TRANSCODE_HEIGHT=2160
     user: "1000:1000"
     restart: unless-stopped
+    # --- GPU passthrough (uncomment the block matching your hardware) ---
+    #
+    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, video]
+    #
+    # Intel QSV or AMD VAAPI/AMF — pass the DRM render node through:
+    # devices:
+    #   - /dev/dri/renderD128:/dev/dri/renderD128
+    # group_add:
+    #   - "989"   # host 'render' group gid; check with `getent group render`
+    #
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 30s

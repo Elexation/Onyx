@@ -18,6 +18,7 @@
 	type PlaybackMode = "loading" | "native" | "transcode-required" | "no-video";
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
+	let containerEl = $state<HTMLDivElement | null>(null);
 	let playing = $state(false);
 	let currentTime = $state(0);
 	let duration = $state(0);
@@ -26,21 +27,73 @@
 	let bufferedEnd = $state(0);
 	let showControls = $state(true);
 	let failed = $state(false);
-	let playback = $state<PlaybackMode>("loading");
 	let probeInfo = $state<ProbeInfo | null>(null);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
 
+	let detectedMode = $state<PlaybackMode>("loading");
+	let nativeSupported = $state(false);
+	let userMode = $state<"original" | "transcode" | null>(null);
+	let userPickedHeight = $state<number | null>(null);
+	let pendingSeek = $state<number | null>(null);
+
 	let hlsHandle: HlsHandle | null = null;
 	let qualityLevels = $state<HlsLevel[]>([]);
-	// -1 = auto (ABR), otherwise a level index from qualityLevels.
 	let selectedQuality = $state<number>(-1);
-	// currentAutoLevel tracks the level hls.js is actually playing while
-	// in auto mode — used to label the menu as e.g. "Auto (1080p)".
 	let currentAutoLevel = $state<number>(-1);
 	let defaultQualityCeiling = $state<number>(1080);
 
 	const STORAGE_PREFIX = "onyx-video-pos:";
+	const VOLUME_KEY = "onyx-video-volume";
+	const QUALITY_LADDER = [2160, 1440, 1080, 720, 480];
+
+	const playback = $derived.by(() => {
+		if (detectedMode === "loading" || detectedMode === "no-video") return detectedMode;
+		if (userMode === "transcode") return "transcode-required";
+		if (userMode === "original" && nativeSupported) return "native";
+		return detectedMode;
+	});
+
+	const lowerQualities = $derived(
+		probeInfo?.height
+			? QUALITY_LADDER.filter((h) => h < probeInfo!.height)
+			: []
+	);
+
+	const availableQualities = $derived(
+		probeInfo?.height
+			? qualityLevels.filter((l) => l.height <= probeInfo!.height)
+			: qualityLevels
+	);
+
+	const showQualityMenu = $derived(
+		nativeSupported
+			? lowerQualities.length > 0
+			: availableQualities.length > 0
+	);
+
+	const qualityButtonLabel = $derived.by(() => {
+		if (nativeSupported) {
+			if (userMode === "transcode" && userPickedHeight) {
+				return `${userPickedHeight}p`;
+			}
+			return probeInfo?.height ? `${probeInfo.height}p` : "";
+		}
+		if (availableQualities.length === 0) return "";
+		if (selectedQuality < 0) {
+			if (currentAutoLevel >= 0 && currentAutoLevel < qualityLevels.length) {
+				return `Auto (${qualityLabel(qualityLevels[currentAutoLevel])})`;
+			}
+			return "Auto";
+		}
+		if (selectedQuality < qualityLevels.length) {
+			return qualityLabel(qualityLevels[selectedQuality]);
+		}
+		return "";
+	});
+
+	const seekPercent = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
+	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
 
 	function restorePosition() {
 		if (!videoEl) return;
@@ -73,6 +126,25 @@
 		localStorage.removeItem(STORAGE_PREFIX + file.path);
 	}
 
+	function restoreVolume() {
+		if (!videoEl) return;
+		try {
+			const raw = localStorage.getItem(VOLUME_KEY);
+			if (!raw) return;
+			const saved = JSON.parse(raw);
+			videoEl.volume = saved.volume ?? 1;
+			videoEl.muted = saved.muted ?? false;
+			volume = videoEl.volume;
+			muted = videoEl.muted;
+		} catch { /* ignore */ }
+	}
+
+	function saveVolume() {
+		try {
+			localStorage.setItem(VOLUME_KEY, JSON.stringify({ volume, muted }));
+		} catch { /* storage full */ }
+	}
+
 	function togglePlay() {
 		if (!videoEl || failed) return;
 		if (videoEl.paused) videoEl.play().catch(() => { failed = true; });
@@ -84,10 +156,32 @@
 		videoEl.muted = !videoEl.muted;
 	}
 
+	let clickTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function handleVideoClick() {
+		if (clickTimer) {
+			clearTimeout(clickTimer);
+			clickTimer = null;
+			return;
+		}
+		clickTimer = setTimeout(() => {
+			clickTimer = null;
+			togglePlay();
+		}, 200);
+	}
+
+	function handleVideoDblClick() {
+		if (clickTimer) {
+			clearTimeout(clickTimer);
+			clickTimer = null;
+		}
+		toggleFullscreen();
+	}
+
 	function toggleFullscreen() {
-		if (!videoEl) return;
+		if (!containerEl) return;
 		if (document.fullscreenElement) document.exitFullscreen();
-		else videoEl.requestFullscreen();
+		else containerEl.requestFullscreen();
 	}
 
 	function seek(offset: number) {
@@ -171,19 +265,57 @@
 		}
 	}
 
+	function pickQuality(index: number) {
+		if (!hlsHandle) return;
+		selectedQuality = index;
+		hlsHandle.setLevel(index);
+	}
+
+	function qualityLabel(level: HlsLevel): string {
+		return `${level.height}p`;
+	}
+
+	function switchToOriginal() {
+		if (!videoEl) return;
+		pendingSeek = videoEl.currentTime;
+		userMode = "original";
+		userPickedHeight = null;
+		selectedQuality = -1;
+		failed = false;
+	}
+
+	function switchToTranscode(height: number) {
+		if (!videoEl) return;
+		userPickedHeight = height;
+
+		if (userMode === "transcode" && hlsHandle) {
+			const level = qualityLevels.find((l) => l.height === height);
+			if (level) {
+				selectedQuality = level.index;
+				hlsHandle.setLevel(level.index);
+			}
+			return;
+		}
+
+		pendingSeek = videoEl.currentTime;
+		userMode = "transcode";
+		failed = false;
+	}
+
+	// --- Effects ---
+
 	$effect(() => {
 		const el = videoEl;
 		if (!el) return;
-		restorePosition();
+		restoreVolume();
 		return () => {
 			el.pause();
 			if (controlsTimer) clearTimeout(controlsTimer);
+			if (clickTimer) clearTimeout(clickTimer);
 		};
 	});
 
 	$effect(() => {
-		// Load the admin-configured default quality ceiling once per mount.
-		// Failures fall back to 1080 — non-fatal, playback still works.
 		getSettings()
 			.then((s) => {
 				const raw = s["playback.default_quality_ceiling"];
@@ -198,37 +330,50 @@
 
 	$effect(() => {
 		const path = file.path;
-		// Share-link playback uses a caller-provided URL and skips the probe;
-		// direct play is the best-effort fallback in that context.
 		if (url) {
-			playback = "native";
+			detectedMode = "native";
+			nativeSupported = true;
 			return;
 		}
-		playback = "loading";
+		detectedMode = "loading";
+		nativeSupported = false;
+		userMode = null;
+		userPickedHeight = null;
+		pendingSeek = null;
 		probeInfo = null;
 		fetchProbeInfo(path).then(async (result) => {
 			if (path !== file.path) return;
 			if (result.status === "no-video") {
-				playback = "no-video";
+				detectedMode = "no-video";
 				return;
 			}
 			if (result.status !== "ok" || !result.info) {
-				playback = "native";
+				detectedMode = "native";
+				nativeSupported = true;
 				return;
 			}
 			probeInfo = result.info;
 			const native = await canPlayNative(result.info);
 			if (path !== file.path) return;
-			playback = native ? "native" : "transcode-required";
+			nativeSupported = native;
+			detectedMode = native ? "native" : "transcode-required";
 		});
 	});
 
 	$effect(() => {
 		const el = videoEl;
 		if (!el) return;
-		if (playback !== "transcode-required") return;
+		const mode = playback;
+		const filePath = file.path;
 
-		const masterUrl = `/api/stream/master${file.path}`;
+		if (mode === "native") {
+			el.src = url ?? getPreviewUrl(filePath);
+			return;
+		}
+
+		if (mode !== "transcode-required") return;
+
+		const masterUrl = `/api/stream/master${filePath}`;
 		let localHandle: HlsHandle | null = null;
 		let cancelled = false;
 
@@ -250,6 +395,13 @@
 				handle.onLevelsLoaded((levels) => {
 					qualityLevels = levels;
 					handle.setAutoLevelCap(defaultQualityCeiling);
+					if (userPickedHeight !== null) {
+						const level = levels.find((l) => l.height === userPickedHeight);
+						if (level) {
+							selectedQuality = level.index;
+							handle.setLevel(level.index);
+						}
+					}
 				});
 				handle.onLevelSwitched((idx) => {
 					currentAutoLevel = idx;
@@ -257,8 +409,6 @@
 				return;
 			}
 			if (canPlayHlsNatively(el)) {
-				// Native HLS (Safari) — hls.js is bypassed, so the quality
-				// menu has nothing to drive and stays hidden.
 				el.src = masterUrl;
 				return;
 			}
@@ -276,40 +426,14 @@
 			}
 		};
 	});
-
-	function pickQuality(index: number) {
-		if (!hlsHandle) return;
-		selectedQuality = index;
-		hlsHandle.setLevel(index);
-	}
-
-	function qualityLabel(level: HlsLevel): string {
-		return `${level.height}p`;
-	}
-
-	const qualityButtonLabel = $derived.by(() => {
-		if (qualityLevels.length === 0) return "";
-		if (selectedQuality < 0) {
-			if (currentAutoLevel >= 0 && currentAutoLevel < qualityLevels.length) {
-				return `Auto (${qualityLabel(qualityLevels[currentAutoLevel])})`;
-			}
-			return "Auto";
-		}
-		if (selectedQuality < qualityLevels.length) {
-			return qualityLabel(qualityLevels[selectedQuality]);
-		}
-		return "";
-	});
-
-	const seekPercent = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
-	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
-	class="group relative flex flex-1 items-center justify-center overflow-hidden"
+	bind:this={containerEl}
+	class="group relative flex flex-1 items-center justify-center overflow-hidden bg-black"
 	onmousemove={resetControlsTimer}
 	onmouseleave={() => { if (playing) showControls = false; }}
 >
@@ -321,19 +445,29 @@
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video
 		bind:this={videoEl}
-		src={playback === "native" ? (url ?? getPreviewUrl(file.path)) : undefined}
-		class="max-h-full max-w-full"
+		class="h-full w-full object-contain"
 		preload="metadata"
 		data-preview-content
-		onclick={togglePlay}
-		ondblclick={toggleFullscreen}
+		onclick={handleVideoClick}
+		ondblclick={handleVideoDblClick}
 		onplay={() => { playing = true; resetControlsTimer(); }}
 		onpause={() => { playing = false; showControls = true; if (controlsTimer) clearTimeout(controlsTimer); }}
 		ontimeupdate={handleTimeUpdate}
-		onloadedmetadata={() => { if (videoEl) duration = videoEl.duration; }}
-		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; } }}
+		onloadedmetadata={() => {
+			if (videoEl) {
+				duration = videoEl.duration;
+				if (pendingSeek !== null && pendingSeek > 0) {
+					videoEl.currentTime = pendingSeek;
+					pendingSeek = null;
+					videoEl.play().catch(() => { failed = true; });
+				} else {
+					restorePosition();
+				}
+			}
+		}}
+		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; saveVolume(); } }}
 		onended={() => { playing = false; showControls = true; clearPosition(); }}
-		onerror={() => { failed = true; }}
+		onerror={() => { if (playback === "native") failed = true; }}
 	></video>
 
 	{#if failed}
@@ -421,7 +555,7 @@
 				/>
 			</div>
 
-			{#if qualityLevels.length > 0}
+			{#if showQualityMenu}
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
@@ -435,24 +569,45 @@
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="min-w-36">
-						<DropdownMenu.Item onclick={() => pickQuality(-1)}>
-							{#if selectedQuality < 0}
-								<span class="mr-1">✓</span>
-							{:else}
-								<span class="mr-1 opacity-0">✓</span>
-							{/if}
-							Auto
-						</DropdownMenu.Item>
-						{#each qualityLevels as level (level.index)}
-							<DropdownMenu.Item onclick={() => pickQuality(level.index)}>
-								{#if selectedQuality === level.index}
+						{#if nativeSupported}
+							<DropdownMenu.Item onclick={switchToOriginal}>
+								{#if userMode !== "transcode"}
 									<span class="mr-1">✓</span>
 								{:else}
 									<span class="mr-1 opacity-0">✓</span>
 								{/if}
-								{qualityLabel(level)}
+								Original{probeInfo?.height ? ` (${probeInfo.height}p)` : ""}
 							</DropdownMenu.Item>
-						{/each}
+							{#each lowerQualities as height (height)}
+								<DropdownMenu.Item onclick={() => switchToTranscode(height)}>
+									{#if userMode === "transcode" && userPickedHeight === height}
+										<span class="mr-1">✓</span>
+									{:else}
+										<span class="mr-1 opacity-0">✓</span>
+									{/if}
+									{height}p
+								</DropdownMenu.Item>
+							{/each}
+						{:else}
+							<DropdownMenu.Item onclick={() => pickQuality(-1)}>
+								{#if selectedQuality < 0}
+									<span class="mr-1">✓</span>
+								{:else}
+									<span class="mr-1 opacity-0">✓</span>
+								{/if}
+								Auto
+							</DropdownMenu.Item>
+							{#each availableQualities as level (level.index)}
+								<DropdownMenu.Item onclick={() => pickQuality(level.index)}>
+									{#if selectedQuality === level.index}
+										<span class="mr-1">✓</span>
+									{:else}
+										<span class="mr-1 opacity-0">✓</span>
+									{/if}
+									{qualityLabel(level)}
+								</DropdownMenu.Item>
+							{/each}
+						{/if}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			{/if}

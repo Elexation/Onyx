@@ -73,7 +73,7 @@
 		</div>
 	</div>
 
-	<div class="flex min-h-0 flex-1 flex-col p-4">
+	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video"}>
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
 				<p class="text-sm">File too large to preview ({formatFileSize(file.size)})</p>

@@ -61,7 +61,11 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 			}
 
 			session, err := sessions.ValidateSession(cookie.Value)
-			if err != nil || session == nil {
+			if err != nil {
+				http.Error(w, `{"error":"internal server error"}`, http.StatusServiceUnavailable)
+				return
+			}
+			if session == nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}

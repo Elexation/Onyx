@@ -129,8 +129,6 @@ export function getUppy(): Uppy {
 			}
 		}
 
-		// Auto-clear completed items after a brief delay
-		setTimeout(() => uploadState.clearCompleted(), 3000);
 	});
 
 	return instance;
@@ -150,10 +148,13 @@ export async function addFiles(
 	const uppy = getUppy();
 	const CHUNK_SIZE = 50;
 
+	// Clear previous completed uploads before starting new batch
+	uploadState.clearCompleted();
+
 	// Detect directory upload: check if any file has a relativePath with /
 	let groupId: string | undefined;
 	for (const file of files) {
-		const relPath = (file as any).webkitRelativePath || "";
+		const relPath = (file as any).webkitRelativePath || (file as any).relativePath || "";
 		if (relPath && relPath.includes("/")) {
 			const dirName = relPath.split("/")[0];
 			groupId = `dir-${++groupCounter}-${dirName}`;
@@ -249,11 +250,30 @@ export async function cancelGroup(groupId: string) {
 	}
 }
 
-export function cancelAll() {
+export async function cancelAll() {
 	const uppy = getUppy();
+
+	// Collect group directories to clean up before clearing state
+	const groupDirs: string[] = [];
+	for (const meta of Object.values(uploadState.groupMeta)) {
+		const dirPath = meta.targetDir === "/"
+			? `/${meta.name}`
+			: `${meta.targetDir}/${meta.name}`;
+		groupDirs.push(dirPath);
+	}
+
 	uppy.cancelAll();
 	stopFlushTimer();
 	uploadState.clear();
+
+	// Delete partially uploaded directories from server
+	if (groupDirs.length > 0) {
+		try {
+			await deleteFiles(groupDirs, true);
+		} catch {
+			// Directories may not exist yet if no files completed
+		}
+	}
 }
 
 export function retryUpload(fileId: string) {

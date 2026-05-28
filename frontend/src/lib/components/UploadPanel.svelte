@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { uploadState } from "$lib/stores/upload.svelte.js";
-	import { cancelUpload, cancelGroup, retryUpload } from "$lib/upload/uppy.js";
+	import { cancelUpload, cancelGroup, cancelAll, retryUpload } from "$lib/upload/uppy.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
@@ -78,6 +78,19 @@
 		uploadState.activeCount > 0 && uploadState.speed < 1024 && uploadState.totalProgress > 0,
 	);
 
+	const singleGroupName = $derived.by(() => {
+		const groups = new Set<string>();
+		for (const item of uploadState.items) {
+			if (item.group) groups.add(item.group);
+			else return null;
+		}
+		if (groups.size === 1) {
+			const groupId = [...groups][0]!;
+			return uploadState.groupMeta[groupId]?.name ?? null;
+		}
+		return null;
+	});
+
 	function formatSize(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -126,17 +139,25 @@
 				{#if uploadState.isComplete}
 					{uploadState.items.length} upload{uploadState.items.length !== 1 ? "s" : ""} complete
 				{:else}
-					Uploading {uploadState.activeCount} file{uploadState.activeCount !== 1 ? "s" : ""}...
-					{uploadState.totalProgress}%
-					{#if isStalled}
-						<span class="text-muted-foreground"> · Stalled</span>
-					{:else if uploadState.speed > 0}
-						<span class="text-muted-foreground">
-							· {formatSpeed(uploadState.speed)}
-							{#if uploadState.eta !== null}
-								· {formatEta(uploadState.eta)}
-							{/if}
-						</span>
+					{#if uploadState.totalProgress >= 100}
+						Finalizing...
+					{:else}
+						{#if singleGroupName}
+							Uploading {singleGroupName}/
+						{:else}
+							Uploading {uploadState.activeCount} file{uploadState.activeCount !== 1 ? "s" : ""}...
+						{/if}
+						{uploadState.totalProgress}%
+						{#if isStalled}
+							<span class="text-muted-foreground"> · Stalled</span>
+						{:else if uploadState.speed > 0}
+							<span class="text-muted-foreground">
+								· {formatSpeed(uploadState.speed)}
+								{#if uploadState.eta !== null}
+									· {formatEta(uploadState.eta)}
+								{/if}
+							</span>
+						{/if}
 					{/if}
 				{/if}
 			</span>
@@ -147,6 +168,15 @@
 						size="icon-xs"
 						onclick={(e) => { e.stopPropagation(); uploadState.clear(); }}
 						title="Dismiss"
+					>
+						<XIcon class="size-3.5" />
+					</Button>
+				{:else}
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						onclick={(e) => { e.stopPropagation(); cancelAll(); }}
+						title="Cancel all"
 					>
 						<XIcon class="size-3.5" />
 					</Button>

@@ -141,17 +141,7 @@
 
 	const allPaths = $derived(sorted.filter((i) => i.name !== "..").map((i) => i.path));
 
-	// Smart view: auto-grid if >50% of items are image/video
-	const smartView = $derived.by((): ViewMode => {
-		if (!listing || listing.items.length === 0) return preferences.viewMode;
-		const mediaCount = listing.items.filter((f) => {
-			const mime = f.mimeType ?? "";
-			return mime.startsWith("image/") || mime.startsWith("video/");
-		}).length;
-		return mediaCount / listing.items.length > 0.5 ? "grid" : preferences.viewMode;
-	});
-
-	const activeView = $derived(smartView);
+	const activeView = $derived(preferences.viewMode);
 
 	function handleViewChange(mode: ViewMode) {
 		preferences.viewMode = mode;
@@ -336,12 +326,19 @@
 	$effect(() => {
 		const uppy = getUppy();
 		let timer: ReturnType<typeof setTimeout>;
+		let retryTimer: ReturnType<typeof setTimeout>;
 		const handler = () => {
-			timer = setTimeout(() => refresh(), 500);
+			timer = setTimeout(async () => {
+				await load(path, preferences.showHidden);
+				if (error) {
+					retryTimer = setTimeout(() => refresh(), 2000);
+				}
+			}, 500);
 		};
 		uppy.on("complete", handler);
 		return () => {
 			clearTimeout(timer);
+			clearTimeout(retryTimer);
 			uppy.off("complete", handler);
 		};
 	});

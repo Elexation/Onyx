@@ -9,6 +9,7 @@
 		gap = 8,
 		overscan = 5,
 		cell,
+		scrollEl = $bindable<HTMLDivElement | null>(null),
 	}: {
 		items: unknown[];
 		itemWidth?: number;
@@ -16,9 +17,9 @@
 		gap?: number;
 		overscan?: number;
 		cell: Snippet<[{ item: unknown; index: number }]>;
+		scrollEl?: HTMLDivElement | null;
 	} = $props();
 
-	let scrollEl = $state<HTMLDivElement | null>(null);
 	let containerWidth = $state(0);
 	const makeGetScrollElement = (el: HTMLDivElement | null) => () => el;
 

@@ -2,6 +2,7 @@
 	import type { FileInfo } from "$lib/types";
 	import VirtualGrid from "./VirtualGrid.svelte";
 	import FileCard from "./FileCard.svelte";
+	import { setupMarquee } from "$lib/actions/marquee.js";
 
 	let {
 		items,
@@ -26,6 +27,23 @@
 		onshare: (item: FileInfo) => void;
 		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
+
+	let scrollEl = $state<HTMLDivElement | null>(null);
+	const itemWidth = 160;
+	const itemHeight = 140;
+	const gap = 8;
+
+	$effect(() => {
+		if (!scrollEl) return;
+		return setupMarquee(scrollEl, {
+			getLayout: () => {
+				const containerWidth = scrollEl!.clientWidth;
+				const columns = Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap)));
+				return { mode: "grid", itemWidth, itemHeight, gap, paddingX: gap, columns };
+			},
+			getItems: () => items,
+		});
+	});
 </script>
 
 {#if items.length === 0}
@@ -33,7 +51,7 @@
 		<p class="text-sm">This folder is empty</p>
 	</div>
 {:else}
-	<VirtualGrid {items}>
+	<VirtualGrid {items} bind:scrollEl>
 		{#snippet cell({ item })}
 			<FileCard
 				item={item as FileInfo}

@@ -7,14 +7,15 @@
 		estimateSize = () => 40,
 		overscan = 5,
 		row,
+		scrollEl = $bindable<HTMLDivElement | null>(null),
 	}: {
 		items: unknown[];
 		estimateSize?: () => number;
 		overscan?: number;
 		row: Snippet<[{ item: unknown; index: number; style: string }]>;
+		scrollEl?: HTMLDivElement | null;
 	} = $props();
 
-	let scrollEl = $state<HTMLDivElement | null>(null);
 	const makeGetScrollElement = (el: HTMLDivElement | null) => () => el;
 
 	let virtualizer = $derived(

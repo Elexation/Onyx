@@ -63,6 +63,12 @@ export const selection = {
 		active = allPaths.length > 0;
 	},
 
+	setExact(paths: Set<string>) {
+		selected = new Set(paths);
+		lastSelected = null;
+		active = paths.size > 0;
+	},
+
 	clear() {
 		selected = new Set();
 		lastSelected = null;

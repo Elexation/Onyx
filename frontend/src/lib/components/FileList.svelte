@@ -15,6 +15,7 @@
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
+	import { setupMarquee } from "$lib/actions/marquee.js";
 
 	let {
 		items,
@@ -95,6 +96,16 @@
 			? [...selection.items]
 			: [item.path];
 	}
+
+	let scrollEl = $state<HTMLDivElement | null>(null);
+
+	$effect(() => {
+		if (!scrollEl) return;
+		return setupMarquee(scrollEl, {
+			getLayout: () => ({ mode: "list", rowHeight: 41 }),
+			getItems: () => items,
+		});
+	});
 </script>
 
 {#if items.length === 0}
@@ -129,7 +140,7 @@
 		<div class="kebab-spacer hidden w-8"></div>
 	</div>
 
-	<VirtualList {items} estimateSize={() => 41}>
+	<VirtualList {items} estimateSize={() => 41} bind:scrollEl>
 		{#snippet row({ item, style })}
 			{@const file = item as FileInfo}
 			{#if file.name === ".."}

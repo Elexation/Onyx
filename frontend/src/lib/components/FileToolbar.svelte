@@ -35,7 +35,7 @@
 	} = $props();
 </script>
 
-<div class="flex items-center gap-2">
+<div class="flex h-9 items-center gap-2">
 	<UploadButton onfiles={onupload} />
 	<Button variant="outline" size="sm" onclick={onnewfolder}>
 		<FolderPlusIcon class="size-4" />

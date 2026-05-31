@@ -39,16 +39,17 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if a != nil && a.failCount >= 3 {
-			delay := time.Second
-			if a.failCount >= 10 {
-				delay = 30 * time.Second
+		if a != nil && a.failCount >= 5 {
+			rl.mu.Unlock()
+			retryAfter := "5"
+			if a.failCount >= 20 {
+				retryAfter = "60"
 			}
-			rl.mu.Unlock()
-			time.Sleep(delay)
-		} else {
-			rl.mu.Unlock()
+			w.Header().Set("Retry-After", retryAfter)
+			http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
+			return
 		}
+		rl.mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})

@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -62,7 +63,7 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		name = filePath[idx+1:]
 	}
 
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("attachment", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
 
@@ -87,7 +88,7 @@ func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
-	w.Header().Set("Content-Disposition", `inline; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
 
@@ -117,7 +118,7 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+zipName+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
 	if err := h.files.WriteZip(w, paths); err != nil {
 		slog.Error("zip stream error", "error", err)
@@ -160,4 +161,12 @@ func writeFileError(w http.ResponseWriter, err error) {
 	}
 
 	http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+}
+
+func contentDisposition(disposition, filename string) string {
+	cd := mime.FormatMediaType(disposition, map[string]string{"filename": filename})
+	if cd == "" {
+		return disposition
+	}
+	return cd
 }

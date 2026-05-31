@@ -309,7 +309,10 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 				}
 			}
 		case "keepBoth":
-			destPath = s.storage.UniqueName(destPath)
+			destPath, err = s.storage.UniqueName(destPath)
+			if err != nil {
+				return "", fmt.Errorf("unique name: %w", err)
+			}
 		default:
 			return "", fmt.Errorf("file already exists: %s", destPath)
 		}

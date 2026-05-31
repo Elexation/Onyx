@@ -80,9 +80,13 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 		p = cleanPath(p)
 		name := path.Base(p)
 		dst := path.Join(destination, name)
-		dst = s.uniqueName(dst)
+		dst, err := s.uniqueName(dst)
+		if err != nil {
+			results[i] = OpResult{Path: "/" + path.Join(destination, name), Error: err.Error()}
+			continue
+		}
 
-		err := s.copyOne(p, dst)
+		err = s.copyOne(p, dst)
 		results[i] = OpResult{Path: "/" + dst, Success: err == nil}
 		if err != nil {
 			results[i].Error = err.Error()
@@ -94,9 +98,9 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 
 // uniqueName returns dst unchanged if it doesn't exist, otherwise appends
 // " (copy)", " (copy 2)", etc. until a free name is found.
-func (s *LocalStorage) uniqueName(dst string) string {
+func (s *LocalStorage) uniqueName(dst string) (string, error) {
 	if _, err := s.root.Lstat(dst); err != nil {
-		return dst
+		return dst, nil
 	}
 
 	dir := path.Dir(dst)
@@ -106,17 +110,17 @@ func (s *LocalStorage) uniqueName(dst string) string {
 
 	candidate := path.Join(dir, name+" (copy)"+ext)
 	if _, err := s.root.Lstat(candidate); err != nil {
-		return candidate
+		return candidate, nil
 	}
 
 	for i := 2; i <= 99; i++ {
 		candidate = path.Join(dir, fmt.Sprintf("%s (copy %d)%s", name, i, ext))
 		if _, err := s.root.Lstat(candidate); err != nil {
-			return candidate
+			return candidate, nil
 		}
 	}
 
-	return dst
+	return "", fmt.Errorf("too many copies of %s", path.Base(dst))
 }
 
 // Delete removes paths (files or directories, recursively).
@@ -260,10 +264,10 @@ func (s *LocalStorage) WriteFile(filePath string, src io.Reader) error {
 // UniqueName returns the path unchanged if it doesn't exist, otherwise
 // appends " (1)", " (2)", etc. until a free name is found.
 // Exported for use by the upload system.
-func (s *LocalStorage) UniqueName(filePath string) string {
+func (s *LocalStorage) UniqueName(filePath string) (string, error) {
 	filePath = cleanPath(filePath)
 	if _, err := s.root.Lstat(filePath); err != nil {
-		return filePath
+		return filePath, nil
 	}
 
 	dir := path.Dir(filePath)
@@ -274,10 +278,10 @@ func (s *LocalStorage) UniqueName(filePath string) string {
 	for i := 1; i <= 999; i++ {
 		candidate := path.Join(dir, fmt.Sprintf("%s (%d)%s", name, i, ext))
 		if _, err := s.root.Lstat(candidate); err != nil {
-			return candidate
+			return candidate, nil
 		}
 	}
-	return filePath
+	return "", fmt.Errorf("too many copies of %s", path.Base(filePath))
 }
 
 // mkdirAll creates a directory and all parents inside the root.

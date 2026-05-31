@@ -154,7 +154,16 @@ func (s *TrashService) Restore(id string) error {
 
 	srcAbs := filepath.Join(s.trashDir, item.TrashPath)
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
-		return fmt.Errorf("restore file: %w", err)
+		if !isCrossDevice(err) {
+			return fmt.Errorf("restore file: %w", err)
+		}
+		if err := copyTree(srcAbs, dstAbs); err != nil {
+			os.RemoveAll(dstAbs)
+			return fmt.Errorf("restore copy: %w", err)
+		}
+		if err := os.RemoveAll(srcAbs); err != nil {
+			return fmt.Errorf("restore cleanup trash: %w", err)
+		}
 	}
 
 	if err := s.repo.Delete(id); err != nil {

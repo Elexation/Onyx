@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
+	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -22,15 +23,17 @@ type shareSession struct {
 type PublicHandler struct {
 	shares *service.ShareService
 	files  *service.FileService
+	rl     *middleware.RateLimiter
 
 	mu       sync.RWMutex
 	sessions map[string]shareSession // cookie value → session
 }
 
-func NewPublicHandler(shares *service.ShareService, files *service.FileService) *PublicHandler {
+func NewPublicHandler(shares *service.ShareService, files *service.FileService, rl *middleware.RateLimiter) *PublicHandler {
 	h := &PublicHandler{
 		shares:   shares,
 		files:    files,
+		rl:       rl,
 		sessions: make(map[string]shareSession),
 	}
 	go h.cleanSessions()
@@ -84,10 +87,12 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if pwHash == nil || !h.shares.CheckPassword(*pwHash, req.Password) {
+		h.rl.RecordFailure(r)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}
 
+	h.rl.RecordSuccess(r)
 	sessionID := h.createSession()
 	http.SetCookie(w, &http.Cookie{
 		Name:     "share_session",
@@ -129,8 +134,8 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filePath = path.Join(link.FilePath, subPath)
-		// Prevent path traversal outside shared directory
-		if !strings.HasPrefix(filePath, link.FilePath) {
+		sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
+		if !strings.HasPrefix(filePath, sharePrefix) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
 		}
@@ -146,7 +151,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	h.shares.RecordAccess(link.ID)
 
 	name := path.Base(filePath)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("attachment", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
 
@@ -177,7 +182,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 
 	zipName := path.Base(link.FilePath) + ".zip"
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+zipName+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
 	if err := h.files.WriteZip(w, []string{link.FilePath}); err != nil {
 		slog.Error("share zip stream error", "error", err)
@@ -210,7 +215,8 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filePath = path.Join(link.FilePath, subPath)
-		if !strings.HasPrefix(filePath, link.FilePath) {
+		sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
+		if !strings.HasPrefix(filePath, sharePrefix) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
 		}
@@ -230,7 +236,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
-	w.Header().Set("Content-Disposition", `inline; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
 

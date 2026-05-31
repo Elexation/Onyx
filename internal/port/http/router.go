@@ -17,6 +17,7 @@ import (
 func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter()
+	shareRL := middleware.NewRateLimiter()
 	authHandler := handler.NewAuthHandler(auth, rl)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -26,7 +27,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	versionHandler := handler.NewVersionHandler(versions)
 	searchHandler := handler.NewSearchHandler(search)
 	shareHandler := handler.NewShareHandler(shares)
-	publicHandler := handler.NewPublicHandler(shares, files)
+	publicHandler := handler.NewPublicHandler(shares, files, shareRL)
 	tokenHandler := handler.NewTokenHandler(tokens)
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
@@ -34,6 +35,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
 	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.BodyLimit(1 << 20))
 
 	r.Get("/api/health", healthHandler)
 
@@ -107,7 +109,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	// Public share API routes (no auth)
 	r.Get("/api/public/s/{token}", publicHandler.Info)
-	r.Post("/api/public/s/{token}/verify", publicHandler.Verify)
+	r.With(shareRL.Middleware).Post("/api/public/s/{token}/verify", publicHandler.Verify)
 	r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
 	r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
 	r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)

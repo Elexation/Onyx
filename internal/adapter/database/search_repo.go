@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
@@ -133,7 +134,7 @@ func (r *SearchRepo) UpdatePathPrefix(oldPrefix, newPrefix string) error {
 			path = ? || substr(path, ?),
 			name = CASE WHEN path = ? THEN ? ELSE name END
 		WHERE path = ? OR path LIKE ? || '/%'`,
-		newPrefix, len(oldPrefix)+1, oldPrefix, newName, oldPrefix, oldPrefix,
+		newPrefix, utf8.RuneCountInString(oldPrefix)+1, oldPrefix, newName, oldPrefix, oldPrefix,
 	)
 	return err
 }

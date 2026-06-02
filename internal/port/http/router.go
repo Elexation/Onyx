@@ -43,7 +43,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Route("/api/auth", func(r chi.Router) {
 		r.Get("/status", optionalAuth(auth, authHandler.Status))
 		r.With(rl.Middleware).Post("/login", authHandler.Login)
-		r.Post("/setup", authHandler.Setup)
+		r.With(rl.Middleware).Post("/setup", authHandler.Setup)
 		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/logout", authHandler.Logout)
 		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/change-password", settingsHandler.ChangePassword)
 	})

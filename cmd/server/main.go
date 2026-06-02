@@ -144,6 +144,7 @@ func main() {
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
 		fileService,
+		settingsService,
 	)
 	if err != nil {
 		slog.Error("upload handler init failed", "error", err)

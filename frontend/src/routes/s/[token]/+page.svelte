@@ -20,7 +20,6 @@
 	let verifyError = $state("");
 
 	let fileName = $state("");
-	let filePath = $state("");
 	let isDir = $state(false);
 	let mimeType = $state("");
 	let fileSize = $state(0);
@@ -28,7 +27,7 @@
 
 	let showPreview = $state(false);
 
-	const fileInfo: FileInfo = $derived({ name: fileName, path: filePath, isDir: false, size: fileSize, modTime: 0, mimeType });
+	const fileInfo: FileInfo = $derived({ name: fileName, path: "", isDir: false, size: fileSize, modTime: 0, mimeType });
 	const previewable = $derived(!isDir && fileName && canPreview(fileInfo));
 
 	function rawUrl() {
@@ -91,7 +90,6 @@
 
 	function applyData(data: any) {
 		fileName = data.fileName;
-		filePath = data.filePath;
 		isDir = data.isDir;
 		mimeType = data.mimeType || "";
 		fileSize = data.size || 0;
@@ -184,7 +182,7 @@
 								</div>
 							{:else}
 								<a
-									href={downloadUrl(item.path.replace(filePath + "/", ""))}
+									href={downloadUrl(item.path)}
 									class="flex items-center gap-3 py-2 text-sm transition-colors hover:text-foreground"
 								>
 									<FileIcon class="size-4 shrink-0 text-muted-foreground" />

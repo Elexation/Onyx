@@ -48,8 +48,8 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
-	if body.Password == "" {
-		http.Error(w, `{"error":"password is required"}`, http.StatusBadRequest)
+	if len([]rune(body.Password)) < 8 {
+		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -125,7 +125,7 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, session *domain.Se
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	}
-	if r.TLS != nil {
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		cookie.Secure = true
 	}
 	http.SetCookie(w, cookie)

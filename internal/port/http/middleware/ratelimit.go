@@ -3,14 +3,14 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
 
 type loginAttempts struct {
-	failCount  int
-	lockedUntil time.Time
-	lastFail   time.Time
+	failCount int
+	lastFail  time.Time
 }
 
 type RateLimiter struct {
@@ -32,22 +32,21 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 		rl.mu.Lock()
 		a := rl.attempts[ip]
-		if a != nil && time.Now().Before(a.lockedUntil) {
-			rl.mu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
-			return
-		}
-
 		if a != nil && a.failCount >= 5 {
-			rl.mu.Unlock()
-			retryAfter := "5"
+			cooldown := 5 * time.Second
 			if a.failCount >= 20 {
-				retryAfter = "60"
+				cooldown = 60 * time.Second
+			} else if a.failCount >= 10 {
+				cooldown = 30 * time.Second
 			}
-			w.Header().Set("Retry-After", retryAfter)
-			http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
-			return
+			elapsed := time.Since(a.lastFail)
+			if elapsed < cooldown {
+				rl.mu.Unlock()
+				remaining := int((cooldown - elapsed).Seconds()) + 1
+				w.Header().Set("Retry-After", strconv.Itoa(remaining))
+				http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
+				return
+			}
 		}
 		rl.mu.Unlock()
 
@@ -67,10 +66,6 @@ func (rl *RateLimiter) RecordFailure(r *http.Request) {
 	}
 	a.failCount++
 	a.lastFail = time.Now()
-
-	if a.failCount >= 20 {
-		a.lockedUntil = time.Now().Add(time.Minute)
-	}
 }
 
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {

@@ -17,6 +17,7 @@ import (
 )
 
 type shareSession struct {
+	token     string
 	expiresAt time.Time
 }
 
@@ -93,7 +94,7 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.rl.RecordSuccess(r)
-	sessionID := h.createSession()
+	sessionID := h.createSession(token)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "share_session",
 		Value:    sessionID,
@@ -242,7 +243,6 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 
 func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.ShareLink) {
 	resp := map[string]any{
-		"filePath": link.FilePath,
 		"isDir":    link.IsDir,
 		"fileName": path.Base(link.FilePath),
 	}
@@ -252,6 +252,10 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list directory"})
 			return
+		}
+		shareBase := strings.TrimSuffix(link.FilePath, "/") + "/"
+		for i := range items {
+			items[i].Path = strings.TrimPrefix(items[i].Path, shareBase)
 		}
 		resp["items"] = items
 	} else {
@@ -265,13 +269,13 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *PublicHandler) createSession() string {
+func (h *PublicHandler) createSession(token string) string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	id := hex.EncodeToString(b)
 
 	h.mu.Lock()
-	h.sessions[id] = shareSession{expiresAt: time.Now().Add(1 * time.Hour)}
+	h.sessions[id] = shareSession{token: token, expiresAt: time.Now().Add(1 * time.Hour)}
 	h.mu.Unlock()
 	return id
 }
@@ -286,7 +290,7 @@ func (h *PublicHandler) hasValidSession(r *http.Request, token string) bool {
 	sess, ok := h.sessions[cookie.Value]
 	h.mu.RUnlock()
 
-	return ok && time.Now().Before(sess.expiresAt)
+	return ok && sess.token == token && time.Now().Before(sess.expiresAt)
 }
 
 func (h *PublicHandler) cleanSessions() {

@@ -12,6 +12,7 @@ import (
 	"github.com/tus/tusd/v2/pkg/filestore"
 	tusd "github.com/tus/tusd/v2/pkg/handler"
 
+	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -20,11 +21,12 @@ type TusHandler struct {
 	handler  *tusd.Handler
 	storedir string
 	files    *service.FileService
+	settings *service.SettingsService
 }
 
 // NewTusHandler creates a tusd handler backed by local disk storage.
 // storeDir is the directory for incomplete uploads (e.g. /cache/uploads).
-func NewTusHandler(storeDir string, basePath string, files *service.FileService) (*TusHandler, error) {
+func NewTusHandler(storeDir string, basePath string, files *service.FileService, settings *service.SettingsService) (*TusHandler, error) {
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
 		return nil, fmt.Errorf("create upload store dir: %w", err)
 	}
@@ -50,6 +52,14 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService)
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 					tusd.NewError("ERR_TARGET_REQUIRED", "targetDir metadata is required", http.StatusBadRequest)
 			}
+			if hook.Upload.Size > 0 {
+				maxStr, _ := settings.Get(domain.SettingUploadMaxSize)
+				maxSize := domain.GetInt64(maxStr)
+				if maxSize > 0 && hook.Upload.Size > maxSize {
+					return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
+						tusd.NewError("ERR_FILE_TOO_LARGE", "file exceeds maximum upload size", http.StatusRequestEntityTooLarge)
+				}
+			}
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, nil
 		},
 	})
@@ -61,6 +71,7 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService)
 		handler:  h,
 		storedir: storeDir,
 		files:    files,
+		settings: settings,
 	}
 
 	go th.processCompletedUploads()

@@ -84,6 +84,10 @@ func (h *SettingsHandler) ChangePassword(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"current and new password are required"}`, http.StatusBadRequest)
 		return
 	}
+	if len([]rune(body.NewPassword)) < 8 {
+		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
+		return
+	}
 
 	session := middleware.SessionFromContext(r.Context())
 	if session == nil {

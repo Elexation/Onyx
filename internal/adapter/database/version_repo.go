@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
@@ -169,8 +170,8 @@ func (r *VersionRepo) RenameDir(oldDir, newDir string) error {
 		 SET file_path = ? || substr(file_path, ?),
 		     version_path = ? || substr(version_path, ?)
 		 WHERE file_path LIKE ? || '%'`,
-		newPrefix, len(oldPrefix)+1,
-		newVersionPrefix, len(oldVersionPrefix)+1,
+		newPrefix, utf8.RuneCountInString(oldPrefix)+1,
+		newVersionPrefix, utf8.RuneCountInString(oldVersionPrefix)+1,
 		oldPrefix,
 	)
 	if err != nil {

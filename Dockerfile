@@ -18,5 +18,7 @@ RUN CGO_ENABLED=0 go build -o /onyx ./cmd/server
 FROM alpine:3.21
 RUN apk add --no-cache ffmpeg
 COPY --from=backend /onyx /onyx
+RUN addgroup -S onyx && adduser -S onyx -G onyx
+USER onyx
 EXPOSE 8080
 CMD ["/onyx"]

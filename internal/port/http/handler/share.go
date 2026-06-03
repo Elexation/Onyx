@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -57,6 +58,7 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("security_event", "event", "share_create", "path", req.Path)
 	link.Token = fullToken
 	writeJSON(w, http.StatusCreated, link)
 }
@@ -119,5 +121,6 @@ func (h *ShareHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("security_event", "event", "share_delete", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

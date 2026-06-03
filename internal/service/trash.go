@@ -29,22 +29,28 @@ type TrashRepo interface {
 }
 
 type TrashService struct {
-	repo     TrashRepo
-	settings *SettingsService
-	dataDir  string
-	trashDir string
-	versions *VersionService
+	repo        TrashRepo
+	settings    *SettingsService
+	dataDir     string
+	realDataDir string
+	trashDir    string
+	versions    *VersionService
 }
 
 func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDir string) (*TrashService, error) {
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		return nil, fmt.Errorf("create trash directory: %w", err)
 	}
+	realDataDir, err := filepath.EvalSymlinks(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
 	return &TrashService{
-		repo:     repo,
-		settings: settings,
-		dataDir:  dataDir,
-		trashDir: trashDir,
+		repo:        repo,
+		settings:    settings,
+		dataDir:     dataDir,
+		realDataDir: realDataDir,
+		trashDir:    trashDir,
 	}, nil
 }
 
@@ -52,6 +58,18 @@ func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDi
 // circular init dependency with VersionService (constructed after trash).
 func (s *TrashService) SetVersioning(v *VersionService) {
 	s.versions = v
+}
+
+func (s *TrashService) verifyInsideDataDir(absPath string) error {
+	resolved, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return err
+	}
+	root := s.realDataDir + string(filepath.Separator)
+	if resolved != s.realDataDir && !strings.HasPrefix(resolved, root) {
+		return fmt.Errorf("path escapes data directory")
+	}
+	return nil
 }
 
 func (s *TrashService) MoveToTrash(paths []string) []MoveToTrashResult {
@@ -75,6 +93,9 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	}
 
 	srcAbs := filepath.Join(s.dataDir, filepath.FromSlash(clean))
+	if err := s.verifyInsideDataDir(srcAbs); err != nil {
+		return MoveToTrashResult{Path: filePath, Error: "invalid path"}
+	}
 	info, err := os.Stat(srcAbs)
 	if err != nil {
 		return MoveToTrashResult{Path: filePath, Error: err.Error()}
@@ -150,6 +171,9 @@ func (s *TrashService) Restore(id string) error {
 	parentDir := filepath.Dir(dstAbs)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
+	}
+	if err := s.verifyInsideDataDir(parentDir); err != nil {
+		return fmt.Errorf("restore destination escapes data directory")
 	}
 
 	srcAbs := filepath.Join(s.trashDir, item.TrashPath)

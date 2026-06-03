@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,6 +53,7 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("security_event", "event", "token_create", "name", req.Name)
 	tok.Token = fullToken
 	writeJSON(w, http.StatusCreated, tok)
 }
@@ -83,5 +85,6 @@ func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("security_event", "event", "token_delete", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

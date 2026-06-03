@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type ProbeService struct {
 	ffmpeg   *media.FFmpeg
 	dataDir  string
 	realRoot string
+	sema     chan struct{}
 
 	cache    sync.Map // absPath → *probeEntry
 	inflight sync.Map // absPath → *probeInflight
@@ -52,11 +54,16 @@ func NewProbeService(s *storage.LocalStorage, dataDir string) (*ProbeService, er
 	if err != nil {
 		return nil, fmt.Errorf("resolve data dir: %w", err)
 	}
+	limit := runtime.NumCPU()
+	if limit < 1 {
+		limit = 1
+	}
 	return &ProbeService{
 		storage:  s,
 		ffmpeg:   media.Detect(),
 		dataDir:  dataDir,
 		realRoot: realRoot,
+		sema:     make(chan struct{}, limit),
 	}, nil
 }
 
@@ -118,6 +125,13 @@ func (ps *ProbeService) probeSingleFlight(ctx context.Context, absPath string, m
 		close(entry.done)
 		ps.inflight.Delete(absPath)
 	}()
+
+	select {
+	case ps.sema <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-ps.sema }()
 
 	entry.info, entry.err = ps.ffmpeg.ProbeVideo(ctx, absPath)
 	if entry.err == nil {

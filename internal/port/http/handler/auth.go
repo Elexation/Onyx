@@ -2,6 +2,8 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -9,6 +11,14 @@ import (
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 )
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
 
 type AuthHandler struct {
 	auth *service.AuthService
@@ -63,6 +73,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("security_event", "event", "admin_setup", "ip", clientIP(r))
 	setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
@@ -81,11 +92,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.auth.Login(body.Password)
 	if err != nil {
+		slog.Info("security_event", "event", "login_failure", "ip", clientIP(r))
 		h.rl.RecordFailure(r)
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
 
+	slog.Info("security_event", "event", "login_success", "ip", clientIP(r))
 	h.rl.RecordSuccess(r)
 	setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{

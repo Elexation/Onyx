@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getPreviewUrl } from "$lib/preview.js";
 	import { codeToHtml } from "shiki";
+	import DOMPurify from "dompurify";
 
 	let { path, url }: { path: string; url?: string } = $props();
 
@@ -78,7 +79,7 @@
 			const code = await res.text();
 			const filename = p.split("/").pop() ?? p;
 			const lang = detectLang(filename);
-			html = await codeToHtml(code, { lang, theme: "dark-plus" });
+			html = DOMPurify.sanitize(await codeToHtml(code, { lang, theme: "dark-plus" }));
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Failed to load file";
 		} finally {

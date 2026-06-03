@@ -100,6 +100,10 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"no paths specified"}`, http.StatusBadRequest)
 		return
 	}
+	if len(paths) > 1000 {
+		http.Error(w, `{"error":"too many paths"}`, http.StatusBadRequest)
+		return
+	}
 
 	for _, p := range paths {
 		if _, err := h.files.GetFileInfo(p); err != nil {

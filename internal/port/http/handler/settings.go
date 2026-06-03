@@ -104,5 +104,6 @@ func (h *SettingsHandler) ChangePassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	slog.Info("security_event", "event", "password_change", "ip", clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }

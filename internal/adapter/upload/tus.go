@@ -52,10 +52,14 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 					tusd.NewError("ERR_TARGET_REQUIRED", "targetDir metadata is required", http.StatusBadRequest)
 			}
-			if hook.Upload.Size > 0 {
-				maxStr, _ := settings.Get(domain.SettingUploadMaxSize)
-				maxSize := domain.GetInt64(maxStr)
-				if maxSize > 0 && hook.Upload.Size > maxSize {
+			maxStr, _ := settings.Get(domain.SettingUploadMaxSize)
+			maxSize := domain.GetInt64(maxStr)
+			if maxSize > 0 {
+				if hook.Upload.SizeIsDeferred {
+					return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
+						tusd.NewError("ERR_UPLOAD_SIZE_UNKNOWN", "deferred-length uploads are not allowed when a max size is configured", http.StatusBadRequest)
+				}
+				if hook.Upload.Size > maxSize {
 					return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 						tusd.NewError("ERR_FILE_TOO_LARGE", "file exceeds maximum upload size", http.StatusRequestEntityTooLarge)
 				}

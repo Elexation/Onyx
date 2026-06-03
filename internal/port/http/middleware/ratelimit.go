@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,13 +16,15 @@ type loginAttempts struct {
 }
 
 type RateLimiter struct {
-	mu       sync.Mutex
-	attempts map[string]*loginAttempts
+	mu           sync.Mutex
+	attempts     map[string]*loginAttempts
+	trustedProxy bool
 }
 
-func NewRateLimiter() *RateLimiter {
+func NewRateLimiter(trustedProxy bool) *RateLimiter {
 	rl := &RateLimiter{
-		attempts: make(map[string]*loginAttempts),
+		attempts:     make(map[string]*loginAttempts),
+		trustedProxy: trustedProxy,
 	}
 	go rl.cleanup()
 	return rl
@@ -28,7 +32,7 @@ func NewRateLimiter() *RateLimiter {
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := extractIP(r)
+		ip := rl.extractIP(r)
 
 		rl.mu.Lock()
 		a := rl.attempts[ip]
@@ -42,6 +46,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			elapsed := time.Since(a.lastFail)
 			if elapsed < cooldown {
 				rl.mu.Unlock()
+				slog.Info("security_event", "event", "rate_limit_triggered", "ip", ip, "path", r.URL.Path, "fail_count", a.failCount)
 				remaining := int((cooldown - elapsed).Seconds()) + 1
 				w.Header().Set("Retry-After", strconv.Itoa(remaining))
 				http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
@@ -55,7 +60,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 }
 
 func (rl *RateLimiter) RecordFailure(r *http.Request) {
-	ip := extractIP(r)
+	ip := rl.extractIP(r)
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -69,7 +74,7 @@ func (rl *RateLimiter) RecordFailure(r *http.Request) {
 }
 
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {
-	ip := extractIP(r)
+	ip := rl.extractIP(r)
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.attempts, ip)
@@ -90,7 +95,18 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-func extractIP(r *http.Request) string {
+func (rl *RateLimiter) extractIP(r *http.Request) string {
+	if rl.trustedProxy {
+		if ip := r.Header.Get("X-Real-IP"); ip != "" {
+			return strings.TrimSpace(ip)
+		}
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if first, _, ok := strings.Cut(xff, ","); ok {
+				return strings.TrimSpace(first)
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

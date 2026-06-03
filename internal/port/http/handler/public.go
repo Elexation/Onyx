@@ -101,6 +101,7 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		Path:     "/api/public/s/" + token,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		MaxAge:   3600,
 	})
 

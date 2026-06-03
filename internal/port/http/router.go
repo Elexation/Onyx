@@ -14,10 +14,10 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy bool) http.Handler {
 	r := chi.NewRouter()
-	rl := middleware.NewRateLimiter()
-	shareRL := middleware.NewRateLimiter()
+	rl := middleware.NewRateLimiter(trustedProxy)
+	shareRL := middleware.NewRateLimiter(trustedProxy)
 	authHandler := handler.NewAuthHandler(auth, rl)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)

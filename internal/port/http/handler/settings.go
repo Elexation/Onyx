@@ -6,19 +6,17 @@ import (
 	"net/http"
 
 	"github.com/Elexation/onyx/internal/domain"
-	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 )
 
 type SettingsHandler struct {
 	settings *service.SettingsService
-	auth     *service.AuthService
 	shares   *service.ShareService
 	versions *service.VersionService
 }
 
-func NewSettingsHandler(settings *service.SettingsService, auth *service.AuthService, shares *service.ShareService, versions *service.VersionService) *SettingsHandler {
-	return &SettingsHandler{settings: settings, auth: auth, shares: shares, versions: versions}
+func NewSettingsHandler(settings *service.SettingsService, shares *service.ShareService, versions *service.VersionService) *SettingsHandler {
+	return &SettingsHandler{settings: settings, shares: shares, versions: versions}
 }
 
 func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
@@ -71,39 +69,3 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *SettingsHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		CurrentPassword string `json:"currentPassword"`
-		NewPassword     string `json:"newPassword"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
-		return
-	}
-	if body.CurrentPassword == "" || body.NewPassword == "" {
-		http.Error(w, `{"error":"current and new password are required"}`, http.StatusBadRequest)
-		return
-	}
-	if len([]rune(body.NewPassword)) < 8 {
-		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
-		return
-	}
-
-	session := middleware.SessionFromContext(r.Context())
-	if session == nil {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	if err := h.auth.ChangePassword(body.CurrentPassword, body.NewPassword, session.ID); err != nil {
-		if err.Error() == "invalid current password" {
-			http.Error(w, `{"error":"invalid current password"}`, http.StatusBadRequest)
-			return
-		}
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-
-	slog.Info("security_event", "event", "password_change", "ip", clientIP(r))
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
-}

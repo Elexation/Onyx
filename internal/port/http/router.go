@@ -14,27 +14,27 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy bool) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy, requireHTTPS bool) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
 	shareRL := middleware.NewRateLimiter(trustedProxy)
-	authHandler := handler.NewAuthHandler(auth, rl)
+	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
 	uploadHandler := handler.NewUploadHandler(files)
-	settingsHandler := handler.NewSettingsHandler(settings, auth, shares, versions)
+	settingsHandler := handler.NewSettingsHandler(settings, shares, versions)
 	trashHandler := handler.NewTrashHandler(trash)
 	versionHandler := handler.NewVersionHandler(versions)
 	searchHandler := handler.NewSearchHandler(search)
 	shareHandler := handler.NewShareHandler(shares)
-	publicHandler := handler.NewPublicHandler(shares, files, shareRL)
+	publicHandler := handler.NewPublicHandler(shares, files, shareRL, trustedProxy, requireHTTPS)
 	tokenHandler := handler.NewTokenHandler(tokens)
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
-	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.SecurityHeaders(trustedProxy, requireHTTPS))
 	r.Use(middleware.BodyLimit(1 << 20))
 
 	r.Get("/api/health", healthHandler)
@@ -45,7 +45,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.With(rl.Middleware).Post("/login", authHandler.Login)
 		r.With(rl.Middleware).Post("/setup", authHandler.Setup)
 		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/logout", authHandler.Logout)
-		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/change-password", settingsHandler.ChangePassword)
+		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/change-password", authHandler.ChangePassword)
 	})
 
 	// Protected API routes
@@ -127,7 +127,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 // bypassing Chi's routing which modifies URL paths.
 func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.Auth(auth, tokens)(stripped)
+	authed := middleware.CSRF(middleware.Auth(auth, tokens)(stripped))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/upload") {
 			next.ServeHTTP(w, r)

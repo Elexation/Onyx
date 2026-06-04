@@ -169,10 +169,10 @@ func (r *VersionRepo) RenameDir(oldDir, newDir string) error {
 		`UPDATE file_versions
 		 SET file_path = ? || substr(file_path, ?),
 		     version_path = ? || substr(version_path, ?)
-		 WHERE file_path LIKE ? || '%'`,
+		 WHERE file_path LIKE ? || '%' ESCAPE '\'`,
 		newPrefix, utf8.RuneCountInString(oldPrefix)+1,
 		newVersionPrefix, utf8.RuneCountInString(oldVersionPrefix)+1,
-		oldPrefix,
+		escapeLike(oldPrefix),
 	)
 	if err != nil {
 		return fmt.Errorf("rename dir versions: %w", err)

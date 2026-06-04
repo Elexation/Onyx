@@ -71,7 +71,7 @@ func (r *SearchRepo) Delete(path string) error {
 }
 
 func (r *SearchRepo) DeleteTree(path string) error {
-	_, err := r.db.Exec("DELETE FROM files WHERE path = ? OR path LIKE ? || '/%'", path, path)
+	_, err := r.db.Exec("DELETE FROM files WHERE path = ? OR path LIKE ? || '/%' ESCAPE '\\'", path, escapeLike(path))
 	return err
 }
 
@@ -133,8 +133,8 @@ func (r *SearchRepo) UpdatePathPrefix(oldPrefix, newPrefix string) error {
 		UPDATE files SET
 			path = ? || substr(path, ?),
 			name = CASE WHEN path = ? THEN ? ELSE name END
-		WHERE path = ? OR path LIKE ? || '/%'`,
-		newPrefix, utf8.RuneCountInString(oldPrefix)+1, oldPrefix, newName, oldPrefix, oldPrefix,
+		WHERE path = ? OR path LIKE ? || '/%' ESCAPE '\'`,
+		newPrefix, utf8.RuneCountInString(oldPrefix)+1, oldPrefix, newName, oldPrefix, escapeLike(oldPrefix),
 	)
 	return err
 }
@@ -159,4 +159,11 @@ func buildFTSQuery(input string) string {
 		tokens[i] = t + "*"
 	}
 	return strings.Join(tokens, " ")
+}
+
+// escapeLike escapes SQL LIKE metacharacters so the value is matched
+// literally when used with ESCAPE '\'.
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
 }

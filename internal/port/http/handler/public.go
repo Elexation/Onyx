@@ -22,20 +22,24 @@ type shareSession struct {
 }
 
 type PublicHandler struct {
-	shares *service.ShareService
-	files  *service.FileService
-	rl     *middleware.RateLimiter
+	shares       *service.ShareService
+	files        *service.FileService
+	rl           *middleware.RateLimiter
+	trustedProxy bool
+	requireHTTPS bool
 
 	mu       sync.RWMutex
 	sessions map[string]shareSession // cookie value → session
 }
 
-func NewPublicHandler(shares *service.ShareService, files *service.FileService, rl *middleware.RateLimiter) *PublicHandler {
+func NewPublicHandler(shares *service.ShareService, files *service.FileService, rl *middleware.RateLimiter, trustedProxy, requireHTTPS bool) *PublicHandler {
 	h := &PublicHandler{
-		shares:   shares,
-		files:    files,
-		rl:       rl,
-		sessions: make(map[string]shareSession),
+		shares:       shares,
+		files:        files,
+		rl:           rl,
+		trustedProxy: trustedProxy,
+		requireHTTPS: requireHTTPS,
+		sessions:     make(map[string]shareSession),
 	}
 	go h.cleanSessions()
 	return h
@@ -88,20 +92,23 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if pwHash == nil || !h.shares.CheckPassword(*pwHash, req.Password) {
-		h.rl.RecordFailure(r)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}
 
 	h.rl.RecordSuccess(r)
-	sessionID := h.createSession(token)
+	sessionID, err := h.createSession(token)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "share_session",
 		Value:    sessionID,
 		Path:     "/api/public/s/" + token,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   h.requireHTTPS || middleware.IsHTTPS(r, h.trustedProxy),
 		MaxAge:   3600,
 	})
 
@@ -270,15 +277,40 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *PublicHandler) createSession(token string) string {
+const maxShareSessions = 10000
+
+func (h *PublicHandler) createSession(token string) (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
 	id := hex.EncodeToString(b)
 
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.sessions) >= maxShareSessions {
+		h.evictOldestLocked()
+	}
 	h.sessions[id] = shareSession{token: token, expiresAt: time.Now().Add(1 * time.Hour)}
-	h.mu.Unlock()
-	return id
+	return id, nil
+}
+
+// evictOldestLocked removes the session with the earliest expiry. Caller must
+// hold h.mu.
+func (h *PublicHandler) evictOldestLocked() {
+	var oldestID string
+	var oldestExp time.Time
+	first := true
+	for id, sess := range h.sessions {
+		if first || sess.expiresAt.Before(oldestExp) {
+			oldestID = id
+			oldestExp = sess.expiresAt
+			first = false
+		}
+	}
+	if oldestID != "" {
+		delete(h.sessions, oldestID)
+	}
 }
 
 func (h *PublicHandler) hasValidSession(r *http.Request, token string) bool {

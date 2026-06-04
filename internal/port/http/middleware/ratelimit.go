@@ -2,13 +2,13 @@ package middleware
 
 import (
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
+
+const maxAttemptEntries = 10000
 
 type loginAttempts struct {
 	failCount int
@@ -30,19 +30,26 @@ func NewRateLimiter(trustedProxy bool) *RateLimiter {
 	return rl
 }
 
+// Middleware atomically checks the lockout gate and pre-records the current
+// request as a failure before dispatching. Handlers MUST call RecordSuccess on
+// success to roll back the increment; failures require no handler action. The
+// pre-increment closes the check-then-act race where concurrent requests all
+// read the same low count and pass the gate in parallel.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := rl.extractIP(r)
+		ip := ClientIP(r, rl.trustedProxy)
 
 		rl.mu.Lock()
-		a := rl.attempts[ip]
-		if a != nil && a.failCount >= 5 {
-			cooldown := 5 * time.Second
-			if a.failCount >= 20 {
-				cooldown = 60 * time.Second
-			} else if a.failCount >= 10 {
-				cooldown = 30 * time.Second
+		a, ok := rl.attempts[ip]
+		if !ok {
+			if len(rl.attempts) >= maxAttemptEntries {
+				rl.evictOldestLocked()
 			}
+			a = &loginAttempts{}
+			rl.attempts[ip] = a
+		}
+		if a.failCount >= 5 {
+			cooldown := cooldownFor(a.failCount)
 			elapsed := time.Since(a.lastFail)
 			if elapsed < cooldown {
 				rl.mu.Unlock()
@@ -53,31 +60,50 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		a.failCount++
+		a.lastFail = time.Now()
 		rl.mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (rl *RateLimiter) RecordFailure(r *http.Request) {
-	ip := rl.extractIP(r)
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	a, ok := rl.attempts[ip]
-	if !ok {
-		a = &loginAttempts{}
-		rl.attempts[ip] = a
+func cooldownFor(failCount int) time.Duration {
+	switch {
+	case failCount >= 20:
+		return 60 * time.Second
+	case failCount >= 10:
+		return 30 * time.Second
+	default:
+		return 5 * time.Second
 	}
-	a.failCount++
-	a.lastFail = time.Now()
 }
 
+// RecordSuccess rolls back the pre-increment applied by Middleware. Called by
+// handlers after a successful authentication.
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {
-	ip := rl.extractIP(r)
+	ip := ClientIP(r, rl.trustedProxy)
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.attempts, ip)
+}
+
+// evictOldestLocked removes the entry with the oldest lastFail. Caller must
+// hold rl.mu.
+func (rl *RateLimiter) evictOldestLocked() {
+	var oldestIP string
+	var oldestTime time.Time
+	first := true
+	for ip, a := range rl.attempts {
+		if first || a.lastFail.Before(oldestTime) {
+			oldestIP = ip
+			oldestTime = a.lastFail
+			first = false
+		}
+	}
+	if oldestIP != "" {
+		delete(rl.attempts, oldestIP)
+	}
 }
 
 func (rl *RateLimiter) cleanup() {
@@ -93,23 +119,4 @@ func (rl *RateLimiter) cleanup() {
 		}
 		rl.mu.Unlock()
 	}
-}
-
-func (rl *RateLimiter) extractIP(r *http.Request) string {
-	if rl.trustedProxy {
-		if ip := r.Header.Get("X-Real-IP"); ip != "" {
-			return strings.TrimSpace(ip)
-		}
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if first, _, ok := strings.Cut(xff, ","); ok {
-				return strings.TrimSpace(first)
-			}
-			return strings.TrimSpace(xff)
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

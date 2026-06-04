@@ -23,6 +23,23 @@ const (
 	argonKeyLen  = 32
 )
 
+// dummyHash absorbs argon2 work on Login when no admin account exists, so the
+// request's latency does not leak first-run state. Generated once from random
+// bytes at package init; the matching password is discarded.
+var dummyHash string
+
+func init() {
+	p := make([]byte, 32)
+	if _, err := rand.Read(p); err != nil {
+		panic("auth: init dummy hash: " + err.Error())
+	}
+	h, err := hashPassword(string(p))
+	if err != nil {
+		panic("auth: init dummy hash: " + err.Error())
+	}
+	dummyHash = h
+}
+
 type UserRepo interface {
 	Create(username, passwordHash string) (*domain.User, error)
 	GetByUsername(username string) (*domain.User, error)
@@ -73,6 +90,12 @@ func (a *AuthService) Setup(password string) (*domain.Session, error) {
 
 	user, err := a.users.Create("admin", hash)
 	if err != nil {
+		// UNIQUE-constraint failure means a concurrent Setup won the race
+		// between the Exists() check above and Create(). Map to the same
+		// error as the fast path.
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil, fmt.Errorf("admin already exists")
+		}
 		return nil, fmt.Errorf("create admin: %w", err)
 	}
 
@@ -85,6 +108,9 @@ func (a *AuthService) Login(password string) (*domain.Session, error) {
 		return nil, fmt.Errorf("get admin: %w", err)
 	}
 	if user == nil {
+		// Absorb argon2 work so Login latency doesn't reveal whether an admin
+		// has been configured. Result is discarded.
+		verifyPassword(password, dummyHash)
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
@@ -141,30 +167,45 @@ func (a *AuthService) StartCleanup(interval time.Duration) {
 	}()
 }
 
-func (a *AuthService) ChangePassword(currentPassword, newPassword, sessionID string) error {
+// ChangePassword verifies the current password, stores the new hash, rotates
+// the caller's session (closing any pre-change cookie-leak window), and
+// invalidates all other sessions. Returns the new session so the caller can
+// emit a fresh cookie.
+func (a *AuthService) ChangePassword(currentPassword, newPassword string) (*domain.Session, error) {
 	user, err := a.users.GetByUsername("admin")
 	if err != nil {
-		return fmt.Errorf("get admin: %w", err)
+		return nil, fmt.Errorf("get admin: %w", err)
 	}
 	if user == nil {
-		return fmt.Errorf("user not found")
+		return nil, fmt.Errorf("user not found")
 	}
 
 	if !verifyPassword(currentPassword, user.PasswordHash) {
-		return fmt.Errorf("invalid current password")
+		return nil, fmt.Errorf("invalid current password")
 	}
 
 	hash, err := hashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
 	if err := a.users.UpdatePassword("admin", hash); err != nil {
-		return fmt.Errorf("update password: %w", err)
+		return nil, fmt.Errorf("update password: %w", err)
 	}
 
-	a.sessions.DeleteOtherSessions(user.ID, sessionID)
-	return nil
+	newSession, err := a.createSession(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("rotate session: %w", err)
+	}
+
+	// Deletes the caller's previous session along with all others (anything
+	// not equal to newSession.ID). Not ignoring this error is the whole point
+	// of post-change invalidation.
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, newSession.ID); err != nil {
+		return nil, fmt.Errorf("invalidate other sessions: %w", err)
+	}
+
+	return newSession, nil
 }
 
 func (a *AuthService) createSession(userID int64) (*domain.Session, error) {

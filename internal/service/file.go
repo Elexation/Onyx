@@ -240,7 +240,10 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 	var results []storage.OpResult
 	if !permanent && s.trash != nil && s.settings != nil {
 		enabled, err := s.settings.Get(domain.SettingTrashEnabled)
-		if err == nil && domain.GetBool(enabled) {
+		if err != nil || domain.GetBool(enabled) {
+			if err != nil {
+				slog.Warn("trash setting read failed, defaulting to trash enabled", "error", err)
+			}
 			trashResults := s.trash.MoveToTrash(paths)
 			results = make([]storage.OpResult, len(trashResults))
 			for i, tr := range trashResults {

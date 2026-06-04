@@ -153,7 +153,8 @@ func main() {
 	defer tusHandler.Close()
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, trustedProxy)
+	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, trustedProxy, requireHTTPS)
 
 	slog.Info("starting server", "port", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

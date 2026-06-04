@@ -3,6 +3,7 @@ import Tus from "@uppy/tus";
 import { emaFilter } from "@uppy/utils";
 import { uploadState } from "$lib/stores/upload.svelte.js";
 import { deleteFiles } from "$lib/api/files.js";
+import { getCsrfToken } from "$lib/api";
 
 let instance: Uppy | null = null;
 
@@ -84,6 +85,10 @@ export function getUppy(): Uppy {
 		retryDelays: [0, 1000, 3000, 5000],
 		allowedMetaFields: true,
 		removeFingerprintOnSuccess: true,
+		headers: () => {
+			const token = getCsrfToken();
+			return token ? { "X-CSRF-Token": token } : {};
+		},
 	});
 
 	instance.on("upload", () => {

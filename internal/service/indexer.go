@@ -3,12 +3,12 @@ package service
 import (
 	"io/fs"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
+	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/domain"
 )
 
@@ -25,12 +25,12 @@ type SearchRepo interface {
 
 type Indexer struct {
 	repo    SearchRepo
-	dataDir string
+	storage *storage.LocalStorage
 	mu      sync.Mutex
 }
 
-func NewIndexer(repo SearchRepo, dataDir string) *Indexer {
-	return &Indexer{repo: repo, dataDir: dataDir}
+func NewIndexer(repo SearchRepo, st *storage.LocalStorage) *Indexer {
+	return &Indexer{repo: repo, storage: st}
 }
 
 func (idx *Indexer) Start(interval time.Duration) {
@@ -53,7 +53,7 @@ func (idx *Indexer) scan() int {
 	var batch []database.FileEntry
 	var count int
 
-	fsys := os.DirFS(idx.dataDir)
+	fsys := idx.storage.FS()
 	fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			slog.Warn("search indexer: walk error", "path", path, "error", err)

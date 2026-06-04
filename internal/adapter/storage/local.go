@@ -33,6 +33,12 @@ func (s *LocalStorage) Close() error {
 	return s.root.Close()
 }
 
+// FS returns an fs.FS backed by the confined os.Root. Walks through this FS
+// cannot escape the data directory via symlinks, unlike os.DirFS.
+func (s *LocalStorage) FS() fs.FS {
+	return s.root.FS()
+}
+
 // ListDir returns the contents of a directory.
 func (s *LocalStorage) ListDir(dirPath string) ([]domain.FileInfo, error) {
 	dirPath = cleanPath(dirPath)

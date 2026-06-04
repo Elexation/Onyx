@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -276,7 +277,11 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) ([]string, error) {
 	var conflicts []string
 	for _, rp := range relativePaths {
-		fullPath := targetDir + "/" + rp
+		clean := path.Clean(strings.TrimLeft(rp, "/"))
+		if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+			return nil, fmt.Errorf("invalid relative path: %q", rp)
+		}
+		fullPath := path.Join(targetDir, clean)
 		exists, err := s.storage.Exists(fullPath)
 		if err != nil {
 			return nil, err
@@ -292,6 +297,17 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 // conflictStrategy: "replace" overwrites, "keepBoth" auto-renames.
 // relativePath is the path relative to targetDir (supports nested dirs for folder uploads).
 func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy string, src io.Reader) (string, error) {
+	// Reject traversal in either component before os.Root gets a chance to.
+	// Bad uploads would otherwise linger in the tus store after a 500.
+	cleanTarget := path.Clean(strings.TrimLeft(targetDir, "/"))
+	if cleanTarget == ".." || strings.HasPrefix(cleanTarget, "../") {
+		return "", fmt.Errorf("invalid target directory")
+	}
+	cleanRel := path.Clean(strings.TrimLeft(relativePath, "/"))
+	if cleanRel == "" || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+		return "", fmt.Errorf("invalid upload path")
+	}
+
 	destPath := strings.TrimLeft(targetDir+"/"+relativePath, "/")
 
 	exists, err := s.storage.Exists(destPath)

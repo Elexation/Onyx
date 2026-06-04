@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
@@ -25,6 +27,16 @@ func main() {
 	dataDir := env("ONYX_DATA", "data")
 	configDir := env("ONYX_CONFIG", "config")
 	cacheDir := env("ONYX_CACHE", ".cache")
+
+	// Trash and versions dirs are CWD-relative and hardcoded; refuse to run
+	// if an operator's data dir would overlap with them (e.g. ONYX_DATA=".").
+	// Overlap would leak trash/version state via showHidden listings.
+	trashDir := ".trash"
+	versionsDir := ".versions"
+	if err := ensureNoDirOverlap(dataDir, trashDir, versionsDir); err != nil {
+		slog.Error("invalid directory layout", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := database.Open(filepath.Join(configDir, "onyx.db"))
 	if err != nil {
@@ -49,7 +61,6 @@ func main() {
 	defer localStorage.Close()
 	fileService := service.NewFileService(localStorage)
 
-	trashDir := ".trash"
 	trashRepo := database.NewTrashRepo(db)
 	trashService, err := service.NewTrashService(trashRepo, settingsService, dataDir, trashDir)
 	if err != nil {
@@ -59,7 +70,6 @@ func main() {
 	fileService.SetTrash(trashService, settingsService)
 	trashService.StartAutoPurge(1 * time.Hour)
 
-	versionsDir := ".versions"
 	versionRepo := database.NewVersionRepo(db)
 	versionStore, err := storage.NewVersionStore(dataDir, versionsDir)
 	if err != nil {
@@ -83,7 +93,7 @@ func main() {
 	versionService.StartRetention(retentionInterval)
 
 	searchRepo := database.NewSearchRepo(db)
-	indexer := service.NewIndexer(searchRepo, dataDir)
+	indexer := service.NewIndexer(searchRepo, localStorage)
 	searchService := service.NewSearchService(searchRepo)
 	fileService.SetIndexer(indexer)
 	indexer.Start(5 * time.Minute)
@@ -168,4 +178,32 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// ensureNoDirOverlap rejects configurations where dataDir overlaps with any
+// of the sibling dirs (trash, versions). Overlap includes equality, nesting,
+// or path-prefix relationships after absolute-path resolution.
+func ensureNoDirOverlap(dataDir string, siblings ...string) error {
+	dataAbs, err := filepath.Abs(dataDir)
+	if err != nil {
+		return fmt.Errorf("resolve data dir: %w", err)
+	}
+	for _, sibling := range siblings {
+		sibAbs, err := filepath.Abs(sibling)
+		if err != nil {
+			return fmt.Errorf("resolve %s: %w", sibling, err)
+		}
+		if overlaps(dataAbs, sibAbs) {
+			return fmt.Errorf("data dir %q overlaps with %q", dataDir, sibling)
+		}
+	}
+	return nil
+}
+
+func overlaps(a, b string) bool {
+	if a == b {
+		return true
+	}
+	sep := string(filepath.Separator)
+	return strings.HasPrefix(a, b+sep) || strings.HasPrefix(b, a+sep)
 }

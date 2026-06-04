@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -60,16 +61,29 @@ func (s *TrashService) SetVersioning(v *VersionService) {
 	s.versions = v
 }
 
-func (s *TrashService) verifyInsideDataDir(absPath string) error {
+// resolveDataSubpath performs a lexical safety check on a data-relative path
+// and returns the absolute filesystem path. Rejects empty/root and any path
+// that resolves to "." or contains ".." components.
+func (s *TrashService) resolveDataSubpath(relPath string) (string, error) {
+	clean := path.Clean(strings.TrimLeft(relPath, "/"))
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("invalid path")
+	}
+	return filepath.Join(s.dataDir, filepath.FromSlash(clean)), nil
+}
+
+// verifyInsideDataDir resolves symlinks on absPath and returns the resolved
+// path if it lies within the data directory root. Requires absPath to exist.
+func (s *TrashService) verifyInsideDataDir(absPath string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	root := s.realDataDir + string(filepath.Separator)
 	if resolved != s.realDataDir && !strings.HasPrefix(resolved, root) {
-		return fmt.Errorf("path escapes data directory")
+		return "", fmt.Errorf("path escapes data directory")
 	}
-	return nil
+	return resolved, nil
 }
 
 func (s *TrashService) MoveToTrash(paths []string) []MoveToTrashResult {
@@ -87,23 +101,22 @@ type MoveToTrashResult struct {
 }
 
 func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
-	clean := strings.TrimLeft(filePath, "/")
-	if clean == "" || clean == "." {
+	srcAbs, err := s.resolveDataSubpath(filePath)
+	if err != nil {
+		return MoveToTrashResult{Path: filePath, Error: err.Error()}
+	}
+	resolvedSrc, err := s.verifyInsideDataDir(srcAbs)
+	if err != nil {
 		return MoveToTrashResult{Path: filePath, Error: "invalid path"}
 	}
-
-	srcAbs := filepath.Join(s.dataDir, filepath.FromSlash(clean))
-	if err := s.verifyInsideDataDir(srcAbs); err != nil {
-		return MoveToTrashResult{Path: filePath, Error: "invalid path"}
-	}
-	info, err := os.Stat(srcAbs)
+	info, err := os.Stat(resolvedSrc)
 	if err != nil {
 		return MoveToTrashResult{Path: filePath, Error: err.Error()}
 	}
 
 	var size int64
 	if info.IsDir() {
-		size, err = dirSize(srcAbs)
+		size, err = dirSize(resolvedSrc)
 		if err != nil {
 			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("calculate size: %s", err)}
 		}
@@ -116,19 +129,20 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("generate id: %s", err)}
 	}
 
+	clean := strings.TrimLeft(filePath, "/")
 	trashName := id + "-" + filepath.Base(clean)
 	dstAbs := filepath.Join(s.trashDir, trashName)
 
-	if err := os.Rename(srcAbs, dstAbs); err != nil {
+	if err := os.Rename(resolvedSrc, dstAbs); err != nil {
 		if !isCrossDevice(err) {
 			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("move to trash: %s", err)}
 		}
 		// Cross-device: copy then delete original
-		if err := copyTree(srcAbs, dstAbs); err != nil {
+		if err := copyTree(resolvedSrc, dstAbs); err != nil {
 			os.RemoveAll(dstAbs)
 			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("copy to trash: %s", err)}
 		}
-		if err := os.RemoveAll(srcAbs); err != nil {
+		if err := os.RemoveAll(resolvedSrc); err != nil {
 			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("remove original after copy: %s", err)}
 		}
 	}
@@ -143,7 +157,7 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	}
 	if err := s.repo.Insert(item); err != nil {
 		// Move back on DB failure
-		os.Rename(dstAbs, srcAbs)
+		os.Rename(dstAbs, resolvedSrc)
 		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("record trash item: %s", err)}
 	}
 
@@ -159,20 +173,26 @@ func (s *TrashService) Restore(id string) error {
 		return fmt.Errorf("trash item not found")
 	}
 
-	clean := strings.TrimLeft(item.OriginalPath, "/")
-	dstAbs := filepath.Join(s.dataDir, filepath.FromSlash(clean))
+	// Lexical check on the stored original path before any filesystem
+	// side-effects. Rejects tampered or malformed trash records.
+	dstAbs, err := s.resolveDataSubpath(item.OriginalPath)
+	if err != nil {
+		return fmt.Errorf("invalid original path in trash record")
+	}
 
 	// Check for conflict at original path
 	if _, err := os.Stat(dstAbs); err == nil {
 		return fmt.Errorf("cannot restore: a file or directory already exists at %s", item.OriginalPath)
 	}
 
-	// Ensure parent directory exists
+	// Ensure parent directory exists. The lexical check above guarantees
+	// parentDir is inside dataDir; the post-MkdirAll EvalSymlinks call is
+	// defense-in-depth against a symlink-in-ancestor escape.
 	parentDir := filepath.Dir(dstAbs)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
-	if err := s.verifyInsideDataDir(parentDir); err != nil {
+	if _, err := s.verifyInsideDataDir(parentDir); err != nil {
 		return fmt.Errorf("restore destination escapes data directory")
 	}
 

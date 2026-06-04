@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -26,6 +27,26 @@ func NewVersionStore(dataDir, versionsDir string) (*VersionStore, error) {
 		dataDir:     dataDir,
 		versionsDir: versionsDir,
 	}, nil
+}
+
+// safeDataPath lexically validates a data-relative path (leading slash
+// optional) and returns the absolute filesystem path under dataDir.
+func (s *VersionStore) safeDataPath(rel string) (string, error) {
+	clean := path.Clean(strings.TrimLeft(rel, "/"))
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("invalid data path: %q", rel)
+	}
+	return filepath.Join(s.dataDir, filepath.FromSlash(clean)), nil
+}
+
+// safeVersionsPath lexically validates a versions-relative path and returns
+// the absolute filesystem path under versionsDir.
+func (s *VersionStore) safeVersionsPath(rel string) (string, error) {
+	clean := path.Clean(strings.TrimLeft(rel, "/"))
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("invalid versions path: %q", rel)
+	}
+	return filepath.Join(s.versionsDir, filepath.FromSlash(clean)), nil
 }
 
 // TestReflink probes whether the versions directory filesystem supports
@@ -56,11 +77,17 @@ func (s *VersionStore) TestReflink() bool {
 // directory using reflink.Auto (reflink → copy_file_range → io.Copy). Returns
 // the versions-relative path of the new version file.
 func (s *VersionStore) StoreVersion(filePath string, timestampNs int64) (string, error) {
-	relPath := strings.TrimPrefix(filePath, "/")
-	srcAbs := filepath.Join(s.dataDir, filepath.FromSlash(relPath))
+	srcAbs, err := s.safeDataPath(filePath)
+	if err != nil {
+		return "", err
+	}
 
+	relPath := strings.TrimPrefix(filePath, "/")
 	versionRel := fmt.Sprintf("%s.%d", relPath, timestampNs)
-	dstAbs := filepath.Join(s.versionsDir, filepath.FromSlash(versionRel))
+	dstAbs, err := s.safeVersionsPath(versionRel)
+	if err != nil {
+		return "", err
+	}
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0755); err != nil {
 		return "", fmt.Errorf("create version parent dir: %w", err)
@@ -76,9 +103,14 @@ func (s *VersionStore) StoreVersion(filePath string, timestampNs int64) (string,
 // RestoreVersion copies the version file back to the data path using
 // reflink.Auto. Overwrites the current file.
 func (s *VersionStore) RestoreVersion(filePath, versionRel string) error {
-	srcAbs := filepath.Join(s.versionsDir, filepath.FromSlash(versionRel))
-	dstRel := strings.TrimPrefix(filePath, "/")
-	dstAbs := filepath.Join(s.dataDir, filepath.FromSlash(dstRel))
+	srcAbs, err := s.safeVersionsPath(versionRel)
+	if err != nil {
+		return err
+	}
+	dstAbs, err := s.safeDataPath(filePath)
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0755); err != nil {
 		return fmt.Errorf("create data parent dir: %w", err)
@@ -97,7 +129,10 @@ func (s *VersionStore) RestoreVersion(filePath, versionRel string) error {
 
 // DeleteVersion removes a version file from disk.
 func (s *VersionStore) DeleteVersion(versionRel string) error {
-	abs := filepath.Join(s.versionsDir, filepath.FromSlash(versionRel))
+	abs, err := s.safeVersionsPath(versionRel)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete version file: %w", err)
 	}
@@ -107,6 +142,14 @@ func (s *VersionStore) DeleteVersion(versionRel string) error {
 // RenameFile moves all version files for a renamed data file. Operates on
 // versions-relative paths returned from StoreVersion.
 func (s *VersionStore) RenameFile(oldFilePath, newFilePath string) error {
+	// Lexical safety checks on both paths before touching the filesystem.
+	if _, err := s.safeVersionsPath(strings.TrimPrefix(oldFilePath, "/")); err != nil {
+		return err
+	}
+	if _, err := s.safeVersionsPath(strings.TrimPrefix(newFilePath, "/")); err != nil {
+		return err
+	}
+
 	oldRel := strings.TrimPrefix(oldFilePath, "/")
 	newRel := strings.TrimPrefix(newFilePath, "/")
 	oldDir := filepath.Join(s.versionsDir, filepath.FromSlash(filepath.Dir(oldRel)))
@@ -166,10 +209,14 @@ func isAllDigits(s string) bool {
 
 // RenameDir moves the versions subtree for a renamed directory.
 func (s *VersionStore) RenameDir(oldDirPath, newDirPath string) error {
-	oldRel := strings.TrimPrefix(oldDirPath, "/")
-	newRel := strings.TrimPrefix(newDirPath, "/")
-	src := filepath.Join(s.versionsDir, filepath.FromSlash(oldRel))
-	dst := filepath.Join(s.versionsDir, filepath.FromSlash(newRel))
+	src, err := s.safeVersionsPath(oldDirPath)
+	if err != nil {
+		return err
+	}
+	dst, err := s.safeVersionsPath(newDirPath)
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(src); err != nil {
 		if os.IsNotExist(err) {

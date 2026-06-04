@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -63,7 +64,13 @@ func (s *VersionService) CreateVersion(filePath string) error {
 
 	filePath = ensureLeadingSlash(filePath)
 	relPath := strings.TrimPrefix(filePath, "/")
-	srcAbs := filepath.Join(s.dataDir, filepath.FromSlash(relPath))
+	// Lexical safety: reject traversal attempts defensively, even though all
+	// callers pass paths already validated by os.Root upstream.
+	clean := path.Clean(relPath)
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("invalid version path: %q", filePath)
+	}
+	srcAbs := filepath.Join(s.dataDir, filepath.FromSlash(clean))
 
 	info, err := os.Stat(srcAbs)
 	if err != nil {

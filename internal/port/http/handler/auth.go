@@ -27,6 +27,7 @@ func (h *AuthHandler) clientIP(r *http.Request) string {
 }
 
 func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	firstRun, err := h.auth.IsFirstRun()
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -48,6 +49,7 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	var body struct {
 		Password string `json:"password"`
 	}
@@ -79,6 +81,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	var body struct {
 		Password string `json:"password"`
 	}
@@ -104,6 +107,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	var body struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
@@ -146,6 +150,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	session := middleware.SessionFromContext(r.Context())
 	if session == nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -188,4 +193,11 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+// noStore tags an auth response as uncacheable. Set-Cookie responses aren't
+// normally cached by well-behaved proxies, but Status leaks csrfToken — make
+// the no-cache contract explicit.
+func noStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
 }

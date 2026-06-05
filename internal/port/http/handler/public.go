@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
@@ -47,7 +49,7 @@ func NewPublicHandler(shares *service.ShareService, files *service.FileService, 
 
 // Info handles GET /s/{token} — returns share metadata (or "password required").
 func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -72,7 +74,7 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 
 // Verify handles POST /s/{token}/verify — checks password and sets session cookie.
 func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token := chi.URLParam(r, "token")
 	link, pwHash, err := h.shares.Validate(token)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -118,7 +120,7 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // Download handles GET /s/{token}/dl or GET /s/{token}/dl/* — serves a file from the share.
 func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -166,7 +168,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 // DownloadZip handles GET /s/{token}/zip — streams the entire shared directory as a zip archive.
 func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -200,7 +202,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 
 // Raw handles GET /s/{token}/raw or GET /s/{token}/raw/* — serves a file inline for preview.
 func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -240,8 +242,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 
 	name := path.Base(filePath)
 
-	// SVGs can contain scripts — sandbox them
-	if strings.HasSuffix(strings.ToLower(name), ".svg") {
+	if needsSandbox(name) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
@@ -339,15 +340,6 @@ func (h *PublicHandler) cleanSessions() {
 		}
 		h.mu.Unlock()
 	}
-}
-
-func extractToken(r *http.Request) string {
-	// URL is /api/public/s/{token} or /api/public/s/{token}/verify or /api/public/s/{token}/dl/...
-	p := strings.TrimPrefix(r.URL.Path, "/api/public/s/")
-	if idx := strings.Index(p, "/"); idx >= 0 {
-		return p[:idx]
-	}
-	return p
 }
 
 func extractSubPath(r *http.Request, token string) string {

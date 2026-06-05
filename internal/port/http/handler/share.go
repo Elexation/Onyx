@@ -117,7 +117,8 @@ func (h *ShareHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.shares.Delete(id); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		slog.Warn("share delete failed", "id", id, "error", err)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found"})
 		return
 	}
 

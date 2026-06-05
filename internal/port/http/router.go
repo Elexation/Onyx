@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
+	r.Use(normalizePath)
 	r.Use(middleware.SecurityHeaders(trustedProxy, requireHTTPS))
 	r.Use(middleware.BodyLimit(1 << 20))
 
@@ -116,7 +118,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Get("/api/public/s/{token}/dl", publicHandler.Download)
 	r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
 
-	r.NotFound(web.SPAHandler())
+	r.NotFound(apiAware404(web.SPAHandler()))
 
 	// Intercept /api/upload before Chi to avoid path mangling.
 	// OPTIONS pass through without auth (tus CORS preflight).
@@ -129,17 +131,75 @@ func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.Token
 	stripped := http.StripPrefix("/api/upload/", tus)
 	authed := middleware.CSRF(middleware.Auth(auth, tokens)(stripped))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/upload") {
+		if r.URL.Path != "/api/upload" && !strings.HasPrefix(r.URL.Path, "/api/upload/") {
 			next.ServeHTTP(w, r)
 			return
 		}
 		slog.Info("upload interceptor", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodOptions {
-			stripped.ServeHTTP(w, r)
+			handleUploadPreflight(w, r)
 			return
 		}
 		authed.ServeHTTP(w, r)
 	})
+}
+
+// handleUploadPreflight responds to OPTIONS for /api/upload in-process,
+// advertising tus capabilities without forwarding to tusd. We deliberately
+// emit no CORS headers: same-origin requests don't preflight, and cross-origin
+// requests should be blocked. A desktop tus client (no CORS) still works.
+func handleUploadPreflight(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Tus-Resumable", "1.0.0")
+	w.Header().Set("Tus-Version", "1.0.0")
+	w.Header().Set("Tus-Extension", "creation,creation-with-upload,termination")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// normalizePath canonicalizes r.URL.Path with path.Clean, resolving "." and
+// ".." segments and collapsing double slashes before any routing or
+// scope-checking middleware sees the path. A trailing slash on the original
+// is preserved — chi's wildcard routes (e.g. /files/*) match /files/ but not
+// /files, and the SPA hits /api/files/ for the root listing.
+func normalizePath(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		original := r.URL.Path
+		cleaned := path.Clean(original)
+		if cleaned == "." {
+			cleaned = "/"
+		}
+		if len(original) > 1 && strings.HasSuffix(original, "/") && !strings.HasSuffix(cleaned, "/") {
+			cleaned += "/"
+		}
+		if cleaned == original {
+			next.ServeHTTP(w, r)
+			return
+		}
+		r2 := *r
+		u := *r.URL
+		u.Path = cleaned
+		u.RawPath = ""
+		r2.URL = &u
+		next.ServeHTTP(w, &r2)
+	})
+}
+
+// apiAware404 returns 404 JSON for any unmatched /api/* path and falls back
+// to the SPA for everything else. Without this, requests like /api/garbage
+// would return the SPA HTML with 200 OK, masking which endpoints exist.
+func apiAware404(spa http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"not found"}`))
+			return
+		}
+		spa(w, r)
+	}
 }
 
 // optionalAuth tries to load the session but doesn't require it

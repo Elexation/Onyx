@@ -81,7 +81,8 @@ func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tokens.Delete(id); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		slog.Warn("token delete failed", "id", id, "error", err)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "token not found"})
 		return
 	}
 

@@ -83,13 +83,31 @@ func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		name = filePath[idx+1:]
 	}
 
-	// SVGs can contain scripts — sandbox them
-	if strings.HasSuffix(strings.ToLower(name), ".svg") {
+	if needsSandbox(name) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
 	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)
+}
+
+// needsSandbox reports whether an inline-served file should carry a sandbox
+// CSP. Any browser-renderable scriptable type (HTML/XHTML/MHTML/XML/SVG) must
+// be sandboxed: they share the SPA origin and would otherwise execute scripts
+// against the authenticated session.
+func needsSandbox(name string) bool {
+	n := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(n, ".svg"),
+		strings.HasSuffix(n, ".html"),
+		strings.HasSuffix(n, ".htm"),
+		strings.HasSuffix(n, ".xhtml"),
+		strings.HasSuffix(n, ".xml"),
+		strings.HasSuffix(n, ".mhtml"),
+		strings.HasSuffix(n, ".mht"):
+		return true
+	}
+	return false
 }
 
 // DownloadZip handles GET /api/download/zip?path=...&path=...

@@ -68,7 +68,6 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.shares.RecordAccess(link.ID)
 	h.writeShareInfo(w, link)
 }
 
@@ -80,10 +79,6 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if link == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
-		return
-	}
 
 	var req struct {
 		Password string `json:"password"`
@@ -93,7 +88,9 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if pwHash == nil || !h.shares.CheckPassword(*pwHash, req.Password) {
+	// Collapse non-existent token and wrong password into a single 403 to
+	// avoid an existence oracle that lets brute force enumerate valid tokens.
+	if link == nil || pwHash == nil || !h.shares.CheckPassword(*pwHash, req.Password) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}
@@ -114,7 +111,6 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   3600,
 	})
 
-	h.shares.RecordAccess(link.ID)
 	h.writeShareInfo(w, link)
 }
 

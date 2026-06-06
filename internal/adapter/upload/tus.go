@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tus/tusd/v2/pkg/filelocker"
@@ -52,17 +53,15 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 					tusd.NewError("ERR_TARGET_REQUIRED", "targetDir metadata is required", http.StatusBadRequest)
 			}
+			if hook.Upload.SizeIsDeferred {
+				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
+					tusd.NewError("ERR_UPLOAD_SIZE_UNKNOWN", "deferred-length uploads are not allowed", http.StatusBadRequest)
+			}
 			maxStr, _ := settings.Get(domain.SettingUploadMaxSize)
 			maxSize := domain.GetInt64(maxStr)
-			if maxSize > 0 {
-				if hook.Upload.SizeIsDeferred {
-					return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
-						tusd.NewError("ERR_UPLOAD_SIZE_UNKNOWN", "deferred-length uploads are not allowed when a max size is configured", http.StatusBadRequest)
-				}
-				if hook.Upload.Size > maxSize {
-					return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
-						tusd.NewError("ERR_FILE_TOO_LARGE", "file exceeds maximum upload size", http.StatusRequestEntityTooLarge)
-				}
+			if maxSize > 0 && hook.Upload.Size > maxSize {
+				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
+					tusd.NewError("ERR_FILE_TOO_LARGE", "file exceeds maximum upload size", http.StatusRequestEntityTooLarge)
 			}
 			return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, nil
 		},
@@ -113,14 +112,17 @@ func (t *TusHandler) processCompletedUploads() {
 
 		finalPath, err := t.files.CompleteUpload(targetDir, relativePath, strategy, src)
 		src.Close()
+
+		// Always clean up tus files. On finalize failure the partial data is
+		// useless to retry — tusd has no resume token at this point — so leaving
+		// it on disk only delays the inevitable until the 24h sweep.
+		os.Remove(tusFile)
+		os.Remove(tusFile + ".info")
+
 		if err != nil {
 			slog.Error("finalize upload", "id", uploadID, "file", filename, "error", err)
 			continue
 		}
-
-		// Clean up tus files (.info and data)
-		os.Remove(tusFile)
-		os.Remove(tusFile + ".info")
 
 		slog.Info("upload complete", "file", finalPath)
 	}
@@ -151,12 +153,13 @@ func (t *TusHandler) doCleanup() {
 		if err != nil {
 			continue
 		}
-		if info.ModTime().Before(cutoff) {
-			path := filepath.Join(t.storedir, entry.Name())
-			if err := os.Remove(path); err == nil {
-				slog.Debug("cleaned stale upload", "file", entry.Name())
-			}
+		if !info.ModTime().Before(cutoff) {
+			continue
 		}
+		uploadID := strings.TrimSuffix(entry.Name(), ".info")
+		// Remove data and .info as a pair. Remove() on a missing file is harmless.
+		os.Remove(filepath.Join(t.storedir, uploadID))
+		os.Remove(filepath.Join(t.storedir, uploadID+".info"))
 	}
 }
 

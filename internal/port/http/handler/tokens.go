@@ -45,11 +45,15 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 	tok, fullToken, err := h.tokens.Create(req.Name, req.Scope, req.ExpiresAt)
 	if err != nil {
 		msg := err.Error()
-		status := http.StatusBadRequest
-		if strings.Contains(msg, "maximum") {
-			status = http.StatusConflict
+		switch {
+		case strings.Contains(msg, "maximum"):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": msg})
+		case msg == "expiration must be in the future":
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		default:
+			slog.Warn("token create failed", "name", req.Name, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create token"})
 		}
-		writeJSON(w, status, map[string]string{"error": msg})
 		return
 	}
 

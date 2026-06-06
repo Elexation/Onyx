@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/Elexation/onyx/internal/service"
@@ -123,8 +124,18 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, p := range paths {
-		if _, err := h.files.GetFileInfo(p); err != nil {
+	for i, p := range paths {
+		cleaned := path.Clean(p)
+		if cleaned == "/" || cleaned == "." || cleaned == "" {
+			http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
+			return
+		}
+		if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") {
+			http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
+			return
+		}
+		paths[i] = cleaned
+		if _, err := h.files.GetFileInfo(cleaned); err != nil {
 			writeFileError(w, err)
 			return
 		}

@@ -308,7 +308,7 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 		return "", fmt.Errorf("invalid upload path")
 	}
 
-	destPath := strings.TrimLeft(targetDir+"/"+relativePath, "/")
+	destPath := path.Join(cleanTarget, cleanRel)
 
 	exists, err := s.storage.Exists(destPath)
 	if err != nil {

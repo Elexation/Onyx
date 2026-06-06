@@ -99,7 +99,7 @@ func main() {
 	indexer.Start(5 * time.Minute)
 
 	shareRepo := database.NewShareRepo(db)
-	shareService := service.NewShareService(shareRepo, settingsService)
+	shareService := service.NewShareService(shareRepo, settingsService, fileService)
 	shareService.StartCleanup(24 * time.Hour)
 
 	tokenRepo := database.NewTokenRepo(db)

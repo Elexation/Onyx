@@ -50,11 +50,16 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	link, fullToken, err := h.shares.Create(req.Path, req.IsDir, expiresIn, req.Password)
 	if err != nil {
-		if err.Error() == "a share link already exists for this path" {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
+		msg := err.Error()
+		switch msg {
+		case "a share link already exists for this path":
+			writeJSON(w, http.StatusConflict, map[string]string{"error": msg})
+		case "invalid share path", "share path not found", "share path type mismatch", "sharing is disabled":
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		default:
+			slog.Warn("share create failed", "path", req.Path, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create share"})
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 

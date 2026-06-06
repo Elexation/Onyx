@@ -1,6 +1,8 @@
 package storage
 
 import (
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -249,14 +251,41 @@ func (s *LocalStorage) WriteFile(filePath string, src io.Reader) error {
 		}
 	}
 
-	f, err := s.root.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+	suffix := make([]byte, 8)
+	if _, err := cryptorand.Read(suffix); err != nil {
+		return fmt.Errorf("temp suffix: %w", err)
 	}
-	defer f.Close()
+	tmpName := ".onyx-tmp-" + hex.EncodeToString(suffix)
+	var tmpPath string
+	if dir == "." {
+		tmpPath = tmpName
+	} else {
+		tmpPath = path.Join(dir, tmpName)
+	}
+
+	f, err := s.root.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
 
 	if _, err := io.Copy(f, src); err != nil {
+		f.Close()
+		_ = s.root.Remove(tmpPath)
 		return fmt.Errorf("write data: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		_ = s.root.Remove(tmpPath)
+		return fmt.Errorf("sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = s.root.Remove(tmpPath)
+		return fmt.Errorf("close: %w", err)
+	}
+
+	if err := s.root.Rename(tmpPath, filePath); err != nil {
+		_ = s.root.Remove(tmpPath)
+		return fmt.Errorf("rename: %w", err)
 	}
 	return nil
 }

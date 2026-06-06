@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 	"time"
 
@@ -25,13 +26,21 @@ type ShareRepo interface {
 	DeleteExpired(now int64) (int64, error)
 }
 
+// SharePathChecker is the minimal storage interface ShareService needs to
+// verify that a share target exists and matches the claimed isDir flag.
+// FileService satisfies this implicitly.
+type SharePathChecker interface {
+	GetFileInfo(filePath string) (*domain.FileInfo, error)
+}
+
 type ShareService struct {
 	repo     ShareRepo
 	settings *SettingsService
+	files    SharePathChecker
 }
 
-func NewShareService(repo ShareRepo, settings *SettingsService) *ShareService {
-	return &ShareService{repo: repo, settings: settings}
+func NewShareService(repo ShareRepo, settings *SettingsService, files SharePathChecker) *ShareService {
+	return &ShareService{repo: repo, settings: settings, files: files}
 }
 
 func (s *ShareService) GetByPath(filePath string) (*domain.ShareLink, error) {
@@ -51,6 +60,22 @@ func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Durat
 	if !domain.GetBool(enabledStr) {
 		return nil, "", fmt.Errorf("sharing is disabled")
 	}
+
+	cleaned := path.Clean(filePath)
+	if cleaned == "/" || cleaned == "." || cleaned == "" {
+		return nil, "", fmt.Errorf("invalid share path")
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") {
+		return nil, "", fmt.Errorf("invalid share path")
+	}
+	info, err := s.files.GetFileInfo(cleaned)
+	if err != nil {
+		return nil, "", fmt.Errorf("share path not found")
+	}
+	if info.IsDir != isDir {
+		return nil, "", fmt.Errorf("share path type mismatch")
+	}
+	filePath = cleaned
 
 	existing, err := s.repo.GetByPath(filePath)
 	if err != nil {

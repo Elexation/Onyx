@@ -228,9 +228,9 @@ export function cancelUpload(fileId: string) {
 export async function cancelGroup(groupId: string) {
 	const uppy = getUppy();
 	const meta = uploadState.groupMeta[groupId];
-
-	// Cancel all files in the group from Uppy
 	const groupItems = uploadState.items.filter((i) => i.group === groupId);
+	const hasActive = groupItems.some((i) => i.status !== "complete");
+
 	for (const item of groupItems) {
 		try {
 			uppy.removeFile(item.id);
@@ -239,11 +239,11 @@ export async function cancelGroup(groupId: string) {
 		}
 	}
 
-	// Remove from upload state
 	uploadState.removeGroup(groupId);
 
-	// Delete the partially uploaded directory from the server
-	if (meta) {
+	// Only delete server-side if the group didn't fully complete — otherwise we'd
+	// wipe a successfully-uploaded directory.
+	if (meta && hasActive) {
 		const dirPath = meta.targetDir === "/"
 			? `/${meta.name}`
 			: `${meta.targetDir}/${meta.name}`;
@@ -258,9 +258,17 @@ export async function cancelGroup(groupId: string) {
 export async function cancelAll() {
 	const uppy = getUppy();
 
-	// Collect group directories to clean up before clearing state
+	// Skip fully-completed groups — their meta lingers until the next addFiles clears it,
+	// and we must not delete successful uploads when cancelling a concurrent upload.
+	const activeGroupIds = new Set(
+		uploadState.items
+			.filter((i) => i.status !== "complete")
+			.map((i) => i.group)
+			.filter((g): g is string => !!g),
+	);
 	const groupDirs: string[] = [];
-	for (const meta of Object.values(uploadState.groupMeta)) {
+	for (const [groupId, meta] of Object.entries(uploadState.groupMeta)) {
+		if (!activeGroupIds.has(groupId)) continue;
 		const dirPath = meta.targetDir === "/"
 			? `/${meta.name}`
 			: `${meta.targetDir}/${meta.name}`;

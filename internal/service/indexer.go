@@ -54,7 +54,7 @@ func (idx *Indexer) scan() int {
 	var count int
 
 	fsys := idx.storage.FS()
-	fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+	_ = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			slog.Warn("search indexer: walk error", "path", path, "error", err)
 			return nil
@@ -81,15 +81,12 @@ func (idx *Indexer) scan() int {
 		})
 
 		if len(batch) >= 500 {
-			idx.mu.Lock()
-			if err := idx.repo.UpsertBatch(batch); err != nil {
-				slog.Warn("search indexer: batch upsert error", "error", err)
-			}
-			idx.mu.Unlock()
-			count += len(batch)
+			n := idx.flushBatch(fsys, batch)
+			prev := count
+			count += n
 			batch = batch[:0]
 
-			if count%10000 == 0 {
+			if count/10000 > prev/10000 {
 				slog.Info("search indexer: progress", "files", count)
 			}
 		}
@@ -98,12 +95,7 @@ func (idx *Indexer) scan() int {
 	})
 
 	if len(batch) > 0 {
-		idx.mu.Lock()
-		if err := idx.repo.UpsertBatch(batch); err != nil {
-			slog.Warn("search indexer: batch upsert error", "error", err)
-		}
-		idx.mu.Unlock()
-		count += len(batch)
+		count += idx.flushBatch(fsys, batch)
 	}
 
 	// Remove entries for files that no longer exist
@@ -117,6 +109,39 @@ func (idx *Indexer) scan() int {
 	}
 
 	return count
+}
+
+// flushBatch re-stats each queued entry under idx.mu and drops any that
+// no longer exist on disk, so that a concurrent Notify* delete or rename
+// cannot be undone by a stale observation buffered during the walk.
+func (idx *Indexer) flushBatch(fsys fs.FS, batch []database.FileEntry) int {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	verified := make([]database.FileEntry, 0, len(batch))
+	for _, entry := range batch {
+		rel := strings.TrimPrefix(entry.Path, "/")
+		info, err := fs.Stat(fsys, rel)
+		if err != nil {
+			continue
+		}
+		verified = append(verified, database.FileEntry{
+			Name:    entry.Name,
+			Path:    entry.Path,
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Unix(),
+		})
+	}
+
+	if len(verified) == 0 {
+		return 0
+	}
+	if err := idx.repo.UpsertBatch(verified); err != nil {
+		slog.Warn("search indexer: batch upsert error", "error", err)
+		return 0
+	}
+	return len(verified)
 }
 
 func (idx *Indexer) NotifyCreated(path string, isDir bool, size, modTime int64) {

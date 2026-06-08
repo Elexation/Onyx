@@ -122,7 +122,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-md">
+	<Dialog.Content
+		class="sm:max-w-md"
+		escapeKeydownBehavior={createdToken ? "ignore" : "close"}
+		interactOutsideBehavior={createdToken ? "ignore" : "close"}
+		showCloseButton={!createdToken}
+		onInteractOutside={(e: Event) => { if (createdToken) e.preventDefault(); }}
+	>
 		{#if createdToken}
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">

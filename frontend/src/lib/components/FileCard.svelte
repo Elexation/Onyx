@@ -13,6 +13,7 @@
 
 	let {
 		item,
+		allPaths,
 		onopen,
 		onrename,
 		ondelete,
@@ -24,6 +25,7 @@
 		ondrop,
 	}: {
 		item: FileInfo;
+		allPaths: string[];
 		onopen: (item: FileInfo) => void;
 		onrename: (item: FileInfo) => void;
 		ondelete: (paths: string[]) => void;
@@ -46,6 +48,7 @@
 		e.stopPropagation();
 		if (e.shiftKey) {
 			e.preventDefault();
+			selection.selectRange(item.path, allPaths);
 		} else if (e.ctrlKey || e.metaKey) {
 			e.preventDefault();
 			selection.toggle(item.path);

@@ -8,6 +8,7 @@
 	import { Download, FolderOpen, FileIcon, Lock, Eye } from "lucide-svelte";
 	import type { FileInfo } from "$lib/types.js";
 	import { canPreview } from "$lib/preview.js";
+	import { encodeFilePath } from "$lib/utils";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
 
 	const token = $derived(page.params.token);
@@ -98,7 +99,7 @@
 
 	function downloadUrl(subPath?: string) {
 		if (subPath) {
-			return `/api/public/s/${token}/dl/${subPath}`;
+			return `/api/public/s/${token}/dl${encodeFilePath(subPath)}`;
 		}
 		return `/api/public/s/${token}/dl`;
 	}

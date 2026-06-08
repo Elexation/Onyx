@@ -1,4 +1,5 @@
 import type { FileInfo } from "$lib/types";
+import { encodeFilePath } from "$lib/utils";
 
 export type PreviewType = "text" | "markdown" | "image" | "video" | "audio" | "pdf";
 
@@ -83,5 +84,5 @@ export function isPreviewTooLarge(file: FileInfo): boolean {
 }
 
 export function getPreviewUrl(path: string): string {
-	return `/api/preview${path}`;
+	return `/api/preview${encodeFilePath(path)}`;
 }

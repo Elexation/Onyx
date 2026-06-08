@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { getSettings, updateSettings, changePassword } from "$lib/api/settings";
 	import { shareCount } from "$lib/api/shares";
@@ -59,6 +59,10 @@
 		} finally {
 			loading = false;
 		}
+	});
+
+	onDestroy(() => {
+		for (const t of Object.values(debounceTimers)) clearTimeout(t);
 	});
 
 	function save(key: string, value: string) {

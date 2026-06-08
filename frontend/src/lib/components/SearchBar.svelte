@@ -14,12 +14,14 @@
 	let containerEl = $state<HTMLDivElement | null>(null);
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+	let searchSeq = 0;
 
 	$effect(() => {
 		const q = query.trim();
 		clearTimeout(debounceTimer);
 
 		if (q.length < 2) {
+			searchSeq++;
 			results = [];
 			total = 0;
 			open = false;
@@ -27,20 +29,28 @@
 		}
 
 		debounceTimer = setTimeout(async () => {
+			const seq = ++searchSeq;
 			loading = true;
 			try {
 				const res: SearchResponse = await search(q);
+				if (seq !== searchSeq) return;
 				results = res.results;
 				total = res.total;
 				activeIndex = -1;
 				open = true;
 			} catch {
+				if (seq !== searchSeq) return;
 				results = [];
 				total = 0;
 			} finally {
-				loading = false;
+				if (seq === searchSeq) loading = false;
 			}
 		}, 200);
+
+		return () => {
+			clearTimeout(debounceTimer);
+			searchSeq++;
+		};
 	});
 
 	function navigateTo(result: SearchResult) {

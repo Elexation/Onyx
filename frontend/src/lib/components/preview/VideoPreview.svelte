@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getPreviewUrl } from "$lib/preview.js";
+	import { encodeFilePath } from "$lib/utils";
 	import { formatMediaTime } from "$lib/utils/format.js";
 	import { fetchProbeInfo, canPlayNative, type ProbeInfo } from "$lib/media/capabilities";
 	import { getSettings } from "$lib/api/settings";
@@ -373,7 +374,7 @@
 
 		if (mode !== "transcode-required") return;
 
-		const masterUrl = `/api/stream/master${filePath}`;
+		const masterUrl = `/api/stream/master${encodeFilePath(filePath)}`;
 		let localHandle: HlsHandle | null = null;
 		let cancelled = false;
 

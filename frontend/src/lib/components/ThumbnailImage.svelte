@@ -1,16 +1,32 @@
 <script lang="ts" module>
 	type CacheState = "loaded" | "failed";
 	type CacheEntry = { state: CacheState; url?: string };
+	const CACHE_LIMIT = 200;
 	const cache = new Map<string, CacheEntry>();
 
 	function cacheKey(path: string, size: string) {
 		return size + "\0" + path;
+	}
+
+	// Evicts the oldest entry when the cache exceeds CACHE_LIMIT, revoking its
+	// blob URL so the underlying Blob can be GC'd.
+	function cacheSet(key: string, entry: CacheEntry) {
+		if (cache.has(key)) cache.delete(key);
+		cache.set(key, entry);
+		while (cache.size > CACHE_LIMIT) {
+			const oldestKey = cache.keys().next().value;
+			if (oldestKey === undefined) break;
+			const oldest = cache.get(oldestKey);
+			cache.delete(oldestKey);
+			if (oldest?.url) URL.revokeObjectURL(oldest.url);
+		}
 	}
 </script>
 
 <script lang="ts">
 	import { onDestroy } from "svelte";
 	import type { Snippet } from "svelte";
+	import { encodeFilePath } from "$lib/utils";
 
 	let {
 		path,
@@ -34,6 +50,12 @@
 
 	$effect(() => {
 		const cached = cache.get(key);
+		// Revoke any previously-owned blob URL that no longer matches the current
+		// cache entry before resetting state for the new key.
+		if (ownedUrl && cached?.url !== ownedUrl) {
+			URL.revokeObjectURL(ownedUrl);
+			ownedUrl = null;
+		}
 		if (cached) {
 			state = cached.state;
 			url = cached.url ?? null;
@@ -67,7 +89,7 @@
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
 				const res = await fetch(
-					`/api/thumbs${path}?size=${size}`,
+					`/api/thumbs${encodeFilePath(path)}?size=${size}`,
 					{ credentials: "same-origin" },
 				);
 				if (res.status === 200) {
@@ -76,7 +98,7 @@
 					ownedUrl = objectUrl;
 					url = objectUrl;
 					state = "loaded";
-					cache.set(key, { state: "loaded", url: objectUrl });
+					cacheSet(key, { state: "loaded", url: objectUrl });
 					return;
 				}
 				if (res.status === 202 && attempt < maxAttempts) {
@@ -96,7 +118,7 @@
 	function fail() {
 		state = "failed";
 		url = null;
-		cache.set(key, { state: "failed" });
+		cacheSet(key, { state: "failed" });
 	}
 
 	onDestroy(() => {

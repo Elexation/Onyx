@@ -28,6 +28,8 @@
 		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 
+	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
+
 	let scrollEl = $state<HTMLDivElement | null>(null);
 	const itemWidth = 160;
 	const itemHeight = 140;
@@ -55,6 +57,7 @@
 		{#snippet cell({ item })}
 			<FileCard
 				item={item as FileInfo}
+				{allPaths}
 				{onopen}
 				{onrename}
 				{ondelete}

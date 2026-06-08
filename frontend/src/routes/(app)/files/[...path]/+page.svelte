@@ -325,20 +325,29 @@
 	// finishes moving the file from the upload store to the data directory.
 	$effect(() => {
 		const uppy = getUppy();
-		let timer: ReturnType<typeof setTimeout>;
-		let retryTimer: ReturnType<typeof setTimeout>;
+		const timers = new Set<ReturnType<typeof setTimeout>>();
+		let cancelled = false;
 		const handler = () => {
-			timer = setTimeout(async () => {
+			const timer = setTimeout(async () => {
+				timers.delete(timer);
+				if (cancelled) return;
 				await load(path, preferences.showHidden);
+				if (cancelled) return;
 				if (error) {
-					retryTimer = setTimeout(() => refresh(), 2000);
+					const retry = setTimeout(() => {
+						timers.delete(retry);
+						if (!cancelled) refresh();
+					}, 2000);
+					timers.add(retry);
 				}
 			}, 500);
+			timers.add(timer);
 		};
 		uppy.on("complete", handler);
 		return () => {
-			clearTimeout(timer);
-			clearTimeout(retryTimer);
+			cancelled = true;
+			for (const t of timers) clearTimeout(t);
+			timers.clear();
 			uppy.off("complete", handler);
 		};
 	});

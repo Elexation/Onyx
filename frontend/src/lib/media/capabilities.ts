@@ -1,3 +1,5 @@
+import { encodeFilePath } from "$lib/utils";
+
 export type ProbeInfo = {
 	codec: string;
 	width: number;
@@ -13,7 +15,7 @@ export type ProbeStatus = "ok" | "no-video" | "error";
 export type ProbeResult = { status: ProbeStatus; info?: ProbeInfo };
 
 export function getStreamInfoUrl(path: string): string {
-	return `/api/stream/info${path}`;
+	return `/api/stream/info${encodeFilePath(path)}`;
 }
 
 export async function fetchProbeInfo(path: string): Promise<ProbeResult> {

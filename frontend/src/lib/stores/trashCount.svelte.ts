@@ -20,6 +20,7 @@ export const trashCount = {
 	},
 
 	startPolling() {
+		if (polling) return;
 		this.refresh();
 		polling = setInterval(() => this.refresh(), 30_000);
 	},

@@ -129,7 +129,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 // bypassing Chi's routing which modifies URL paths.
 func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.CSRF(middleware.Auth(auth, tokens)(stripped))
+	authed := middleware.Auth(auth, tokens)(middleware.CSRF(stripped))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/upload" && !strings.HasPrefix(r.URL.Path, "/api/upload/") {
 			next.ServeHTTP(w, r)

@@ -15,7 +15,8 @@ import (
 
 // LocalStorage provides traversal-safe filesystem access through os.Root.
 type LocalStorage struct {
-	root *os.Root
+	root     *os.Root
+	dataPath string
 }
 
 // NewLocalStorage opens the given directory as a confined root.
@@ -25,7 +26,13 @@ func NewLocalStorage(dataPath string) (*LocalStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open root %q: %w", dataPath, err)
 	}
-	return &LocalStorage{root: root}, nil
+	return &LocalStorage{root: root, dataPath: dataPath}, nil
+}
+
+// DiskUsage returns the used and total byte counts for the filesystem
+// containing the data directory.
+func (s *LocalStorage) DiskUsage() (used, total uint64, err error) {
+	return diskUsage(s.dataPath)
 }
 
 // Close releases the root handle.

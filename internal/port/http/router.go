@@ -32,6 +32,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	tokenHandler := handler.NewTokenHandler(tokens)
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
+	storageHandler := handler.NewStorageHandler(files)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -101,6 +102,8 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 		r.Get("/settings", settingsHandler.GetAll)
 		r.Patch("/settings", settingsHandler.Update)
+
+		r.Get("/storage", storageHandler.GetUsage)
 
 		r.Route("/tokens", func(r chi.Router) {
 			r.Post("/", tokenHandler.Create)

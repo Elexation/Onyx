@@ -31,6 +31,12 @@ func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
 	s.settings = settings
 }
 
+// DiskUsage reports used and total bytes for the filesystem hosting the
+// data directory.
+func (s *FileService) DiskUsage() (used, total uint64, err error) {
+	return s.storage.DiskUsage()
+}
+
 func (s *FileService) SetVersioning(versions *VersionService) {
 	s.versions = versions
 }

@@ -2,7 +2,12 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/jetbrains-mono";
+
 @custom-variant dark (&:is(.dark *));
+@custom-variant data-open (&[data-state="open"]);
+@custom-variant data-closed (&[data-state="closed"]);
 
 :root {
 	--radius: 0.625rem;
@@ -20,10 +25,17 @@
 	--muted-foreground: oklch(0.556 0 0);
 	--accent: oklch(0.264 0 0);
 	--accent-foreground: oklch(0.985 0 0);
+	--accent-brand: oklch(0.74 0.13 245);
+	--accent-brand-foreground: oklch(0.18 0.04 245);
+	--accent-brand-dim: oklch(0.74 0.13 245 / 0.15);
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.264 0 0);
+	--border-2: oklch(0.32 0 0);
 	--input: oklch(0.264 0 0);
 	--ring: oklch(0.556 0 0);
+
+	--font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @theme inline {
@@ -45,20 +57,31 @@
 	--color-muted-foreground: var(--muted-foreground);
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
+	--color-accent-brand: var(--accent-brand);
+	--color-accent-brand-foreground: var(--accent-brand-foreground);
+	--color-accent-brand-dim: var(--accent-brand-dim);
 	--color-destructive: var(--destructive);
 	--color-border: var(--border);
+	--color-border-2: var(--border-2);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
+	--font-sans: var(--font-sans);
+	--font-mono: var(--font-mono);
 }
 
 @layer base {
 	* {
-		@apply border-border outline-ring/50;
+		@apply border-border;
 		scrollbar-color: oklch(0.3 0 0) transparent;
 		scrollbar-width: thin;
 	}
 	body {
-		@apply bg-background text-foreground;
+		@apply bg-background text-foreground font-sans;
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--accent-brand);
+		outline-offset: 2px;
 	}
 
 	::-webkit-scrollbar {

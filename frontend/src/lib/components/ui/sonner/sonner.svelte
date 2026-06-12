@@ -11,7 +11,9 @@
 
 <Sonner
 	class="toaster group"
-	style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border);"
+	position="bottom-center"
+	richColors
+	style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border-2); --success-bg: var(--color-popover); --success-text: var(--color-accent-brand); --success-border: var(--color-border-2); --error-bg: var(--color-popover); --error-text: var(--color-destructive); --error-border: var(--color-border-2); --info-bg: var(--color-popover); --info-text: var(--color-popover-foreground); --info-border: var(--color-border-2); --warning-bg: var(--color-popover); --warning-text: oklch(0.82 0.15 85); --warning-border: var(--color-border-2); --loading-bg: var(--color-popover); --loading-text: var(--color-popover-foreground); --loading-border: var(--color-border-2); --border-radius: 12px; --width: 380px;"
 	{...restProps}
 >
 	{#snippet loadingIcon()}

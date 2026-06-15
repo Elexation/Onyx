@@ -6,7 +6,6 @@
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
-	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
@@ -43,6 +42,10 @@
 		!item.isDir &&
 			(item.mimeType?.startsWith("image/") || item.mimeType?.startsWith("video/")),
 	);
+	const lastDot = $derived(item.name.lastIndexOf("."));
+	const ext = $derived(
+		!item.isDir && lastDot > 0 ? item.name.slice(lastDot + 1, lastDot + 5).toUpperCase() : null,
+	);
 
 	function handleClick(e: MouseEvent) {
 		e.stopPropagation();
@@ -68,23 +71,33 @@
 	}
 
 	function getContextPaths(): string[] {
-		return selection.has(item.path) && selection.count > 1
-			? [...selection.items]
-			: [item.path];
+		return selection.has(item.path) && selection.count > 1 ? [...selection.items] : [item.path];
 	}
 </script>
 
 {#if item.name === ".."}
 	<div
-		class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 text-muted-foreground transition-colors select-none hover:bg-accent/50"
-		ondblclick={(e) => { e.stopPropagation(); onopen(item); }}
-		onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(item); } }}
+		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 text-muted-foreground transition-colors select-none hover:border-border-2"
+		ondblclick={(e) => {
+			e.stopPropagation();
+			onopen(item);
+		}}
+		onkeydown={(e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				onopen(item);
+			}
+		}}
 		use:droppable={{ path: item.path, ondrop }}
 		tabindex={0}
 		role="gridcell"
 	>
-		<FileIcon isDir={true} class="size-10 text-muted-foreground opacity-50" />
-		<span class="w-full truncate text-center text-xs">..</span>
+		<div
+			class="flex aspect-square w-full items-center justify-center rounded-lg bg-background"
+		>
+			<FileIcon isDir={true} class="size-12 opacity-50" strokeWidth={1.2} />
+		</div>
+		<span class="w-full truncate text-center text-sm font-medium">..</span>
 	</div>
 {:else}
 	<FileContextMenu
@@ -101,11 +114,16 @@
 		{#snippet children(triggerProps)}
 			<div
 				{...triggerProps}
-				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 transition-colors select-none
-					{isSelected ? 'bg-accent/70 border-accent' : 'hover:bg-accent/50'}
+				class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
+					{isSelected
+					? 'border-accent-brand bg-accent-brand-dim'
+					: 'border-border bg-card hover:border-border-2'}
 					{isCut ? 'opacity-50' : ''}"
 				onclick={handleClick}
-				ondblclick={(e) => { e.stopPropagation(); onopen(item); }}
+				ondblclick={(e) => {
+					e.stopPropagation();
+					onopen(item);
+				}}
 				onkeydown={handleKeydown}
 				use:longpress={() => selection.toggle(item.path)}
 				use:draggable={{ path: item.path, isDir: item.isDir }}
@@ -113,39 +131,47 @@
 				tabindex={0}
 				role="gridcell"
 			>
-				<div class="kebab-button absolute right-1 top-1 hidden">
-					<button
-						class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-						onclick={(e) => {
-							e.stopPropagation();
-							const card = e.currentTarget.closest('[role="gridcell"]');
-							if (card) card.dispatchEvent(new PointerEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
-						}}
-						tabindex={-1}
-					>
-						<EllipsisVerticalIcon class="size-4" />
-					</button>
+				<div
+					class="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-background"
+				>
+					{#if hasThumbnail}
+						<ThumbnailImage
+							path={item.path}
+							size="large"
+							class="flex h-full w-full items-center justify-center"
+						>
+							{#snippet children()}
+								<FileIcon
+									mimeType={item.mimeType}
+									isDir={false}
+									class="size-10 text-muted-foreground opacity-80"
+									strokeWidth={1.2}
+								/>
+							{/snippet}
+						</ThumbnailImage>
+					{:else}
+						<FileIcon
+							mimeType={item.mimeType}
+							isDir={item.isDir}
+							class={item.isDir ? "size-12 text-accent-brand" : "size-10 text-muted-foreground opacity-80"}
+							strokeWidth={1.2}
+						/>
+						{#if ext}
+							<span
+								class="absolute right-1.5 bottom-1.5 rounded-[3px] bg-muted px-1 py-[1px] font-mono text-[9px] font-semibold tracking-wider text-muted-foreground"
+							>
+								{ext}
+							</span>
+						{/if}
+					{/if}
 				</div>
-				{#if hasThumbnail}
-					<ThumbnailImage path={item.path} size="large" class="flex size-20 items-center justify-center overflow-hidden rounded">
-						{#snippet children()}
-							<FileIcon mimeType={item.mimeType} isDir={false} class="size-10 text-muted-foreground" />
-						{/snippet}
-					</ThumbnailImage>
-				{:else}
-					<FileIcon mimeType={item.mimeType} isDir={item.isDir} class="size-10 text-muted-foreground" />
-				{/if}
-				<span class="w-full truncate text-center text-xs">{item.name}</span>
-				{#if !item.isDir}
-					<span class="text-[10px] text-muted-foreground">{formatFileSize(item.size)}</span>
-				{/if}
+				<span class="w-full truncate text-center text-sm font-medium text-foreground">
+					{item.name}
+				</span>
+				<span class="w-full truncate text-center font-mono text-[11px] text-muted-foreground">
+					{item.isDir ? "Folder" : formatFileSize(item.size)}
+				</span>
 			</div>
 		{/snippet}
 	</FileContextMenu>
 {/if}
-
-<style>
-	@media (pointer: coarse) and (hover: none) {
-		.kebab-button { display: block !important; }
-	}
-</style>

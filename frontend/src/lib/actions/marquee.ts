@@ -12,6 +12,8 @@ interface GridLayout {
 interface ListLayout {
 	mode: "list";
 	rowHeight: number;
+	/** Pixels of non-row content (e.g. header) at the top of the scroll container before row 0. */
+	headerOffset?: number;
 }
 
 interface MarqueeParams {
@@ -79,15 +81,17 @@ function hitTestGrid(marquee: Rect, layout: GridLayout, itemCount: number): Set<
 }
 
 function hitTestList(marquee: Rect, layout: ListLayout, itemCount: number): Set<number> {
-	const { rowHeight } = layout;
+	const { rowHeight, headerOffset = 0 } = layout;
 	const indices = new Set<number>();
 
-	const rowStart = Math.max(0, Math.floor(marquee.y / rowHeight));
-	const rowEnd = Math.min(itemCount - 1, Math.floor((marquee.y + marquee.h) / rowHeight));
+	const top = marquee.y - headerOffset;
+	const bottom = marquee.y + marquee.h - headerOffset;
+	const rowStart = Math.max(0, Math.floor(top / rowHeight));
+	const rowEnd = Math.min(itemCount - 1, Math.floor(bottom / rowHeight));
 
 	for (let i = rowStart; i <= rowEnd; i++) {
 		const itemTop = i * rowHeight;
-		if (itemTop + rowHeight > marquee.y && itemTop < marquee.y + marquee.h) {
+		if (itemTop + rowHeight > top && itemTop < bottom) {
 			indices.add(i);
 		}
 	}

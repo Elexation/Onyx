@@ -69,10 +69,10 @@
 
 	{#if dragging}
 		<div
-			class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm"
+			class="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-brand bg-accent-brand-dim backdrop-blur-sm"
 		>
-			<div class="flex flex-col items-center gap-2 text-primary">
-				<UploadIcon class="size-10" />
+			<div class="flex flex-col items-center gap-2 text-accent-brand">
+				<UploadIcon class="size-10" strokeWidth={1.5} />
 				<span class="text-sm font-medium">
 					Drop files to upload to {currentDir || "/"}
 				</span>

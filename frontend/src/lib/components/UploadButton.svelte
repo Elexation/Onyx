@@ -21,6 +21,10 @@
 			input.value = "";
 		}
 	}
+
+	export function openFilePicker() {
+		fileInput?.click();
+	}
 </script>
 
 <input
@@ -41,8 +45,8 @@
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger>
 		{#snippet child({ props })}
-			<Button variant="outline" size="sm" {...props}>
-				<UploadIcon class="size-4" />
+			<Button variant="default" size="sm" {...props}>
+				<UploadIcon class="size-[15px]" strokeWidth={2} />
 				Upload
 			</Button>
 		{/snippet}

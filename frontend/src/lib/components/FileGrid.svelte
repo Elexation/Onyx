@@ -31,17 +31,30 @@
 	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
-	const itemWidth = 160;
-	const itemHeight = 140;
-	const gap = 8;
+	const minItemWidth = 148;
+	const itemHeight = 210;
+	const gap = 10;
 
 	$effect(() => {
 		if (!scrollEl) return;
 		return setupMarquee(scrollEl, {
 			getLayout: () => {
 				const containerWidth = scrollEl!.clientWidth;
-				const columns = Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap)));
-				return { mode: "grid", itemWidth, itemHeight, gap, paddingX: gap, columns };
+				const columns = Math.max(
+					1,
+					Math.floor((containerWidth + gap) / (minItemWidth + gap)),
+				);
+				// Grid uses 1fr columns, so actual rendered column width ≠ minItemWidth.
+				// Marquee hit-test needs the real stride.
+				const actualItemWidth = (containerWidth - (columns - 1) * gap) / columns;
+				return {
+					mode: "grid",
+					itemWidth: actualItemWidth,
+					itemHeight,
+					gap,
+					paddingX: 0,
+					columns,
+				};
 			},
 			getItems: () => items,
 		});
@@ -53,7 +66,7 @@
 		<p class="text-sm">This folder is empty</p>
 	</div>
 {:else}
-	<VirtualGrid {items} bind:scrollEl>
+	<VirtualGrid {items} itemWidth={minItemWidth} {itemHeight} {gap} bind:scrollEl>
 		{#snippet cell({ item })}
 			<FileCard
 				item={item as FileInfo}

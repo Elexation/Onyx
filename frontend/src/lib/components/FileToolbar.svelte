@@ -35,41 +35,57 @@
 	} = $props();
 </script>
 
-<div class="flex h-9 items-center gap-2">
-	<UploadButton onfiles={onupload} />
-	<Button variant="outline" size="sm" onclick={onnewfolder}>
-		<FolderPlusIcon class="size-4" />
-		New Folder
-	</Button>
-	<Button variant="outline" size="sm" onclick={onrefresh} title="Refresh">
-		<RefreshCwIcon class="size-4" />
+<div class="flex min-h-9 flex-wrap items-center gap-2">
+	<!-- Primary Upload CTA: hidden on mobile (replaced by FAB) -->
+	<div class="max-md:hidden">
+		<UploadButton onfiles={onupload} />
+	</div>
+
+	<!-- New Folder: hidden on mobile (moved into FAB menu) -->
+	<div class="max-md:hidden">
+		<Button variant="outline" size="sm" onclick={onnewfolder}>
+			<FolderPlusIcon class="size-[15px]" strokeWidth={2} />
+			<span>New Folder</span>
+		</Button>
+	</div>
+	<Button variant="ghost" size="icon-sm" onclick={onrefresh} title="Refresh" aria-label="Refresh">
+		<RefreshCwIcon class="size-[15px]" strokeWidth={2} />
 	</Button>
 
 	{#if selection.isActive}
-		<div class="flex items-center gap-1 rounded-md border border-border px-2 py-1">
-			<span class="text-xs text-muted-foreground">{selection.count} selected</span>
-			<Button variant="ghost" size="icon-xs" onclick={oncopy} title="Copy">
-				<CopyIcon class="size-3.5" />
+		<!-- Desktop selection chip (hidden on mobile — replaced by floating selection bar) -->
+		<div
+			class="inline-flex items-center gap-1 rounded-lg border border-border-2 bg-card py-1 pr-1 pl-3 max-md:hidden"
+		>
+			<span class="mr-1 text-[13px] text-muted-foreground">{selection.count} selected</span>
+			<Button variant="ghost" size="icon-xs" class="size-7" onclick={oncopy} title="Copy">
+				<CopyIcon class="size-[15px]" strokeWidth={2} />
 			</Button>
-			<Button variant="ghost" size="icon-xs" onclick={oncut} title="Cut">
-				<ScissorsIcon class="size-3.5" />
+			<Button variant="ghost" size="icon-xs" class="size-7" onclick={oncut} title="Cut">
+				<ScissorsIcon class="size-[15px]" strokeWidth={2} />
 			</Button>
 			{#if clipboard.hasItems}
-				<Button variant="ghost" size="icon-xs" onclick={onpaste} title="Paste">
-					<ClipboardPasteIcon class="size-3.5" />
+				<Button variant="ghost" size="icon-xs" class="size-7" onclick={onpaste} title="Paste">
+					<ClipboardPasteIcon class="size-[15px]" strokeWidth={2} />
 				</Button>
 			{/if}
-			<Button variant="ghost" size="icon-xs" onclick={ondownload} title="Download">
-				<DownloadIcon class="size-3.5" />
+			<Button variant="ghost" size="icon-xs" class="size-7" onclick={ondownload} title="Download">
+				<DownloadIcon class="size-[15px]" strokeWidth={2} />
 			</Button>
-			<Button variant="ghost" size="icon-xs" onclick={ondelete} title="Delete">
-				<Trash2Icon class="size-3.5 text-destructive" />
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				class="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+				onclick={ondelete}
+				title="Delete"
+			>
+				<Trash2Icon class="size-[15px]" strokeWidth={2} />
 			</Button>
 		</div>
 	{:else if clipboard.hasItems}
-		<Button variant="outline" size="sm" onclick={onpaste}>
-			<ClipboardPasteIcon class="size-4" />
-			Paste
+		<Button variant="outline" size="sm" onclick={onpaste} class="max-md:px-2">
+			<ClipboardPasteIcon class="size-[15px]" strokeWidth={2} />
+			<span class="max-md:hidden">Paste</span>
 		</Button>
 	{/if}
 

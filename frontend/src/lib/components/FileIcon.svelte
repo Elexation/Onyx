@@ -10,19 +10,49 @@
 		FileCode,
 	} from "lucide-svelte";
 
-	let { mimeType = "", isDir = false, class: className = "size-4" }: {
+	let {
+		mimeType = "",
+		isDir = false,
+		class: className = "size-4",
+		strokeWidth = 2,
+	}: {
 		mimeType?: string;
 		isDir?: boolean;
 		class?: string;
+		strokeWidth?: number;
 	} = $props();
 
-	const CODE_TYPES = ["application/json", "application/xml", "application/javascript", "application/typescript", "application/xhtml+xml"];
+	const CODE_TYPES = [
+		"application/json",
+		"application/xml",
+		"application/javascript",
+		"application/typescript",
+		"application/xhtml+xml",
+	];
 
-	const ARCHIVE_TYPES = ["application/zip", "application/gzip", "application/x-tar", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-bzip2"];
+	const DOC_TYPES = [
+		"application/pdf",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/vnd.ms-excel",
+		"application/vnd.ms-powerpoint",
+	];
+
+	const ARCHIVE_TYPES = [
+		"application/zip",
+		"application/gzip",
+		"application/x-tar",
+		"application/x-7z-compressed",
+		"application/x-rar-compressed",
+		"application/x-bzip2",
+	];
 
 	function getIcon(mime: string, dir: boolean) {
 		if (dir) return Folder;
 		if (!mime) return File;
+		if (DOC_TYPES.includes(mime)) return FileText;
 		if (mime.startsWith("text/")) return FileText;
 		if (mime.startsWith("image/")) return Image;
 		if (mime.startsWith("video/")) return Video;
@@ -35,4 +65,4 @@
 	const Icon = $derived(getIcon(mimeType, isDir));
 </script>
 
-<Icon class={className} />
+<Icon class={className} {strokeWidth} />

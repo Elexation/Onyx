@@ -4,14 +4,13 @@
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { ArrowUp, ArrowDown } from "lucide-svelte";
+	import { ArrowUp, ArrowDown, ChevronRight, MoreVertical } from "lucide-svelte";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
-	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
+	import FileDropdownMenu from "./FileDropdownMenu.svelte";
 	import VirtualList from "./VirtualList.svelte";
-	import EllipsisVerticalIcon from "@lucide/svelte/icons/ellipsis-vertical";
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
@@ -41,22 +40,10 @@
 		ondrop: (paths: string[], destination: string) => void;
 	} = $props();
 
-	const allPaths = $derived(items.filter((i) => i.name !== "..").map((i) => i.path));
-	const allSelected = $derived(allPaths.length > 0 && selection.count === allPaths.length && allPaths.every((p) => selection.has(p)));
-	const someSelected = $derived(selection.count > 0 && !allSelected);
-
-	function toggleSelectAll() {
-		if (allSelected) {
-			selection.clear();
-		} else {
-			selection.selectAll(allPaths);
-		}
-	}
-
-	const columns: { label: string; field: SortField; align: string; width: string }[] = [
-		{ label: "Name", field: "name", align: "text-left", width: "" },
-		{ label: "Size", field: "size", align: "text-right", width: "w-24" },
-		{ label: "Modified", field: "modified", align: "text-right", width: "w-44" },
+	const columns: { label: string; field: SortField; align: "left" | "right" }[] = [
+		{ label: "Name", field: "name", align: "left" },
+		{ label: "Size", field: "size", align: "right" },
+		{ label: "Modified", field: "modified", align: "right" },
 	];
 
 	function handleSort(field: SortField) {
@@ -72,7 +59,7 @@
 		e.stopPropagation();
 		if (e.shiftKey) {
 			e.preventDefault();
-			selection.selectRange(item.path, allPaths);
+			selection.selectRange(item.path, items.filter((i) => i.name !== "..").map((i) => i.path));
 		} else if (e.ctrlKey || e.metaKey) {
 			e.preventDefault();
 			selection.toggle(item.path);
@@ -92,20 +79,26 @@
 	}
 
 	function getContextPaths(item: FileInfo): string[] {
-		return selection.has(item.path) && selection.count > 1
-			? [...selection.items]
-			: [item.path];
+		return selection.has(item.path) && selection.count > 1 ? [...selection.items] : [item.path];
 	}
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
+	let headerEl = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
 		if (!scrollEl) return;
 		return setupMarquee(scrollEl, {
-			getLayout: () => ({ mode: "list", rowHeight: 41 }),
+			getLayout: () => ({
+				mode: "list",
+				rowHeight: 48,
+				headerOffset: headerEl?.offsetHeight ?? 0,
+			}),
 			getItems: () => items,
 		});
 	});
+
+	const GRID_COLS =
+		"grid-cols-[1fr_auto] md:grid-cols-[minmax(0,1fr)_100px_140px_40px] md:gap-3";
 </script>
 
 {#if items.length === 0}
@@ -113,135 +106,199 @@
 		<p class="text-sm">This folder is empty</p>
 	</div>
 {:else}
-	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-	<div class="flex border-b border-border text-xs text-muted-foreground" onclick={(e) => e.stopPropagation()}>
-		<div class="flex w-10 items-center py-2 pl-4">
-			<Checkbox
-				checked={allSelected ? true : someSelected ? "indeterminate" : false}
-				onCheckedChange={toggleSelectAll}
-			/>
-		</div>
-		{#each columns as col}
-			<button
-				class="flex items-center gap-1 py-2 font-medium transition-colors hover:text-foreground {col.align} {col.width} {col.width ? 'pr-4' : 'flex-1'}"
-				onclick={() => handleSort(col.field)}
+	<div
+		bind:this={scrollEl}
+		class="relative min-h-0 flex-1 overflow-auto px-[14px] pb-[14px]"
+	>
+		<div class="overflow-hidden rounded-xl border border-border bg-card">
+			<!-- Header: desktop only -->
+			<div
+				bind:this={headerEl}
+				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
 			>
-				{#if col.align === "text-right"}<span class="flex-1"></span>{/if}
-				{col.label}
-				{#if preferences.sortField === col.field}
-					{#if preferences.sortDir === "asc"}
-						<ArrowUp class="size-3" />
-					{:else}
-						<ArrowDown class="size-3" />
-					{/if}
-				{/if}
-			</button>
-		{/each}
-		<div class="kebab-spacer hidden w-8"></div>
-	</div>
+				{#each columns as col}
+					<button
+						class="inline-flex items-center gap-1 transition-colors hover:text-foreground {col.align ===
+						'right'
+							? 'justify-end text-right'
+							: 'text-left'}"
+						onclick={() => handleSort(col.field)}
+					>
+						{col.label}
+						{#if preferences.sortField === col.field}
+							{#if preferences.sortDir === "asc"}
+								<ArrowUp class="size-3" />
+							{:else}
+								<ArrowDown class="size-3" />
+							{/if}
+						{/if}
+					</button>
+				{/each}
+				<div></div>
+			</div>
 
-	<VirtualList {items} estimateSize={() => 41} bind:scrollEl>
-		{#snippet row({ item, style })}
-			{@const file = item as FileInfo}
-			{#if file.name === ".."}
-				<div
-					class="flex cursor-pointer items-center border-b border-border/50 text-muted-foreground transition-colors select-none hover:bg-accent/50"
-					{style}
-					ondblclick={(e) => { e.stopPropagation(); onopen(file); }}
-					onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onopen(file); } }}
-					use:droppable={{ path: file.path, ondrop }}
-					tabindex={0}
-					role="row"
-				>
-					<div class="w-10 py-2 pl-4"></div>
-					<div class="flex flex-1 items-center gap-2 py-2 text-sm">
-						<FileIcon isDir={true} class="size-4 opacity-50" />
-						..
-					</div>
-				</div>
-			{:else}
-				{@const isSelected = selection.has(file.path)}
-				{@const isCut = clipboard.isCut(file.path)}
-				<FileContextMenu
-					item={file}
-					onopen={() => onopen(file)}
-					onrename={() => onrename(file)}
-					ondelete={() => ondelete(getContextPaths(file))}
-					{onpaste}
-					onmoveto={() => onmoveto(getContextPaths(file))}
-					oncopyto={() => oncopyto(getContextPaths(file))}
-					onversions={() => onversions(file)}
-					onshare={() => onshare(file)}
-				>
-					{#snippet children(triggerProps)}
+			<VirtualList {items} estimateSize={() => 48} externalScrollEl={scrollEl}>
+				{#snippet row({ item, style })}
+					{@const file = item as FileInfo}
+					{#if file.name === ".."}
 						<div
-							{...triggerProps}
-							class="flex cursor-pointer items-center border-b border-border/50 transition-colors select-none
-								{isSelected ? 'bg-accent/70' : 'hover:bg-accent/50'}
-								{isCut ? 'opacity-50' : ''}"
+							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
 							{style}
-							onclick={(e) => handleRowClick(e, file)}
-							ondblclick={(e) => { e.stopPropagation(); onopen(file); }}
-							onkeydown={(e) => handleRowKeydown(e, file)}
-							use:longpress={() => selection.toggle(file.path)}
-							use:draggable={{ path: file.path, isDir: file.isDir }}
-							use:droppable={{ path: file.path, ondrop, enabled: file.isDir }}
+							ondblclick={(e) => {
+								e.stopPropagation();
+								onopen(file);
+							}}
+							onkeydown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									onopen(file);
+								}
+							}}
+							use:droppable={{ path: file.path, ondrop }}
 							tabindex={0}
 							role="row"
 						>
-							<div class="flex w-10 items-center py-2 pl-4" onclick={(e) => e.stopPropagation()}>
-								<Checkbox
-									checked={isSelected}
-									onCheckedChange={() => selection.toggle(file.path)}
+							<div class="flex min-w-0 items-center gap-3 md:gap-3">
+								<FileIcon
+									isDir={true}
+									class="size-7 opacity-60 md:size-6"
+									strokeWidth={1.4}
 								/>
+								<span class="truncate text-[15px] md:text-base">..</span>
 							</div>
-							<div class="flex flex-1 items-center gap-2 py-2 text-sm">
-								{#if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
-									<ThumbnailImage path={file.path} size="small" class="flex size-5 items-center justify-center overflow-hidden rounded">
-										{#snippet children()}
-											<FileIcon mimeType={file.mimeType} isDir={false} />
-										{/snippet}
-									</ThumbnailImage>
-								{:else}
-									<FileIcon mimeType={file.mimeType} isDir={file.isDir} />
-								{/if}
-								{file.name}
-							</div>
-							<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
-								{file.isDir ? "\u2014" : formatFileSize(file.size)}
-							</div>
-							<div class="w-44 py-2 pr-4 text-right text-sm text-muted-foreground">
-								{formatDate(file.modTime)}
-							</div>
-							<div class="kebab-button hidden w-8 items-center justify-center">
-								<button
-									class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-									onclick={(e) => {
-										e.stopPropagation();
-										const row = e.currentTarget.closest('[role="row"]');
-										if (row) row.dispatchEvent(new PointerEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
-									}}
-									tabindex={-1}
-								>
-									<EllipsisVerticalIcon class="size-4" />
-								</button>
-							</div>
+							<div class="md:hidden"></div>
+							<div class="hidden md:block"></div>
+							<div class="hidden md:block"></div>
+							<div class="hidden md:block"></div>
 						</div>
-					{/snippet}
-				</FileContextMenu>
-			{/if}
-		{/snippet}
-	</VirtualList>
+					{:else}
+						{@const isSelected = selection.has(file.path)}
+						{@const isCut = clipboard.isCut(file.path)}
+						{@const lastDot = file.name.lastIndexOf(".")}
+						{@const ext = !file.isDir && lastDot > 0 ? file.name.slice(lastDot + 1, lastDot + 5).toUpperCase() : null}
+						<FileContextMenu
+							item={file}
+							onopen={() => onopen(file)}
+							onrename={() => onrename(file)}
+							ondelete={() => ondelete(getContextPaths(file))}
+							{onpaste}
+							onmoveto={() => onmoveto(getContextPaths(file))}
+							oncopyto={() => oncopyto(getContextPaths(file))}
+							onversions={() => onversions(file)}
+							onshare={() => onshare(file)}
+						>
+							{#snippet children(triggerProps)}
+								<div
+									{...triggerProps}
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
+										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted'}
+										{isCut ? 'opacity-50' : ''}"
+									{style}
+									onclick={(e) => handleRowClick(e, file)}
+									ondblclick={(e) => {
+										e.stopPropagation();
+										onopen(file);
+									}}
+									onkeydown={(e) => handleRowKeydown(e, file)}
+									use:longpress={() => selection.toggle(file.path)}
+									use:draggable={{ path: file.path, isDir: file.isDir }}
+									use:droppable={{ path: file.path, ondrop, enabled: file.isDir }}
+									tabindex={0}
+									role="row"
+								>
+									<div class="flex min-w-0 items-center gap-3 md:gap-3">
+										{#if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
+											<ThumbnailImage
+												path={file.path}
+												size="small"
+												class="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded md:size-6"
+											>
+												{#snippet children()}
+													<FileIcon
+														mimeType={file.mimeType}
+														isDir={false}
+														class="size-4 text-muted-foreground"
+														strokeWidth={1.4}
+													/>
+												{/snippet}
+											</ThumbnailImage>
+										{:else}
+											<FileIcon
+												mimeType={file.mimeType}
+												isDir={file.isDir}
+												class="size-7 shrink-0 md:size-6 {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+												strokeWidth={1.4}
+											/>
+										{/if}
+										<span class="min-w-0 flex-1 truncate text-[15px] font-medium md:text-base">
+											{file.name}
+										</span>
+										{#if ext}
+											<span
+												class="hidden shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground md:inline-flex"
+											>
+												{ext}
+											</span>
+										{/if}
+									</div>
+									<div
+										class="flex shrink-0 items-center gap-2 font-mono text-xs text-muted-foreground md:hidden"
+									>
+										{file.isDir ? "—" : formatFileSize(file.size)}
+										{#if file.isDir}
+											<ChevronRight class="size-4" strokeWidth={2} />
+										{/if}
+									</div>
+									<div
+										class="hidden text-right font-mono text-[13px] text-muted-foreground md:block"
+									>
+										{file.isDir ? "—" : formatFileSize(file.size)}
+									</div>
+									<div
+										class="hidden text-right font-mono text-[13px] text-muted-foreground md:block"
+									>
+										{formatDate(file.modTime)}
+									</div>
+									<div
+										class="hidden items-center justify-end md:flex"
+										onclick={(e) => e.stopPropagation()}
+										role="presentation"
+									>
+										<FileDropdownMenu
+											item={file}
+											onopen={() => onopen(file)}
+											onrename={() => onrename(file)}
+											ondelete={() => ondelete(getContextPaths(file))}
+											{onpaste}
+											onmoveto={() => onmoveto(getContextPaths(file))}
+											oncopyto={() => oncopyto(getContextPaths(file))}
+											onversions={() => onversions(file)}
+											onshare={() => onshare(file)}
+										>
+											{#snippet trigger(triggerProps)}
+												<button
+													{...triggerProps}
+													class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+													aria-label="More actions"
+												>
+													<MoreVertical class="size-4" strokeWidth={2} />
+												</button>
+											{/snippet}
+										</FileDropdownMenu>
+									</div>
+								</div>
+							{/snippet}
+						</FileContextMenu>
+					{/if}
+				{/snippet}
+			</VirtualList>
+		</div>
+	</div>
 {/if}
 
 <style>
-	@media (pointer: coarse) and (hover: none) {
-		.kebab-button { display: flex !important; }
-		.kebab-spacer { display: block !important; }
-	}
 	:global(.drop-target-active) {
-		background-color: hsl(var(--accent) / 0.5) !important;
-		outline: 2px dashed hsl(var(--primary));
-		outline-offset: -2px;
+		background-color: var(--accent-brand-dim) !important;
+		box-shadow: inset 0 0 0 1px var(--accent-brand);
 	}
 </style>

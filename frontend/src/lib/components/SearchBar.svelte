@@ -5,6 +5,14 @@
 	import FileIcon from "./FileIcon.svelte";
 	import { Search } from "lucide-svelte";
 
+	let {
+		autoFocusKey = 0,
+		onescape,
+	}: {
+		autoFocusKey?: number;
+		onescape?: () => void;
+	} = $props();
+
 	let query = $state("");
 	let results = $state<SearchResult[]>([]);
 	let total = $state(0);
@@ -53,6 +61,15 @@
 		};
 	});
 
+	// Imperative focus trigger: parent increments autoFocusKey to request focus.
+	$effect(() => {
+		autoFocusKey;
+		if (autoFocusKey > 0) {
+			// Defer to next microtask so any hidden→visible transition settles first.
+			queueMicrotask(() => inputEl?.focus());
+		}
+	});
+
 	function navigateTo(result: SearchResult) {
 		open = false;
 		query = "";
@@ -73,6 +90,7 @@
 			if (e.key === "Escape") {
 				query = "";
 				inputEl?.blur();
+				onescape?.();
 			}
 			return;
 		}
@@ -99,6 +117,7 @@
 				open = false;
 				query = "";
 				inputEl?.blur();
+				onescape?.();
 				break;
 		}
 	}
@@ -144,46 +163,66 @@
 <svelte:window onclick={onclickOutside} />
 
 <div class="relative w-full" bind:this={containerEl}>
-	<div class="relative">
-		<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+	<div
+		class="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 transition-colors focus-within:border-ring"
+	>
+		<Search class="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
 		<input
 			bind:this={inputEl}
 			bind:value={query}
 			{onkeydown}
-			onfocus={() => { if (results.length > 0 && query.trim().length >= 2) open = true; }}
+			onfocus={() => {
+				if (results.length > 0 && query.trim().length >= 2) open = true;
+			}}
 			type="text"
-			placeholder="Search files..."
-			class="h-8 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+			placeholder="Search files, folders, contents…"
+			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-[oklch(0.45_0_0)] focus:outline-none"
 		/>
 	</div>
 
 	{#if open && results.length > 0}
-		<div class="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-lg">
+		<div
+			class="absolute top-full left-0 z-50 mt-1.5 w-full overflow-hidden rounded-lg border border-border-2 bg-popover"
+		>
 			{#each results as result, i}
 				<button
-					class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent {i === activeIndex ? 'bg-accent' : ''}"
-					onmouseenter={() => { activeIndex = i; }}
+					class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted {i ===
+					activeIndex
+						? 'bg-muted'
+						: ''}"
+					onmouseenter={() => {
+						activeIndex = i;
+					}}
 					onclick={() => navigateTo(result)}
 				>
 					<FileIcon isDir={result.isDir} class="size-4 shrink-0 text-muted-foreground" />
 					<span class="min-w-0 truncate">
 						{#each highlightSegments(result.name, query) as seg}
-							{#if seg.match}<mark class="bg-transparent font-semibold text-foreground">{seg.text}</mark>{:else}{seg.text}{/if}
+							{#if seg.match}<mark
+									class="bg-transparent font-semibold text-foreground">{seg.text}</mark
+								>{:else}{seg.text}{/if}
 						{/each}
 					</span>
-					<span class="ml-auto shrink-0 truncate text-xs text-muted-foreground max-w-[50%]" title={result.path}>
+					<span
+						class="ml-auto max-w-[50%] shrink-0 truncate font-mono text-[11px] text-muted-foreground"
+						title={result.path}
+					>
 						{result.path}
 					</span>
 				</button>
 			{/each}
 			{#if total > results.length}
-				<div class="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
-					{total - results.length} more result{total - results.length === 1 ? '' : 's'}
+				<div
+					class="border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+				>
+					{total - results.length} more result{total - results.length === 1 ? "" : "s"}
 				</div>
 			{/if}
 		</div>
 	{:else if open && query.trim().length >= 2 && !loading && results.length === 0}
-		<div class="absolute top-full left-0 z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg">
+		<div
+			class="absolute top-full left-0 z-50 mt-1.5 w-full rounded-lg border border-border-2 bg-popover"
+		>
 			<div class="px-3 py-4 text-center text-sm text-muted-foreground">No results found</div>
 		</div>
 	{/if}

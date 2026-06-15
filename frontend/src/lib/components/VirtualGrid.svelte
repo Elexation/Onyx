@@ -4,9 +4,9 @@
 
 	let {
 		items,
-		itemWidth = 160,
-		itemHeight = 140,
-		gap = 8,
+		itemWidth = 148,
+		itemHeight = 210,
+		gap = 10,
 		overscan = 5,
 		cell,
 		scrollEl = $bindable<HTMLDivElement | null>(null),
@@ -26,6 +26,8 @@
 	const columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap))));
 	const rowCount = $derived(Math.ceil(items.length / columns));
 
+	// keep `count: rowCount` alone — do NOT pass `lanes: columns` (that's
+	// masonry; items stack silently at y=0 when items < lanes).
 	let virtualizer = $derived(
 		createVirtualizer({
 			count: rowCount,
@@ -41,13 +43,13 @@
 		{#each $virtualizer.getVirtualItems() as vRow (vRow.index)}
 			{@const rowStart = vRow.index * columns}
 			<div
-				class="absolute left-0 top-0 flex w-full"
-				style="height: {itemHeight}px; transform: translateY({vRow.start}px); gap: {gap}px; padding: 0 {gap}px;"
+				class="absolute top-0 left-0 grid w-full"
+				style="transform: translateY({vRow.start}px); gap: {gap}px; grid-template-columns: repeat({columns}, minmax(0, 1fr));"
 			>
 				{#each Array(columns) as _, col}
 					{@const itemIndex = rowStart + col}
 					{#if itemIndex < items.length}
-						<div style="width: {itemWidth}px; flex-shrink: 0;">
+						<div style="height: {itemHeight}px;">
 							{@render cell({ item: items[itemIndex], index: itemIndex })}
 						</div>
 					{/if}

@@ -41,8 +41,8 @@
 	} = $props();
 
 	type State = "idle" | "loading" | "loaded" | "failed";
-	let state = $state<State>("idle");
-	let url = $state<string | null>(null);
+	let loadState: State = $state("idle");
+	let url: string | null = $state(null);
 	let el: HTMLDivElement | null = $state(null);
 	let ownedUrl: string | null = null;
 
@@ -57,16 +57,16 @@
 			ownedUrl = null;
 		}
 		if (cached) {
-			state = cached.state;
+			loadState = cached.state;
 			url = cached.url ?? null;
 			return;
 		}
-		state = "idle";
+		loadState = "idle";
 		url = null;
 	});
 
 	$effect(() => {
-		if (!el || state !== "idle") return;
+		if (!el || loadState !== "idle") return;
 		const observer = new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
@@ -84,7 +84,7 @@
 	});
 
 	async function load() {
-		state = "loading";
+		loadState = "loading";
 		const maxAttempts = 3;
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
@@ -97,7 +97,7 @@
 					const objectUrl = URL.createObjectURL(blob);
 					ownedUrl = objectUrl;
 					url = objectUrl;
-					state = "loaded";
+					loadState = "loaded";
 					cacheSet(key, { state: "loaded", url: objectUrl });
 					return;
 				}
@@ -116,7 +116,7 @@
 	}
 
 	function fail() {
-		state = "failed";
+		loadState = "failed";
 		url = null;
 		cacheSet(key, { state: "failed" });
 	}
@@ -129,7 +129,7 @@
 </script>
 
 <div bind:this={el} class={className}>
-	{#if state === "loaded" && url}
+	{#if loadState === "loaded" && url}
 		<img src={url} alt="" class="h-full w-full rounded object-cover" loading="lazy" />
 	{:else}
 		{@render children()}

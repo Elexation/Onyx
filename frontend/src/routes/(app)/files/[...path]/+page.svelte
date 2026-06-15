@@ -21,6 +21,8 @@
 	import FileToolbar from "$lib/components/FileToolbar.svelte";
 	import ViewControls from "$lib/components/ViewControls.svelte";
 	import UploadZone from "$lib/components/UploadZone.svelte";
+	import MobileFAB from "$lib/components/MobileFAB.svelte";
+	import MobileSelectionBar from "$lib/components/MobileSelectionBar.svelte";
 	import RenameDialog from "$lib/components/dialogs/RenameDialog.svelte";
 	import NewFolderDialog from "$lib/components/dialogs/NewFolderDialog.svelte";
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
@@ -73,21 +75,35 @@
 	let conflictNames = $state<string[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
 
-	async function load(dirPath: string, showHidden: boolean) {
+	function handleShareSelected() {
+		if (selection.count !== 1) return;
+		const p = [...selection.items][0];
+		const item = sorted.find((i) => i.path === p);
+		if (item) handleShare(item);
+	}
+
+	async function load(dirPath: string, showHidden: boolean, isCancelled?: () => boolean) {
 		loading = true;
 		error = null;
 		try {
-			listing = await listDirectory(dirPath, showHidden);
+			const result = await listDirectory(dirPath, showHidden);
+			if (isCancelled?.()) return;
+			listing = result;
 		} catch (e) {
+			if (isCancelled?.()) return;
 			error = e instanceof Error ? e.message : "Failed to load directory";
 			listing = null;
 		} finally {
-			loading = false;
+			if (!isCancelled?.()) loading = false;
 		}
 	}
 
 	$effect(() => {
-		load(path, preferences.showHidden);
+		let cancelled = false;
+		load(path, preferences.showHidden, () => cancelled);
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	// Clear selection on navigation
@@ -308,7 +324,7 @@
 		} catch {
 			// If conflict check fails, upload anyway without conflict resolution
 			await addFiles(files, targetDir);
-			startUpload();
+			startUpload().catch(() => {});
 		}
 	}
 
@@ -464,13 +480,27 @@
 			</div>
 		</UploadZone>
 	{/if}
+
+	<!-- Mobile-only floating UI -->
+	{#if selection.count === 0}
+		<MobileFAB
+			onnewfolder={() => (newFolderOpen = true)}
+			onfiles={handleUpload}
+		/>
+	{/if}
+	<MobileSelectionBar
+		oncopy={handleCopy}
+		ondownload={handleDownload}
+		onshare={handleShareSelected}
+		ondelete={() => handleDelete([...selection.items])}
+	/>
 </div>
 
 {#if bgMenuOpen}
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 	<div class="fixed inset-0 z-50" onclick={() => (bgMenuOpen = false)} oncontextmenu={(e) => { e.preventDefault(); bgMenuOpen = false; }}></div>
 	<div
-		class="fixed z-50 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+		class="fixed z-50 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10"
 		style="left: {bgMenuPos.x}px; top: {bgMenuPos.y}px"
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->

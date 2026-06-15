@@ -85,7 +85,7 @@ export function getUppy(): Uppy {
 		retryDelays: [0, 1000, 3000, 5000],
 		allowedMetaFields: true,
 		removeFingerprintOnSuccess: true,
-		headers: () => {
+		headers: (): Record<string, string> => {
 			const token = getCsrfToken();
 			return token ? { "X-CSRF-Token": token } : {};
 		},
@@ -119,11 +119,15 @@ export function getUppy(): Uppy {
 			uploadState.updateProgress(id, bytesUploaded);
 		}
 
-		stopFlushTimer();
-		uploadState.updateSpeedAndEta(0, null);
-
 		for (const file of result.successful ?? []) {
 			instance!.removeFile(file.id);
+		}
+
+		// Only stop the flush timer once all batches are drained — with
+		// allowMultipleUploadBatches:true, a second batch may still be in flight.
+		if (instance!.getFiles().length === 0) {
+			stopFlushTimer();
+			uploadState.updateSpeedAndEta(0, null);
 		}
 
 		// Clean up any orphaned uploadState items that are no longer tracked by Uppy
@@ -168,45 +172,57 @@ export async function addFiles(
 		}
 	}
 
-	// Build file descriptors, filtering out skipped files
-	const descriptors: any[] = [];
+	// Build file descriptors, filtering out skipped files.
+	// Track per-file group membership so loose files mixed into a folder drop
+	// aren't tagged with the directory's groupId (would orphan them on cancel).
+	const descriptors: { desc: any; inGroup: boolean }[] = [];
 	for (const file of files) {
-		const relativePath = (file as any).webkitRelativePath || (file as any).relativePath || file.name;
+		const rawRelPath = (file as any).webkitRelativePath || (file as any).relativePath || "";
+		const relativePath = rawRelPath || file.name;
 		const resolution = resolutions?.[relativePath];
 		if (resolution === "skip") continue;
 
 		descriptors.push({
-			name: file.name,
-			type: file.type,
-			data: file,
-			meta: {
+			inGroup: !!(groupId && rawRelPath.includes("/")),
+			desc: {
 				name: file.name,
-				targetDir: targetDir || "/",
-				relativePath,
-				conflictStrategy: resolution ?? "",
+				type: file.type,
+				data: file,
+				meta: {
+					name: file.name,
+					targetDir: targetDir || "/",
+					relativePath,
+					conflictStrategy: resolution ?? "",
+				},
 			},
 		});
 	}
 
 	// Process in chunks for browser responsiveness
 	for (let i = 0; i < descriptors.length; i += CHUNK_SIZE) {
-		const chunk = descriptors.slice(i, i + CHUNK_SIZE);
+		const chunkEntries = descriptors.slice(i, i + CHUNK_SIZE);
+		const inGroupByData = new Map<File, boolean>();
+		for (const entry of chunkEntries) inGroupByData.set(entry.desc.data, entry.inGroup);
 		const before = new Set(uppy.getFiles().map((f) => f.id));
 
 		try {
-			uppy.addFiles(chunk);
+			uppy.addFiles(chunkEntries.map((e) => e.desc));
 		} catch {
 			// Duplicates are handled as restriction errors (files still added).
 			// AggregateError only for non-restriction errors — shouldn't happen.
 		}
 
-		const added = uppy.getFiles()
-			.filter((f) => !before.has(f.id))
-			.map((f) => ({ id: f.id, name: f.name, size: f.size ?? 0 }));
-
-		if (added.length > 0) {
-			uploadState.addFiles(added, groupId);
+		const addedGrouped: { id: string; name: string; size: number }[] = [];
+		const addedLoose: { id: string; name: string; size: number }[] = [];
+		for (const f of uppy.getFiles()) {
+			if (before.has(f.id)) continue;
+			const desc = { id: f.id, name: f.name, size: f.size ?? 0 };
+			const target = inGroupByData.get(f.data as File) ? addedGrouped : addedLoose;
+			target.push(desc);
 		}
+
+		if (addedGrouped.length > 0) uploadState.addFiles(addedGrouped, groupId);
+		if (addedLoose.length > 0) uploadState.addFiles(addedLoose);
 
 		if (i + CHUNK_SIZE < descriptors.length) {
 			await new Promise((resolve) => setTimeout(resolve, 0));

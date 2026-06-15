@@ -72,6 +72,7 @@
 	const DETAIL_THRESHOLD = 20;
 
 	const errorEntries = $derived(displayItems.filter((i) => i.status === "error"));
+	const errorCount = $derived(errorEntries.length);
 	const completedCount = $derived(displayItems.filter((i) => i.status === "complete").length);
 	const isLargeBatch = $derived(displayItems.length > DETAIL_THRESHOLD);
 	const isStalled = $derived(
@@ -129,15 +130,23 @@
 </script>
 
 {#if uploadState.hasItems}
-	<div class="fixed bottom-0 right-0 z-40 w-96 rounded-tl-lg border border-border bg-background shadow-lg">
+	<div
+		class="fixed right-4 bottom-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card"
+	>
 		<!-- Header -->
 		<button
-			class="flex w-full items-center justify-between px-3 py-2 hover:bg-muted/50"
+			class="flex w-full items-center justify-between px-3 py-2.5 hover:bg-muted"
 			onclick={() => (uploadState.minimized = !uploadState.minimized)}
 		>
 			<span class="text-sm font-medium">
 				{#if uploadState.isComplete}
-					{uploadState.items.length} upload{uploadState.items.length !== 1 ? "s" : ""} complete
+					{#if errorCount > 0 && completedCount === 0}
+						{errorCount} upload{errorCount !== 1 ? "s" : ""} failed
+					{:else if errorCount > 0}
+						{completedCount} complete · {errorCount} failed
+					{:else}
+						{uploadState.items.length} upload{uploadState.items.length !== 1 ? "s" : ""} complete
+					{/if}
 				{:else}
 					{#if uploadState.totalProgress >= 100}
 						Finalizing...
@@ -193,7 +202,7 @@
 		{#if !uploadState.isComplete}
 			<div class="h-0.5 bg-muted">
 				<div
-					class="h-full bg-primary transition-all"
+					class="h-full bg-accent-brand transition-all"
 					style="width: {uploadState.totalProgress}%"
 				></div>
 			</div>
@@ -208,7 +217,7 @@
 						{completedCount} of {displayItems.length} items complete
 					</div>
 					{#if uploadState.activeCount > 0 && uploadState.speed > 0}
-						<div class="text-[10px] text-muted-foreground">
+						<div class="font-mono text-[11px] text-muted-foreground">
 							{formatSize(uploadState.totalBytesUploaded)} / {formatSize(uploadState.totalBytes)}
 							· {formatSpeed(uploadState.speed)}
 							{#if uploadState.eta !== null}
@@ -257,7 +266,7 @@
 								{:else if entry.type === "directory"}
 									<FolderIcon class="size-3.5 text-muted-foreground" />
 								{:else}
-									<div class="size-3.5 animate-spin rounded-full border-2 border-muted-foreground border-t-primary"></div>
+									<div class="size-3.5 animate-spin rounded-full border-2 border-muted-foreground border-t-accent-brand"></div>
 								{/if}
 							</div>
 
@@ -268,9 +277,9 @@
 								</div>
 								<div class="flex items-center gap-2">
 									{#if entry.status === "error"}
-										<span class="truncate text-[10px] text-destructive">{entry.error ?? "Upload failed"}</span>
+										<span class="truncate font-mono text-[11px] text-destructive">{entry.error ?? "Upload failed"}</span>
 									{:else if entry.status === "complete"}
-										<span class="text-[10px] text-muted-foreground">
+										<span class="font-mono text-[11px] text-muted-foreground">
 											{#if entry.type === "directory"}
 												{entry.fileCount} file{entry.fileCount !== 1 ? "s" : ""} · {formatSize(entry.size)}
 											{:else}
@@ -280,11 +289,11 @@
 									{:else}
 										<div class="h-1 flex-1 rounded-full bg-muted">
 											<div
-												class="h-full rounded-full bg-primary transition-all"
+												class="h-full rounded-full bg-accent-brand transition-all"
 												style="width: {entry.progress}%"
 											></div>
 										</div>
-										<span class="text-[10px] text-muted-foreground">
+										<span class="font-mono text-[11px] text-muted-foreground">
 											{#if entry.type === "directory"}
 												{entry.completedCount}/{entry.fileCount} · {formatSize(entry.bytesUploaded)} / {formatSize(entry.size)}
 											{:else}

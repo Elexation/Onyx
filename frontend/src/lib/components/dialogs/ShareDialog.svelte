@@ -133,7 +133,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-md">
+	<Dialog.Content
+		class="sm:max-w-md"
+		escapeKeydownBehavior={shareUrl ? "ignore" : "close"}
+		interactOutsideBehavior={shareUrl ? "ignore" : "close"}
+		showCloseButton={!shareUrl}
+		onInteractOutside={(e: Event) => { if (shareUrl) e.preventDefault(); }}
+	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<Link class="size-4" />
@@ -173,23 +179,23 @@
 				<p class="text-sm text-muted-foreground">
 					This {isDir ? "folder" : "file"} already has an active share link.
 				</p>
-				<div class="rounded-md border p-3 space-y-2 text-sm">
+				<div class="rounded-lg border border-border bg-background p-3 space-y-2 text-sm">
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Created</span>
-						<span>{formatDate(existing.createdAt)}</span>
+						<span class="font-mono text-[13px]">{formatDate(existing.createdAt)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Expires</span>
-						<span>{formatExpiry(existing)}</span>
+						<span class="font-mono text-[13px]">{formatExpiry(existing)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Downloads</span>
-						<span>{existing.downloadCount}</span>
+						<span class="font-mono text-[13px]">{existing.downloadCount}</span>
 					</div>
 					{#if existing.hasPassword}
 						<div class="flex justify-between">
 							<span class="text-muted-foreground">Password</span>
-							<span>Yes</span>
+							<span class="font-mono text-[13px]">Yes</span>
 						</div>
 					{/if}
 				</div>

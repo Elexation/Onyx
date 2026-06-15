@@ -37,6 +37,7 @@
 	let userMode = $state<"original" | "transcode" | null>(null);
 	let userPickedHeight = $state<number | null>(null);
 	let pendingSeek = $state<number | null>(null);
+	let pendingPaused = $state(false);
 
 	let hlsHandle: HlsHandle | null = null;
 	let qualityLevels = $state<HlsLevel[]>([]);
@@ -279,6 +280,7 @@
 	function switchToOriginal() {
 		if (!videoEl) return;
 		pendingSeek = videoEl.currentTime;
+		pendingPaused = videoEl.paused;
 		userMode = "original";
 		userPickedHeight = null;
 		selectedQuality = -1;
@@ -299,6 +301,7 @@
 		}
 
 		pendingSeek = videoEl.currentTime;
+		pendingPaused = videoEl.paused;
 		userMode = "transcode";
 		failed = false;
 	}
@@ -439,9 +442,9 @@
 	onmouseleave={() => { if (playing) showControls = false; }}
 >
 	{#if playback === "loading"}
-		<p class="text-sm text-muted-foreground" data-preview-content>Loading…</p>
+		<p class="text-[15px] text-muted-foreground" data-preview-content>Loading…</p>
 	{:else if playback === "no-video"}
-		<p class="text-sm text-muted-foreground" data-preview-content>No playable video stream in this file.</p>
+		<p class="text-[15px] text-muted-foreground" data-preview-content>No playable video stream in this file.</p>
 	{:else}
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video
@@ -460,7 +463,10 @@
 				if (pendingSeek !== null && pendingSeek > 0) {
 					videoEl.currentTime = pendingSeek;
 					pendingSeek = null;
-					videoEl.play().catch(() => { failed = true; });
+					if (!pendingPaused) {
+						videoEl.play().catch(() => { failed = true; });
+					}
+					pendingPaused = false;
 				} else {
 					restorePosition();
 				}
@@ -473,7 +479,7 @@
 
 	{#if failed}
 		<button class="absolute inset-0 flex items-center justify-center" onclick={onclose}>
-			<p class="text-sm text-muted-foreground">Unable to play video</p>
+			<p class="text-[15px] text-white/80">Unable to play video</p>
 		</button>
 	{:else}
 		{#if !playing && currentTime === 0}
@@ -528,7 +534,7 @@
 				{/if}
 			</button>
 
-			<span class="min-w-0 text-xs text-white/80">
+			<span class="min-w-0 font-mono text-[13px] text-white/80 tabular-nums">
 				{formatMediaTime(currentTime)} / {formatMediaTime(duration)}
 			</span>
 
@@ -562,10 +568,10 @@
 						{#snippet child({ props })}
 							<button
 								{...props}
-								class="flex items-center gap-1 rounded p-1 text-xs text-white/80 transition-colors hover:text-white"
+								class="flex items-center gap-1 rounded p-1 text-white/80 transition-colors hover:text-white"
 							>
 								<SettingsIcon class="size-4" />
-								<span class="hidden sm:inline">{qualityButtonLabel}</span>
+								<span class="hidden font-mono text-[11px] sm:inline">{qualityButtonLabel}</span>
 							</button>
 						{/snippet}
 					</DropdownMenu.Trigger>

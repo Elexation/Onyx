@@ -50,7 +50,7 @@
 <div class="flex flex-1 flex-col items-center justify-center gap-4 overflow-hidden">
 	<div class="flex max-h-full max-w-full flex-1 items-center justify-center overflow-hidden">
 		{#if failed}
-			<p class="text-sm text-muted-foreground">Unable to load image</p>
+			<p class="text-[15px] text-muted-foreground">Unable to load image</p>
 		{:else}
 			<img
 				src={url ?? getPreviewUrl(file.path)}
@@ -63,17 +63,17 @@
 	</div>
 
 	{#if siblings.length > 1}
-		<div class="flex items-center gap-3 text-sm text-muted-foreground" data-preview-content>
+		<div class="flex items-center gap-3 text-muted-foreground" data-preview-content>
 			<button
-				class="rounded px-2 py-1 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="rounded-md px-2.5 py-1 text-[13px] transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasPrev}
 				onclick={prev}
 			>
 				&larr; Prev
 			</button>
-			<span>{currentIndex + 1} / {siblings.length}</span>
+			<span class="font-mono text-[13px]">{currentIndex + 1} / {siblings.length}</span>
 			<button
-				class="rounded px-2 py-1 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="rounded-md px-2.5 py-1 text-[13px] transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasNext}
 				onclick={next}
 			>

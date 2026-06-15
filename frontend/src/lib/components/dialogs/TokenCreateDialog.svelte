@@ -157,18 +157,18 @@
 					</Button>
 				</div>
 
-				<div class="rounded-md border p-3 space-y-2 text-sm">
-					<div class="flex justify-between">
+				<div class="rounded-lg border border-border bg-background p-3 space-y-2 text-sm">
+					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Name</span>
-						<span>{createdToken.name}</span>
+						<span class="truncate text-right">{createdToken.name}</span>
 					</div>
-					<div class="flex justify-between">
+					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Scope</span>
-						<span>{scopeLabel(createdToken.scope)}</span>
+						<span class="font-mono text-[13px]">{scopeLabel(createdToken.scope)}</span>
 					</div>
-					<div class="flex justify-between">
+					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Expires</span>
-						<span>{formatExpiryDisplay()}</span>
+						<span class="font-mono text-[13px]">{formatExpiryDisplay()}</span>
 					</div>
 				</div>
 			</div>

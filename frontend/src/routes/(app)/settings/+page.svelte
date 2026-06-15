@@ -42,6 +42,8 @@
 
 	let shareDisableConfirmOpen = $state(false);
 	let versionDisableConfirmOpen = $state(false);
+	let versioningChecked = $state(false);
+	let sharingChecked = $state(false);
 	let debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 	let tokens = $state<PersonalAccessToken[]>([]);
@@ -54,6 +56,8 @@
 	onMount(async () => {
 		try {
 			settings = await getSettings();
+			versioningChecked = settings["versions.enabled"] === "true";
+			sharingChecked = settings["shares.enabled"] === "true";
 		} catch {
 			toast.error("Failed to load settings");
 		} finally {
@@ -86,9 +90,11 @@
 		save(key, checked ? "true" : "false");
 		if (key === "shares.enabled") {
 			sharesEnabled.set(checked);
+			sharingChecked = checked;
 		}
 		if (key === "versions.enabled") {
 			versioningEnabled.set(checked);
+			versioningChecked = checked;
 		}
 	}
 
@@ -112,6 +118,11 @@
 		toggleBool("shares.enabled", false);
 	}
 
+	function cancelDisableSharing() {
+		shareDisableConfirmOpen = false;
+		sharingChecked = true;
+	}
+
 	async function handleVersionToggle(checked: boolean) {
 		if (checked) {
 			toggleBool("versions.enabled", true);
@@ -130,6 +141,11 @@
 	function confirmDisableVersioning() {
 		versionDisableConfirmOpen = false;
 		toggleBool("versions.enabled", false);
+	}
+
+	function cancelDisableVersioning() {
+		versionDisableConfirmOpen = false;
+		versioningChecked = true;
 	}
 
 	function validateAndSaveInt(key: string, raw: string) {
@@ -307,11 +323,11 @@
 	}
 </script>
 
-<div class="mx-auto max-w-2xl p-6">
-	<h1 class="mb-6 text-2xl font-semibold">Settings</h1>
+<div class="mx-auto max-w-2xl p-4 md:p-6">
+	<h1 class="mb-6 text-lg font-bold tracking-[-0.01em]">Settings</h1>
 
 	{#if loading}
-		<p class="text-muted-foreground">Loading settings…</p>
+		<p class="text-sm text-muted-foreground">Loading settings…</p>
 	{:else}
 		<Tabs
 			value="versioning"
@@ -339,7 +355,7 @@
 							<p class="text-sm text-muted-foreground">Keep previous versions of files on save</p>
 						</div>
 						<Switch
-							checked={settings["versions.enabled"] === "true"}
+							bind:checked={versioningChecked}
 							onCheckedChange={(checked: boolean) => handleVersionToggle(checked)}
 						/>
 					</div>
@@ -457,7 +473,7 @@
 							<p class="text-sm text-muted-foreground">Allow creating public share links</p>
 						</div>
 						<Switch
-							checked={settings["shares.enabled"] === "true"}
+							bind:checked={sharingChecked}
 							onCheckedChange={(checked: boolean) => handleShareToggle(checked)}
 						/>
 					</div>
@@ -598,19 +614,19 @@
 					{:else}
 						<div class="flex flex-col gap-3">
 							{#each tokens as tok (tok.id)}
-								<div class="rounded-md border p-3">
+								<div class="rounded-xl border border-border bg-card p-[14px]">
 									<div class="flex items-start justify-between gap-3">
-										<div class="min-w-0 flex-1 space-y-1">
-											<div class="flex items-center gap-2 text-sm font-medium">
+										<div class="min-w-0 flex-1 space-y-1.5">
+											<div class="flex items-center gap-2 text-[15px] font-medium">
 												<span class="truncate">{tok.name}</span>
-												<span class="rounded bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+												<span class="shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
 													{scopeBadgeLabel(tok.scope)}
 												</span>
 											</div>
-											<p class="font-mono text-xs text-muted-foreground">
+											<p class="truncate font-mono text-[13px] text-muted-foreground">
 												onyx_…{tok.tokenLast8}
 											</p>
-											<div class="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+											<div class="grid grid-cols-1 gap-x-3 gap-y-0.5 font-mono text-[11px] text-muted-foreground md:grid-cols-3">
 												<span>Created {formatTokenDate(tok.createdAt)}</span>
 												<span>Last used {formatLastUsed(tok.lastUsedAt)}</span>
 												<span>Expires {formatTokenDate(tok.expiresAt)}</span>
@@ -618,11 +634,12 @@
 										</div>
 										<Button
 											variant="ghost"
-											size="icon"
+											size="icon-xs"
+											class="shrink-0 text-muted-foreground hover:text-destructive"
 											onclick={() => askRevokeToken(tok)}
-											class="shrink-0"
+											title="Revoke token"
 										>
-											<Trash2 class="size-4" />
+											<Trash2 class="size-4" strokeWidth={2} />
 										</Button>
 									</div>
 								</div>
@@ -644,8 +661,8 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={confirmDisableSharing}>
+			<AlertDialog.Cancel onclick={cancelDisableSharing}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action variant="destructive" onclick={confirmDisableSharing}>
 				Disable & Delete Links
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
@@ -661,8 +678,8 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={confirmDisableVersioning}>
+			<AlertDialog.Cancel onclick={cancelDisableVersioning}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action variant="destructive" onclick={confirmDisableVersioning}>
 				Disable & Delete Versions
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
@@ -681,7 +698,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={confirmRevokeToken}>
+			<AlertDialog.Action variant="destructive" onclick={confirmRevokeToken}>
 				Revoke
 			</AlertDialog.Action>
 		</AlertDialog.Footer>

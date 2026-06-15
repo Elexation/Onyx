@@ -72,74 +72,108 @@
 <div class="flex h-full flex-col gap-4 p-4">
 	<!-- Header -->
 	<div class="flex items-center gap-2">
-		<Link class="size-5 text-muted-foreground" />
-		<h1 class="text-lg font-semibold">Shares</h1>
+		<Link class="size-5 text-muted-foreground" strokeWidth={2} />
+		<h1 class="text-lg font-bold tracking-[-0.01em]">Shares</h1>
 		{#if shares.length > 0}
-			<span class="text-sm text-muted-foreground">({shares.length} {shares.length === 1 ? "link" : "links"})</span>
+			<span class="font-mono text-[13px] text-muted-foreground">
+				{shares.length} {shares.length === 1 ? "link" : "links"}
+			</span>
 		{/if}
 	</div>
 
 	<!-- Content -->
 	{#if !sharesEnabled.enabled}
 		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-			<Link2Off class="size-12 opacity-30" />
-			<p class="text-sm">Sharing is disabled</p>
-			<p class="text-xs">Enable it in Settings to create share links.</p>
+			<Link2Off class="size-12 opacity-30" strokeWidth={1.5} />
+			<p class="text-[15px]">Sharing is disabled</p>
+			<p class="text-[13px]">Enable it in Settings to create share links.</p>
 		</div>
 	{:else if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
-			Loading...
+			Loading…
 		</div>
 	{:else if shares.length === 0}
-		<div class="flex flex-col items-center justify-center gap-2 py-24 text-muted-foreground">
-			<Link class="size-12 opacity-30" />
-			<p>No active share links</p>
+		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
+			<Link class="size-12 opacity-30" strokeWidth={1.5} />
+			<p class="text-[15px]">No active share links</p>
 		</div>
 	{:else}
-		<!-- Table header -->
-		<div class="flex border-b border-border text-xs text-muted-foreground">
-			<div class="flex-1 py-2 pl-4 font-medium">File</div>
-			<div class="w-28 py-2 font-medium">Expires</div>
-			<div class="w-24 py-2 text-right font-medium">Downloads</div>
-			<div class="w-20 py-2 pr-4 text-right font-medium">Actions</div>
-		</div>
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+			<!-- Table header (desktop) -->
+			<div
+				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
+			>
+				<div>File</div>
+				<div>Expires</div>
+				<div class="text-right">Downloads</div>
+				<div></div>
+			</div>
 
-		<!-- Rows -->
-		<div class="flex flex-col overflow-auto">
-			{#each shares as share (share.id)}
-				<div class="group flex items-center border-b border-border/50 transition-colors hover:bg-accent/50">
-					<div class="flex flex-1 items-center gap-2 py-2.5 pl-4 text-sm">
-						{#if share.isDir}
-							<FolderOpen class="size-4 shrink-0 text-muted-foreground" />
-						{:else}
-							<FileText class="size-4 shrink-0 text-muted-foreground" />
-						{/if}
-						<div class="min-w-0">
-							<p class="truncate font-medium">{fileName(share.filePath)}</p>
-							<p class="truncate text-xs text-muted-foreground">{parentDir(share.filePath)}</p>
+			<!-- Rows -->
+			<div class="flex flex-col overflow-auto">
+				{#each shares as share (share.id)}
+					<div
+						class="group grid items-center border-b border-border transition-colors last:border-b-0 hover:bg-muted grid-cols-[1fr_auto] md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 px-[14px] py-3.5 md:py-[11px]"
+					>
+						<div class="flex min-w-0 items-center gap-3">
+							{#if share.isDir}
+								<FolderOpen
+									class="size-6 shrink-0 text-accent-brand"
+									strokeWidth={1.4}
+								/>
+							{:else}
+								<FileText
+									class="size-6 shrink-0 text-muted-foreground"
+									strokeWidth={1.4}
+								/>
+							{/if}
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-[15px] font-medium md:text-base">
+									{fileName(share.filePath)}
+								</p>
+								<p class="truncate font-mono text-[13px] text-muted-foreground">
+									{parentDir(share.filePath)}
+								</p>
+							</div>
+							{#if share.hasPassword}
+								<Lock
+									class="size-3.5 shrink-0 text-muted-foreground"
+									strokeWidth={2}
+									aria-label="Password protected"
+								/>
+							{/if}
 						</div>
-						{#if share.hasPassword}
-							<Lock class="size-3 shrink-0 text-muted-foreground" />
-						{/if}
+						<div class="flex shrink-0 items-center justify-end font-mono text-[13px] text-muted-foreground md:hidden">
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="text-muted-foreground hover:text-destructive"
+								onclick={() => confirmDelete(share)}
+								title="Revoke link"
+							>
+								<Trash2 class="size-3.5" strokeWidth={2} />
+							</Button>
+						</div>
+						<div class="hidden font-mono text-[13px] text-muted-foreground md:block">
+							{formatExpiry(share)}
+						</div>
+						<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+							{share.downloadCount}
+						</div>
+						<div class="hidden text-right md:block">
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="text-muted-foreground hover:text-destructive"
+								onclick={() => confirmDelete(share)}
+								title="Revoke link"
+							>
+								<Trash2 class="size-3.5" strokeWidth={2} />
+							</Button>
+						</div>
 					</div>
-					<div class="w-28 py-2.5 text-sm text-muted-foreground">
-						{formatExpiry(share)}
-					</div>
-					<div class="w-24 py-2.5 text-right text-sm text-muted-foreground">
-						{share.downloadCount}
-					</div>
-					<div class="w-20 py-2.5 pr-4 text-right">
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							class="text-muted-foreground hover:text-destructive"
-							onclick={() => confirmDelete(share)}
-						>
-							<Trash2 class="size-3.5" />
-						</Button>
-					</div>
-				</div>
-			{/each}
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

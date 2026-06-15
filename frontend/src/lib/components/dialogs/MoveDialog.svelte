@@ -117,8 +117,8 @@
 		{@const isSource = paths.includes(node.path)}
 		<div role="none">
 			<button
-				class="flex w-full items-center gap-1 rounded px-2 py-1 text-sm transition-colors
-					{destination === node.path ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}
+				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
+					{destination === node.path ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}
 					{isSource ? 'opacity-40 pointer-events-none' : ''}"
 				style="padding-left: {depth * 20 + 8}px"
 				onclick={() => selectNode(node.path)}
@@ -126,7 +126,7 @@
 				type="button"
 			>
 				<span
-					class="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-accent"
+					class="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-muted"
 					onclick={(e) => { e.stopPropagation(); toggleNode(node); }}
 					role="none"
 				>
@@ -135,9 +135,9 @@
 					{/if}
 				</span>
 				{#if node.expanded}
-					<FolderOpenIcon class="size-4 shrink-0 text-muted-foreground" />
+					<FolderOpenIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				{:else}
-					<FolderIcon class="size-4 shrink-0 text-muted-foreground" />
+					<FolderIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				{/if}
 				<span class="truncate">{node.name}</span>
 			</button>
@@ -151,15 +151,15 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>{mode === "move" ? "Move" : "Copy"} to...</Dialog.Title>
+			<Dialog.Title>{mode === "move" ? "Move" : "Copy"} to…</Dialog.Title>
 		</Dialog.Header>
-		<div class="max-h-64 overflow-y-auto rounded border border-border p-1">
+		<div class="max-h-64 overflow-y-auto rounded-lg border border-border bg-background p-1.5">
 			<button
-				class="flex w-full items-center gap-1 rounded px-2 py-1 text-sm transition-colors
-					{destination === '' ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}"
+				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
+					{destination === '' ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}"
 				onclick={() => selectNode("")}
 			>
-				<FolderIcon class="size-4 shrink-0 text-muted-foreground" />
+				<FolderIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				<span class="font-medium">/</span>
 			</button>
 			{@render treeNodes(roots, 0)}

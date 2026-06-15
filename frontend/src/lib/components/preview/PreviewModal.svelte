@@ -9,6 +9,7 @@
 	import VideoPreview from "./VideoPreview.svelte";
 	import AudioPreview from "./AudioPreview.svelte";
 	import PdfPreview from "./PdfPreview.svelte";
+	import { Button } from "$lib/components/ui/button/index.js";
 	import XIcon from "@lucide/svelte/icons/x";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 
@@ -53,18 +54,18 @@
 	onclick={handleBackdropClick}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="flex items-center justify-between border-b border-border/50 bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
-		<h2 class="min-w-0 flex-1 truncate text-sm font-medium">{file.name}</h2>
-		<div class="flex items-center gap-2">
+	<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
+		<h2 class="min-w-0 flex-1 truncate text-[15px] font-medium">{file.name}</h2>
+		<div class="flex items-center gap-1">
 			<button
-				class="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={handleDownload}
 				title="Download"
 			>
 				<DownloadIcon class="size-4" />
 			</button>
 			<button
-				class="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={onclose}
 				title="Close"
 			>
@@ -76,13 +77,11 @@
 	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video"}>
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-				<p class="text-sm">File too large to preview ({formatFileSize(file.size)})</p>
-				<button
-					class="rounded-md bg-accent px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent/80"
-					onclick={handleDownload}
-				>
+				<p class="text-[15px]">File too large to preview (<span class="font-mono text-[13px]">{formatFileSize(file.size)}</span>)</p>
+				<Button onclick={handleDownload}>
+					<DownloadIcon class="mr-2 size-4" />
 					Download
-				</button>
+				</Button>
 			</div>
 		{:else if type === "text"}
 			<TextPreview path={file.path} {url} />

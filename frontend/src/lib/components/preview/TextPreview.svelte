@@ -96,14 +96,14 @@
 
 {#if loading}
 	<div class="flex flex-1 items-center justify-center text-muted-foreground">
-		<p class="text-sm">Loading…</p>
+		<p class="text-[15px]">Loading…</p>
 	</div>
 {:else if error}
 	<div class="flex flex-1 items-center justify-center text-destructive">
-		<p class="text-sm">{error}</p>
+		<p class="text-[15px]">{error}</p>
 	</div>
 {:else}
-	<div class="preview-text flex-1 overflow-auto rounded-md bg-[#1e1e1e] p-4 text-sm" data-preview-content>
+	<div class="preview-text flex-1 overflow-auto rounded-lg border border-border bg-[#1e1e1e] p-4" data-preview-content>
 		{@html html}
 	</div>
 {/if}

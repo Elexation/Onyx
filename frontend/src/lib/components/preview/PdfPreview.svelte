@@ -24,6 +24,8 @@
 	let pageHeights = $state<number[]>([]);
 	let renderedPages = new Set<number>();
 	let renderingPages = new Set<number>();
+	let renderTasks = new Map<number, pdfjsLib.RenderTask>();
+	let renderGen = 0;
 	let canvasRefs: (HTMLCanvasElement | null)[] = [];
 	let pageRefs: (HTMLDivElement | null)[] = [];
 	let observer: IntersectionObserver | null = null;
@@ -34,23 +36,35 @@
 	}
 
 	async function renderPage(pageNum: number) {
-		if (!pdfDoc || renderedPages.has(pageNum) || renderingPages.has(pageNum)) return;
+		if (!pdfDoc || renderedPages.has(pageNum)) return;
 		const canvas = canvasRefs[pageNum - 1];
 		if (!canvas) return;
 
+		// Cancel any in-flight render for this page before starting a new one —
+		// pdf.js rejects concurrent renders on the same canvas.
+		renderTasks.get(pageNum)?.cancel();
+		renderTasks.delete(pageNum);
+
+		const gen = renderGen;
 		renderingPages.add(pageNum);
 		try {
 			const page = await pdfDoc.getPage(pageNum);
+			if (gen !== renderGen) return;
 			const viewport = page.getViewport({ scale });
 			canvas.width = viewport.width;
 			canvas.height = viewport.height;
 			canvas.style.width = `${viewport.width}px`;
 			canvas.style.height = `${viewport.height}px`;
 
-			await page.render({ canvas, viewport }).promise;
+			const task = page.render({ canvas, viewport });
+			renderTasks.set(pageNum, task);
+			await task.promise;
 			renderedPages.add(pageNum);
+		} catch (e) {
+			if (!(e instanceof Error) || e.name !== "RenderingCancelledException") throw e;
 		} finally {
 			renderingPages.delete(pageNum);
+			renderTasks.delete(pageNum);
 		}
 	}
 
@@ -122,6 +136,9 @@
 	}
 
 	function rerender() {
+		renderGen++;
+		for (const task of renderTasks.values()) task.cancel();
+		renderTasks.clear();
 		renderedPages.clear();
 		renderingPages.clear();
 		if (pdfDoc) {
@@ -138,12 +155,15 @@
 
 	async function updatePageHeights() {
 		if (!pdfDoc) return;
+		const gen = renderGen;
 		const heights: number[] = [];
 		for (let i = 1; i <= totalPages; i++) {
 			const page = await pdfDoc.getPage(i);
+			if (gen !== renderGen) return;
 			const viewport = page.getViewport({ scale });
 			heights.push(viewport.height);
 		}
+		if (gen !== renderGen) return;
 		pageHeights = heights;
 	}
 
@@ -151,8 +171,13 @@
 		let cancelled = false;
 		loading = true;
 		error = "";
+		renderGen++;
+		for (const task of renderTasks.values()) task.cancel();
+		renderTasks.clear();
 		renderedPages.clear();
 		renderingPages.clear();
+		canvasRefs.length = 0;
+		pageRefs.length = 0;
 
 		const loadingTask = pdfjsLib.getDocument({
 			url: url ?? getPreviewUrl(path),
@@ -188,6 +213,8 @@
 			cancelled = true;
 			loadingTask.destroy();
 			if (observer) observer.disconnect();
+			for (const task of renderTasks.values()) task.cancel();
+			renderTasks.clear();
 			if (pdfDoc) pdfDoc.destroy();
 		};
 	});
@@ -204,17 +231,17 @@
 
 {#if loading}
 	<div class="flex flex-1 items-center justify-center text-muted-foreground">
-		<p class="text-sm">Loading PDF…</p>
+		<p class="text-[15px]">Loading PDF…</p>
 	</div>
 {:else if error}
 	<div class="flex flex-1 items-center justify-center text-destructive">
-		<p class="text-sm">{error}</p>
+		<p class="text-[15px]">{error}</p>
 	</div>
 {:else}
 	<div class="flex flex-1 flex-col overflow-hidden" data-preview-content>
-		<div class="flex items-center gap-2 border-b border-border/50 bg-background/90 px-3 py-1.5 text-sm backdrop-blur-sm">
+		<div class="flex items-center gap-1.5 border-b border-border bg-background/90 px-3 py-1.5 backdrop-blur-sm">
 			<button
-				class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
 				disabled={currentPage <= 1}
 				onclick={() => { currentPage = Math.max(1, currentPage - 1); scrollToPage(currentPage); }}
 			>
@@ -227,38 +254,38 @@
 					max={totalPages}
 					value={currentPage}
 					onchange={handlePageInput}
-					class="w-10 rounded bg-accent px-1 py-0.5 text-center text-xs text-foreground"
+					class="w-10 rounded-md bg-muted px-1 py-0.5 text-center font-mono text-[11px] text-foreground"
 				/>
-				<span class="text-xs">/ {totalPages}</span>
+				<span class="font-mono text-[11px]">/ {totalPages}</span>
 			</div>
 			<button
-				class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
 				disabled={currentPage >= totalPages}
 				onclick={() => { currentPage = Math.min(totalPages, currentPage + 1); scrollToPage(currentPage); }}
 			>
 				<ChevronRightIcon class="size-4" />
 			</button>
 
-			<div class="mx-2 h-4 w-px bg-border/50"></div>
+			<div class="mx-2 h-4 w-px bg-border"></div>
 
 			<button
-				class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => zoom(-0.25)}
 			>
 				<ZoomOutIcon class="size-4" />
 			</button>
-			<span class="min-w-[3rem] text-center text-xs text-muted-foreground">
+			<span class="min-w-[3rem] text-center font-mono text-[11px] text-muted-foreground tabular-nums">
 				{Math.round(scale * 100)}%
 			</span>
 			<button
-				class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => zoom(0.25)}
 			>
 				<ZoomInIcon class="size-4" />
 			</button>
 
 			<button
-				class="rounded p-1 transition-colors"
+				class="rounded-md p-1.5 transition-colors hover:bg-muted"
 				class:text-foreground={fitToWidth}
 				class:text-muted-foreground={!fitToWidth}
 				onclick={toggleFitToWidth}

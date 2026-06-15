@@ -82,13 +82,13 @@
 		{:else if versions.length === 0}
 			<p class="py-6 text-center text-sm text-muted-foreground">No previous versions</p>
 		{:else}
-			<div class="max-h-96 overflow-y-auto">
+			<div class="max-h-96 overflow-y-auto rounded-lg border border-border bg-background">
 				<ul class="divide-y divide-border">
 					{#each versions as v (v.id)}
-						<li class="flex items-center justify-between gap-2 py-3">
+						<li class="flex items-center justify-between gap-3 px-3 py-2.5">
 							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm">{formatDate(v.createdAt)}</p>
-								<p class="text-xs text-muted-foreground">{formatFileSize(v.size)}</p>
+								<p class="truncate font-mono text-[13px] text-foreground">{formatDate(v.createdAt)}</p>
+								<p class="font-mono text-[11px] text-muted-foreground">{formatFileSize(v.size)}</p>
 							</div>
 							<div class="flex shrink-0 gap-2">
 								<Button
@@ -102,6 +102,7 @@
 								<Button
 									size="sm"
 									variant="ghost"
+									class="text-muted-foreground hover:text-destructive"
 									disabled={busy !== null}
 									onclick={() => handleDelete(v)}
 								>

@@ -77,7 +77,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="flex flex-1 items-center justify-center">
-	<div class="w-full max-w-md rounded-lg bg-card p-6" data-preview-content>
+	<div class="w-full max-w-md rounded-xl border border-border bg-card p-6" data-preview-content>
 		<audio
 			bind:this={audioEl}
 			src={url ?? getPreviewUrl(path)}
@@ -93,26 +93,26 @@
 		></audio>
 
 		{#if failed}
-			<p class="text-center text-sm text-muted-foreground">Unable to play audio</p>
+			<p class="text-center text-[15px] text-muted-foreground">Unable to play audio</p>
 		{:else}
 			<div class="flex flex-col gap-4">
 				<div class="flex items-center justify-center">
 					<button
-						class="flex size-12 items-center justify-center rounded-full bg-accent text-foreground transition-colors hover:bg-accent/80"
+						class="flex size-14 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground transition-colors hover:bg-accent-brand/90"
 						onclick={togglePlay}
 					>
 						{#if playing}
-							<PauseIcon class="size-5" />
+							<PauseIcon class="size-6" />
 						{:else}
-							<PlayIcon class="size-5 translate-x-0.5" />
+							<PlayIcon class="size-6 translate-x-0.5" />
 						{/if}
 					</button>
 				</div>
 
-				<div class="flex flex-col gap-1">
+				<div class="flex flex-col gap-1.5">
 					<div class="seek-bar relative h-1.5 w-full cursor-pointer rounded-full bg-muted">
 						<div
-							class="absolute left-0 top-0 h-full rounded-full bg-foreground"
+							class="absolute left-0 top-0 h-full rounded-full bg-accent-brand"
 							style="width: {seekPercent}%"
 						></div>
 						<input
@@ -125,7 +125,7 @@
 							class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
 						/>
 					</div>
-					<div class="flex justify-between text-xs text-muted-foreground">
+					<div class="flex justify-between font-mono text-[13px] text-muted-foreground">
 						<span>{formatMediaTime(currentTime)}</span>
 						<span>{formatMediaTime(duration)}</span>
 					</div>

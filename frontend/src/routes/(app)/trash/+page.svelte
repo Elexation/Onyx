@@ -13,7 +13,7 @@
 	import VirtualList from "$lib/components/VirtualList.svelte";
 	import VirtualGrid from "$lib/components/VirtualGrid.svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
-	import { Trash2, RotateCcw, X, List, LayoutGrid } from "lucide-svelte";
+	import { Trash2, RotateCcw, List, LayoutGrid } from "lucide-svelte";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -113,6 +113,7 @@
 			items = items.filter((i) => i.id !== item.id);
 			selected.delete(item.id);
 			selected = new Set(selected);
+			if (lastSelected === item.id) lastSelected = null;
 			trashCount.set(items.length);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Restore failed");
@@ -160,6 +161,7 @@
 			items = items.filter((i) => i.id !== deleteTarget!.id);
 			selected.delete(deleteTarget!.id);
 			selected = new Set(selected);
+			if (lastSelected === deleteTarget!.id) lastSelected = null;
 			trashCount.set(items.length);
 			deleteConfirmOpen = false;
 			deleteTarget = null;
@@ -234,23 +236,33 @@
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="flex h-full flex-col gap-4 p-4" onclick={clearSelection}>
 	<!-- Toolbar -->
-	<div class="flex items-center gap-2">
+	<div class="flex items-center gap-3">
 		<div class="flex items-center gap-2">
-			<Trash2 class="size-5 text-muted-foreground" />
-			<h1 class="text-lg font-semibold">Trash</h1>
+			<Trash2 class="size-5 text-muted-foreground" strokeWidth={2} />
+			<h1 class="text-lg font-bold tracking-[-0.01em]">Trash</h1>
 			{#if items.length > 0}
-				<span class="text-sm text-muted-foreground">({items.length} {items.length === 1 ? "item" : "items"})</span>
+				<span class="font-mono text-[13px] text-muted-foreground">
+					{items.length} {items.length === 1 ? "item" : "items"}
+				</span>
 			{/if}
 		</div>
 
 		{#if selected.size > 0}
-			<div class="flex items-center gap-1 rounded-md border border-border px-2 py-1">
-				<span class="text-xs text-muted-foreground">{selected.size} selected</span>
+			<div class="flex items-center gap-1 rounded-lg border border-border-2 bg-card px-2 py-1">
+				<span class="font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
+					{selected.size} selected
+				</span>
 				<Button variant="ghost" size="icon-xs" onclick={(e) => { e.stopPropagation(); handleBulkRestore(); }} title="Restore">
-					<RotateCcw class="size-3.5" />
+					<RotateCcw class="size-3.5" strokeWidth={2} />
 				</Button>
-				<Button variant="ghost" size="icon-xs" onclick={(e) => { e.stopPropagation(); confirmBulkDelete(); }} title="Delete permanently">
-					<X class="size-3.5 text-destructive" />
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					class="text-muted-foreground hover:text-destructive"
+					onclick={(e) => { e.stopPropagation(); confirmBulkDelete(); }}
+					title="Delete permanently"
+				>
+					<Trash2 class="size-3.5" strokeWidth={2} />
 				</Button>
 			</div>
 		{/if}
@@ -261,20 +273,30 @@
 			</Button>
 		{/if}
 
-		<div class="ml-auto flex items-center gap-1 rounded-md border border-border p-0.5">
+		<div class="ml-auto inline-flex rounded-lg border border-border-2 bg-card p-[2px]">
 			<button
-				class="rounded p-1 transition-colors {preferences.viewMode === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
-				onclick={(e) => { e.stopPropagation(); preferences.viewMode = "list"; }}
-				title="List view"
-			>
-				<List class="size-4" />
-			</button>
-			<button
-				class="rounded p-1 transition-colors {preferences.viewMode === 'grid' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				type="button"
+				class="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors {preferences.viewMode ===
+				'grid'
+					? 'bg-muted text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={(e) => { e.stopPropagation(); preferences.viewMode = "grid"; }}
 				title="Grid view"
+				aria-pressed={preferences.viewMode === "grid"}
 			>
-				<LayoutGrid class="size-4" />
+				<LayoutGrid class="size-[15px]" strokeWidth={2} />
+			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors {preferences.viewMode ===
+				'list'
+					? 'bg-muted text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={(e) => { e.stopPropagation(); preferences.viewMode = "list"; }}
+				title="List view"
+				aria-pressed={preferences.viewMode === "list"}
+			>
+				<List class="size-[15px]" strokeWidth={2} />
 			</button>
 		</div>
 	</div>
@@ -282,12 +304,12 @@
 	<!-- Content -->
 	{#if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
-			Loading...
+			Loading…
 		</div>
 	{:else if items.length === 0}
-		<div class="flex flex-col items-center justify-center gap-2 py-24 text-muted-foreground">
-			<Trash2 class="size-12 opacity-30" />
-			<p>Trash is empty</p>
+		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
+			<Trash2 class="size-12 opacity-30" strokeWidth={1.5} />
+			<p class="text-[15px]">Trash is empty</p>
 		</div>
 	{:else if preferences.viewMode === "grid"}
 		<!-- Grid View -->
@@ -296,22 +318,43 @@
 				{#snippet cell({ item: raw })}
 					{@const item = raw as TrashItem}
 					{@const isSelected = selected.has(item.id)}
+					{@const lastDot = itemName(item).lastIndexOf(".")}
+					{@const ext = !item.isDir && lastDot > 0
+						? itemName(item).slice(lastDot + 1, lastDot + 5).toUpperCase()
+						: null}
 					<ContextMenu.Root>
 						<ContextMenu.Trigger>
 							{#snippet child({ props })}
 								<div
 									{...props}
-									class="relative flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border/50 p-3 transition-colors select-none
-										{isSelected ? 'bg-accent/70 border-accent' : 'hover:bg-accent/50'}"
+									class="relative flex h-full cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 transition-colors select-none
+										{isSelected
+											? 'border-accent-brand bg-accent-brand-dim'
+											: 'border-border hover:border-border-2 hover:bg-muted'}"
 									onclick={(e) => handleItemClick(e, item)}
 									role="gridcell"
 									tabindex={0}
 								>
-									<FileIcon isDir={item.isDir} class="size-10 text-muted-foreground" />
-									<span class="w-full truncate text-center text-xs">{itemName(item)}</span>
-									{#if !item.isDir}
-										<span class="text-[10px] text-muted-foreground">{formatFileSize(item.size)}</span>
-									{/if}
+									<div class="flex flex-1 items-center justify-center">
+										<FileIcon
+											isDir={item.isDir}
+											class="size-12 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+											strokeWidth={1.2}
+										/>
+									</div>
+									<span class="w-full truncate text-center text-sm font-medium">
+										{itemName(item)}
+									</span>
+									<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+										{#if ext}
+											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-medium tracking-[0.02em]">
+												{ext}
+											</span>
+										{/if}
+										{#if !item.isDir}
+											<span>{formatFileSize(item.size)}</span>
+										{/if}
+									</div>
 								</div>
 							{/snippet}
 						</ContextMenu.Trigger>
@@ -330,55 +373,86 @@
 		</div>
 	{:else}
 		<!-- List View -->
-		<div class="flex min-h-0 flex-1 flex-col">
+		<div
+			class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card"
+		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="flex border-b border-border text-xs text-muted-foreground" onclick={(e) => e.stopPropagation()}>
-				<div class="flex w-10 items-center py-2 pl-4">
+			<div
+				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
+				onclick={(e) => e.stopPropagation()}
+			>
+				<div class="flex items-center">
 					<Checkbox
-						checked={allSelected ? true : someSelected ? "indeterminate" : false}
+						checked={allSelected}
+						indeterminate={!allSelected && someSelected}
 						onCheckedChange={toggleSelectAll}
 					/>
 				</div>
-				<div class="flex-1 py-2 font-medium">Name</div>
-				<div class="w-44 py-2 pr-4 font-medium">Original Location</div>
-				<div class="w-36 py-2 pr-4 text-right font-medium">Deleted</div>
-				<div class="w-24 py-2 pr-4 text-right font-medium">Size</div>
+				<div>Name</div>
+				<div>Original Location</div>
+				<div class="text-right">Deleted</div>
+				<div class="text-right">Size</div>
 			</div>
 
-			<VirtualList items={items} estimateSize={() => 41}>
+			<VirtualList items={items} estimateSize={() => 48}>
 				{#snippet row({ item: raw, style })}
 					{@const item = raw as TrashItem}
 					{@const isSelected = selected.has(item.id)}
+					{@const lastDot = itemName(item).lastIndexOf(".")}
+					{@const ext = !item.isDir && lastDot > 0
+						? itemName(item).slice(lastDot + 1, lastDot + 5).toUpperCase()
+						: null}
+					{@const parent = item.originalPath.substring(0, item.originalPath.lastIndexOf("/")) || "/"}
 					<ContextMenu.Root>
 						<ContextMenu.Trigger>
 							{#snippet child({ props })}
 								<div
 									{...props}
-									class="group flex cursor-pointer items-center border-b border-border/50 transition-colors select-none
-										{isSelected ? 'bg-accent/70' : 'hover:bg-accent/50'}"
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none grid-cols-[1fr_auto] md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 px-[14px] py-3.5 md:py-[11px]
+										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted'}"
 									{style}
 									onclick={(e) => handleItemClick(e, item)}
 									role="row"
 									tabindex={0}
 								>
-									<div class="flex w-10 items-center py-2 pl-4" onclick={(e) => e.stopPropagation()}>
+									<div
+										class="hidden items-center md:flex"
+										onclick={(e) => e.stopPropagation()}
+										role="presentation"
+									>
 										<Checkbox
 											checked={isSelected}
 											onCheckedChange={() => toggleItem(item.id)}
 										/>
 									</div>
-									<div class="flex flex-1 items-center gap-2 py-2 text-sm">
-										<FileIcon isDir={item.isDir} />
-										{itemName(item)}
+									<div class="flex min-w-0 items-center gap-3">
+										<FileIcon
+											isDir={item.isDir}
+											class="size-7 shrink-0 md:size-6 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+											strokeWidth={1.4}
+										/>
+										<span class="min-w-0 flex-1 truncate text-[15px] font-medium md:text-base">
+											{itemName(item)}
+										</span>
+										{#if ext}
+											<span
+												class="hidden shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground md:inline-flex"
+											>
+												{ext}
+											</span>
+										{/if}
 									</div>
-									<div class="w-44 py-2 pr-4 text-sm text-muted-foreground">
-										{item.originalPath.substring(0, item.originalPath.lastIndexOf("/")) || "/"}
+									<div class="flex shrink-0 items-center font-mono text-xs text-muted-foreground md:hidden">
+										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
-									<div class="w-36 py-2 pr-4 text-right text-sm text-muted-foreground">
+									<div class="hidden truncate font-mono text-[13px] text-muted-foreground md:block">
+										{parent}
+									</div>
+									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
 										{formatDate(item.deletedAt)}
 									</div>
-									<div class="w-24 py-2 pr-4 text-right text-sm text-muted-foreground">
-										{formatFileSize(item.size)}
+									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
 								</div>
 							{/snippet}

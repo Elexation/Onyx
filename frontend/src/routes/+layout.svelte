@@ -15,22 +15,22 @@
 		}
 	});
 
-	$effect(() => {
-		if (!auth.checked) return;
-		const path = page.url.pathname;
+	function resolveRedirect(path: string, a: typeof auth): string | null {
+		if (!a.checked) return null;
+		if (a.firstRun && path !== "/setup") return "/setup";
+		if (!a.firstRun && !a.authenticated && path !== "/login" && !path.startsWith("/s/")) return "/login";
+		if (a.authenticated && (path === "/login" || path === "/setup")) return "/files";
+		if (a.authenticated && path === "/") return "/files";
+		return null;
+	}
 
-		if (auth.firstRun && path !== "/setup") {
-			goto("/setup");
-		} else if (!auth.firstRun && !auth.authenticated && path !== "/login" && !path.startsWith("/s/")) {
-			goto("/login");
-		} else if (auth.authenticated && (path === "/login" || path === "/setup")) {
-			goto("/files");
-		} else if (auth.authenticated && path === "/") {
-			goto("/files");
-		}
+	const redirectTarget = $derived(resolveRedirect(page.url.pathname, auth));
+
+	$effect(() => {
+		if (redirectTarget) goto(redirectTarget);
 	});
 </script>
 
-{#if auth.checked}
+{#if auth.checked && !redirectTarget}
 	{@render children()}
 {/if}

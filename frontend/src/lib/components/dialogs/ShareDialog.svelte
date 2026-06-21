@@ -31,6 +31,7 @@
 	let revoking = $state(false);
 	let showCreateForm = $state(false);
 	let createError = $state("");
+	let urlInputRef = $state<HTMLInputElement | null>(null);
 
 	const expiryOptions = [
 		{ value: "1h", label: "1 hour" },
@@ -106,9 +107,23 @@
 	}
 
 	async function copyUrl() {
-		await navigator.clipboard.writeText(shareUrl);
-		copied = true;
-		setTimeout(() => (copied = false), 2000);
+		try {
+			if (navigator.clipboard && window.isSecureContext) {
+				await navigator.clipboard.writeText(shareUrl);
+			} else if (urlInputRef) {
+				urlInputRef.focus();
+				urlInputRef.select();
+				urlInputRef.setSelectionRange(0, shareUrl.length);
+				const ok = document.execCommand("copy");
+				if (!ok) throw new Error("execCommand copy failed");
+			} else {
+				throw new Error("No clipboard method available");
+			}
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			toast.error("Couldn't copy — select the link and copy manually");
+		}
 	}
 
 	function formatDate(unix: number): string {
@@ -158,13 +173,16 @@
 			<div class="flex flex-col gap-3">
 				<Label>Share URL</Label>
 				<div class="flex gap-2">
-					<Input value={shareUrl} readonly class="font-mono text-xs" />
-					<Button variant="outline" size="icon" onclick={copyUrl} class="shrink-0">
-						{#if copied}
-							<Check class="size-4" />
-						{:else}
-							<Copy class="size-4" />
-						{/if}
+					<Input bind:ref={urlInputRef} value={shareUrl} readonly class="font-mono text-xs" />
+					<Button variant="outline" size="icon" onclick={copyUrl} class="shrink-0" aria-label={copied ? "Copied" : "Copy link"}>
+						<span class="relative block size-4 overflow-hidden">
+							<Copy
+								class="absolute inset-0 size-4 transition-all duration-150 ease-out {copied ? '-translate-y-2 opacity-0' : 'translate-y-0 opacity-100'}"
+							/>
+							<Check
+								class="absolute inset-0 size-4 text-accent-brand transition-all duration-150 ease-out {copied ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}"
+							/>
+						</span>
 					</Button>
 				</div>
 				<p class="text-xs text-muted-foreground">

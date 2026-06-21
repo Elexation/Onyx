@@ -28,6 +28,7 @@ const (
 	segmentWaitTimeout   = 30 * time.Second
 	segmentPollInterval  = 100 * time.Millisecond
 	forwardSeekTolerance = 10 // restart if N > currentStartSegment + this
+	restartDebounce      = 2 * time.Second
 	cacheExpiry          = 24 * time.Hour
 	cleanupInterval      = 1 * time.Hour
 )
@@ -333,6 +334,17 @@ func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant
 	session.mu.Lock()
 	needRestart := segNum < session.startSegment || segNum > session.startSegment+forwardSeekTolerance
 	if needRestart {
+		// Debounce: if the current ffmpeg just started, refuse the restart
+		// rather than killing and respawning it. Prevents out-of-window
+		// segment requests from churning ffmpeg at an attacker's request rate
+		// and gives the current run a chance to produce output. Returns the
+		// transient 504 error so hls.js retries with backoff and legitimate
+		// seeks converge once the debounce window expires.
+		if !session.startedAt.IsZero() && time.Since(session.startedAt) < restartDebounce {
+			session.mu.Unlock()
+			slog.Info("security_event", "event", "transcode_restart_debounced", "hash", hash, "seg", segNum)
+			return nil, ErrSegmentTimeout
+		}
 		if err := ts.startFFmpegLocked(session, segNum); err != nil {
 			session.mu.Unlock()
 			return nil, fmt.Errorf("seek restart: %w", err)
@@ -412,6 +424,7 @@ func (ts *TranscodeService) Shutdown() {
 // startFFmpegLocked kills the current ffmpeg if any, then starts a new
 // one from fromSegment. Caller must hold session.mu.
 func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment int) error {
+	s.startedAt = time.Now()
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -453,7 +466,6 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 	s.cancel = cancel
 	s.runDone = done
 	s.startSegment = fromSegment
-	s.startedAt = time.Now()
 
 	go ts.waitFFmpeg(cmd, s, done, fromSegment, stderrBuf)
 

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,12 +41,14 @@ type infoResponse struct {
 // Info handles GET /api/stream/info/* — returns codec metadata for the file
 // and an advisory hint on whether it needs transcoding.
 func (h *StreamHandler) Info(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/stream/info")
+	if h.redirectDirectNavigate(w, r, filePath) {
+		return
+	}
 	if !h.probe.HasFFprobe() {
 		http.Error(w, `{"error":"ffprobe not available"}`, http.StatusNotImplemented)
 		return
 	}
-
-	filePath := extractWildcard(r, "/api/stream/info")
 
 	info, err := h.probe.Probe(r.Context(), filePath)
 	if err != nil {
@@ -80,11 +85,14 @@ func needsTranscode(codec string) bool {
 // creation if this file has never been transcoded, then returns the
 // master playlist. Subsequent calls are map-lookup cheap.
 func (h *StreamHandler) Master(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/stream/master")
+	if h.redirectDirectNavigate(w, r, filePath) {
+		return
+	}
 	if h.transcode == nil || !h.transcode.HasFFmpeg() {
 		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
 		return
 	}
-	filePath := extractWildcard(r, "/api/stream/master")
 	session, err := h.transcode.Ensure(r.Context(), filePath)
 	if err != nil {
 		writeFileError(w, err)
@@ -97,6 +105,10 @@ func (h *StreamHandler) Master(w http.ResponseWriter, r *http.Request) {
 // VOD playlist for variant v (all segments listed, ENDLIST present).
 // The playlist is written at session start from the probed duration.
 func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/stream/playlist/"+chi.URLParam(r, "v"))
+	if h.redirectDirectNavigate(w, r, filePath) {
+		return
+	}
 	if h.transcode == nil || !h.transcode.HasFFmpeg() {
 		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
 		return
@@ -105,7 +117,6 @@ func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	filePath := extractWildcard(r, "/api/stream/playlist/"+chi.URLParam(r, "v"))
 	session, err := h.transcode.Ensure(r.Context(), filePath)
 	if err != nil {
 		writeFileError(w, err)
@@ -121,6 +132,10 @@ func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
 // Init handles GET /api/stream/init/{v}/* — serves variant v's fMP4
 // init segment, blocking briefly if ffmpeg has not yet produced it.
 func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/stream/init/"+chi.URLParam(r, "v"))
+	if h.redirectDirectNavigate(w, r, filePath) {
+		return
+	}
 	if h.transcode == nil || !h.transcode.HasFFmpeg() {
 		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
 		return
@@ -129,7 +144,6 @@ func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	filePath := extractWildcard(r, "/api/stream/init/"+chi.URLParam(r, "v"))
 	session, err := h.transcode.Ensure(r.Context(), filePath)
 	if err != nil {
 		writeFileError(w, err)
@@ -152,6 +166,10 @@ func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 // segment and triggering a seek restart if the requested segment is
 // outside the active window.
 func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
+	filePath := extractWildcard(r, "/api/stream/segment/"+chi.URLParam(r, "v")+"/"+chi.URLParam(r, "n"))
+	if h.redirectDirectNavigate(w, r, filePath) {
+		return
+	}
 	if h.transcode == nil || !h.transcode.HasFFmpeg() {
 		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
 		return
@@ -165,7 +183,6 @@ func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid segment number"}`, http.StatusBadRequest)
 		return
 	}
-	filePath := extractWildcard(r, "/api/stream/segment/"+chi.URLParam(r, "v")+"/"+chi.URLParam(r, "n"))
 	session, err := h.transcode.Ensure(r.Context(), filePath)
 	if err != nil {
 		writeFileError(w, err)
@@ -202,6 +219,31 @@ func parseVariant(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+// redirectDirectNavigate bounces a direct browser navigation (user pasted
+// a stream URL into the address bar) to the file browser's parent folder
+// view. Detects two signals: Sec-Fetch-Mode=navigate (the primary modern
+// signal) and an Accept header asking for text/html (the fallback when
+// privacy extensions strip Sec-Fetch-*). hls.js XHR and <video> element
+// fetches send Accept: */* and Sec-Fetch-Mode=cors|no-cors, so MSE
+// playback is unaffected.
+func (h *StreamHandler) redirectDirectNavigate(w http.ResponseWriter, r *http.Request, filePath string) bool {
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	accept := r.Header.Get("Accept")
+	if mode != "navigate" && !strings.Contains(accept, "text/html") {
+		return false
+	}
+	dir := path.Dir(filePath)
+	if dir == "" || dir == "." {
+		dir = "/"
+	}
+	u := &url.URL{Path: "/files" + dir}
+	if !strings.HasSuffix(u.Path, "/") {
+		u.Path += "/"
+	}
+	http.Redirect(w, r, u.String(), http.StatusFound)
+	return true
 }
 
 // serveCachedFile reads a file produced by ffmpeg / the service and

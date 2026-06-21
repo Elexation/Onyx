@@ -19,6 +19,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
 	shareRL := middleware.NewRateLimiter(trustedProxy)
+	streamRL := middleware.NewStreamRateLimiter(trustedProxy)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -69,11 +70,14 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/download/*", fileHandler.Download)
 		r.Get("/preview/*", fileHandler.Preview)
 		r.Get("/thumbs/*", thumbsHandler.Get)
-		r.Get("/stream/info/*", streamHandler.Info)
-		r.Get("/stream/master/*", streamHandler.Master)
-		r.Get("/stream/playlist/{v}/*", streamHandler.Playlist)
-		r.Get("/stream/init/{v}/*", streamHandler.Init)
-		r.Get("/stream/segment/{v}/{n}/*", streamHandler.Segment)
+		r.Group(func(r chi.Router) {
+			r.Use(streamRL.Middleware)
+			r.Get("/stream/info/*", streamHandler.Info)
+			r.Get("/stream/master/*", streamHandler.Master)
+			r.Get("/stream/playlist/{v}/*", streamHandler.Playlist)
+			r.Get("/stream/init/{v}/*", streamHandler.Init)
+			r.Get("/stream/segment/{v}/{n}/*", streamHandler.Segment)
+		})
 
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)
@@ -121,7 +125,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Get("/api/public/s/{token}/dl", publicHandler.Download)
 	r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
 	r.Group(func(r chi.Router) {
-		r.Use(shareRL.Middleware)
+		r.Use(streamRL.Middleware)
 		r.Get("/api/public/s/{token}/stream/info", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/info/*", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/master", publicHandler.StreamMaster)

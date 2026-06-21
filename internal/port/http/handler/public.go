@@ -1,18 +1,24 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Elexation/onyx/internal/adapter/media"
 	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
@@ -26,6 +32,8 @@ type shareSession struct {
 type PublicHandler struct {
 	shares       *service.ShareService
 	files        *service.FileService
+	probe        *service.ProbeService
+	transcode    *service.TranscodeService
 	rl           *middleware.RateLimiter
 	trustedProxy bool
 	requireHTTPS bool
@@ -34,10 +42,12 @@ type PublicHandler struct {
 	sessions map[string]shareSession // cookie value → session
 }
 
-func NewPublicHandler(shares *service.ShareService, files *service.FileService, rl *middleware.RateLimiter, trustedProxy, requireHTTPS bool) *PublicHandler {
+func NewPublicHandler(shares *service.ShareService, files *service.FileService, probe *service.ProbeService, transcode *service.TranscodeService, rl *middleware.RateLimiter, trustedProxy, requireHTTPS bool) *PublicHandler {
 	h := &PublicHandler{
 		shares:       shares,
 		files:        files,
+		probe:        probe,
+		transcode:    transcode,
 		rl:           rl,
 		trustedProxy: trustedProxy,
 		requireHTTPS: requireHTTPS,
@@ -61,10 +71,11 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if link.HasPassword && !h.hasValidSession(r, token) {
-		writeJSON(w, http.StatusOK, map[string]any{
+		resp := map[string]any{
 			"passwordRequired": true,
 			"isDir":            link.IsDir,
-		})
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
@@ -246,10 +257,265 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, modTime, file)
 }
 
+// validateShareAccess handles token validate + password session check for
+// share-scoped stream endpoints. Returns the link on success, or writes an
+// error response and returns false.
+func (h *PublicHandler) validateShareAccess(w http.ResponseWriter, r *http.Request) (*domain.ShareLink, bool) {
+	token := chi.URLParam(r, "token")
+	link, _, err := h.shares.Validate(token)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return nil, false
+	}
+	// Collapse not-found + password-required into a uniform 403 so stream
+	// endpoints do not become a token-existence oracle. Matches Verify.
+	if link == nil || (link.HasPassword && !h.hasValidSession(r, token)) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
+		return nil, false
+	}
+	return link, true
+}
+
+// redirectDirectNavigate bounces a direct browser navigation (user pasted
+// a stream URL into the address bar) to the share landing page. Two signals
+// identify a top-level document navigation: Sec-Fetch-Mode=navigate (the
+// primary modern signal) and an Accept header asking for text/html (the
+// fallback when privacy extensions strip Sec-Fetch-*). hls.js XHR and
+// <video> element fetches send Accept: */* and Sec-Fetch-Mode=cors|no-cors,
+// so MSE playback is unaffected.
+func (h *PublicHandler) redirectDirectNavigate(w http.ResponseWriter, r *http.Request) bool {
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	accept := r.Header.Get("Accept")
+	if mode != "navigate" && !strings.Contains(accept, "text/html") {
+		return false
+	}
+	token := chi.URLParam(r, "token")
+	http.Redirect(w, r, "/s/"+token, http.StatusFound)
+	return true
+}
+
+// extractShareStreamPath pulls the file sub-path out of a stream URL and
+// validates it is within the share scope. urlSegment is the part of the
+// URL between /s/{token}/ and the file wildcard (e.g. "stream/info",
+// "stream/playlist/0").
+func (h *PublicHandler) extractShareStreamPath(w http.ResponseWriter, r *http.Request, link *domain.ShareLink, urlSegment string) (string, bool) {
+	token := chi.URLParam(r, "token")
+	subPath := extractSubPath2(r, token, urlSegment)
+	filePath, ok := resolveSharePath(link, subPath)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
+		return "", false
+	}
+	return filePath, true
+}
+
+// servePublicCachedFile sends a small cached artifact (playlist, init
+// segment) with HLS-appropriate headers. Duplicated from stream.go's
+// private helper to keep share-handler changes self-contained.
+func servePublicCachedFile(w http.ResponseWriter, path, contentType string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.Write(data)
+}
+
+// StreamInfo handles GET /s/{token}/stream/info/* — probes video metadata.
+func (h *PublicHandler) StreamInfo(w http.ResponseWriter, r *http.Request) {
+	if h.redirectDirectNavigate(w, r) {
+		return
+	}
+	link, ok := h.validateShareAccess(w, r)
+	if !ok {
+		return
+	}
+	if h.probe == nil || !h.probe.HasFFprobe() {
+		http.Error(w, `{"error":"ffprobe not available"}`, http.StatusNotImplemented)
+		return
+	}
+	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/info")
+	if !ok {
+		return
+	}
+	info, err := h.probe.Probe(r.Context(), filePath)
+	if err != nil {
+		if errors.Is(err, service.ErrNoVideoStream) {
+			http.Error(w, `{"error":"no video stream"}`, http.StatusUnsupportedMediaType)
+			return
+		}
+		writeFileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, infoResponse{
+		Codec:          info.Codec,
+		Width:          info.Width,
+		Height:         info.Height,
+		Duration:       info.Duration,
+		Bitrate:        info.Bitrate,
+		Framerate:      info.Framerate,
+		NeedsTranscode: needsTranscode(info.Codec),
+	})
+}
+
+// StreamMaster handles GET /s/{token}/stream/master/* — master HLS playlist.
+func (h *PublicHandler) StreamMaster(w http.ResponseWriter, r *http.Request) {
+	if h.redirectDirectNavigate(w, r) {
+		return
+	}
+	link, ok := h.validateShareAccess(w, r)
+	if !ok {
+		return
+	}
+	if h.transcode == nil || !h.transcode.HasFFmpeg() {
+		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
+		return
+	}
+	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/master")
+	if !ok {
+		return
+	}
+	session, err := h.transcode.Ensure(r.Context(), filePath)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"))
+}
+
+// StreamPlaylist handles GET /s/{token}/stream/playlist/{v}/* — variant playlist.
+func (h *PublicHandler) StreamPlaylist(w http.ResponseWriter, r *http.Request) {
+	if h.redirectDirectNavigate(w, r) {
+		return
+	}
+	link, ok := h.validateShareAccess(w, r)
+	if !ok {
+		return
+	}
+	if h.transcode == nil || !h.transcode.HasFFmpeg() {
+		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
+		return
+	}
+	variant, ok := parseVariant(w, r)
+	if !ok {
+		return
+	}
+	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/playlist/"+chi.URLParam(r, "v"))
+	if !ok {
+		return
+	}
+	session, err := h.transcode.Ensure(r.Context(), filePath)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	if variant >= session.VariantCount() {
+		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
+		return
+	}
+	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), media.VariantDir(variant), "playlist.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"))
+}
+
+// StreamInit handles GET /s/{token}/stream/init/{v}/* — fMP4 init segment.
+func (h *PublicHandler) StreamInit(w http.ResponseWriter, r *http.Request) {
+	if h.redirectDirectNavigate(w, r) {
+		return
+	}
+	link, ok := h.validateShareAccess(w, r)
+	if !ok {
+		return
+	}
+	if h.transcode == nil || !h.transcode.HasFFmpeg() {
+		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
+		return
+	}
+	variant, ok := parseVariant(w, r)
+	if !ok {
+		return
+	}
+	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/init/"+chi.URLParam(r, "v"))
+	if !ok {
+		return
+	}
+	session, err := h.transcode.Ensure(r.Context(), filePath)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	if variant >= session.VariantCount() {
+		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
+		return
+	}
+	initPath := filepath.Join(session.Dir(), media.HLSInitName(variant))
+	if err := waitForStableFile(r.Context(), initPath); err != nil {
+		http.Error(w, `{"error":"init segment not ready"}`, http.StatusGatewayTimeout)
+		return
+	}
+	servePublicCachedFile(w, initPath, "video/mp4")
+}
+
+// StreamSegment handles GET /s/{token}/stream/segment/{v}/{n}/* — media segment.
+func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
+	if h.redirectDirectNavigate(w, r) {
+		return
+	}
+	link, ok := h.validateShareAccess(w, r)
+	if !ok {
+		return
+	}
+	if h.transcode == nil || !h.transcode.HasFFmpeg() {
+		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
+		return
+	}
+	variant, ok := parseVariant(w, r)
+	if !ok {
+		return
+	}
+	segNum, err := strconv.Atoi(chi.URLParam(r, "n"))
+	if err != nil || segNum < 0 {
+		http.Error(w, `{"error":"invalid segment number"}`, http.StatusBadRequest)
+		return
+	}
+	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/segment/"+chi.URLParam(r, "v")+"/"+chi.URLParam(r, "n"))
+	if !ok {
+		return
+	}
+	session, err := h.transcode.Ensure(r.Context(), filePath)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum)
+	if err != nil {
+		if errors.Is(err, service.ErrSegmentTimeout) {
+			http.Error(w, `{"error":"segment not ready"}`, http.StatusGatewayTimeout)
+			return
+		}
+		if errors.Is(err, service.ErrSessionNotFound) {
+			http.Error(w, `{"error":"session not found"}`, http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, service.ErrSegmentOutOfRange) {
+			http.Error(w, `{"error":"segment out of range"}`, http.StatusBadRequest)
+			return
+		}
+		writeFileError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Write(data)
+}
+
 func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.ShareLink) {
 	resp := map[string]any{
 		"isDir":    link.IsDir,
 		"fileName": path.Base(link.FilePath),
+	}
+	if link.ExpiresAt > 0 {
+		resp["expiresAt"] = link.ExpiresAt
 	}
 
 	if link.IsDir {
@@ -260,7 +526,7 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 		}
 		shareBase := strings.TrimSuffix(link.FilePath, "/") + "/"
 		for i := range items {
-			items[i].Path = strings.TrimPrefix(items[i].Path, shareBase)
+			items[i].Path = "/" + strings.TrimPrefix(items[i].Path, shareBase)
 		}
 		resp["items"] = items
 	} else {
@@ -354,4 +620,58 @@ func extractSubPath2(r *http.Request, token string, segment string) string {
 		return "/"
 	}
 	return p
+}
+
+// resolveSharePath accepts a sub-path and returns the absolute file path it
+// refers to within the share, or false if it escapes scope. For single-file
+// shares, subPath is ignored. For directory shares, subPath may be either
+// share-relative (e.g. "/movie.mkv") or already fully-qualified under the
+// share base (e.g. "/shared/movie.mkv" — this happens when HLS playlist
+// content, rewritten by rewriteShareHLS, flows back through the subsequent
+// playlist/segment requests).
+func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
+	if !link.IsDir {
+		return link.FilePath, true
+	}
+	if subPath == "" || subPath == "/" {
+		return "", false
+	}
+	// path.Clean does not treat \ as a separator on any OS, so `..\..\x`
+	// survives normalization. Reject it at the app layer — os.Root is the
+	// storage-layer bedrock, this is defense-in-depth.
+	if strings.Contains(subPath, "\\") {
+		return "", false
+	}
+	subPath = path.Clean(subPath)
+	sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
+	if strings.HasPrefix(subPath, sharePrefix) {
+		return subPath, true
+	}
+	filePath := path.Join(link.FilePath, subPath)
+	if !strings.HasPrefix(filePath, sharePrefix) {
+		return "", false
+	}
+	return filePath, true
+}
+
+// rewriteShareHLS rewrites absolute `/api/stream/…` URLs inside an m3u8
+// body to their public-share equivalent so share users can fetch the
+// downstream playlist/init/segment without admin auth. The file path
+// portion stays intact; resolveSharePath accepts it in full-path form.
+func rewriteShareHLS(content []byte, token string) []byte {
+	return bytes.ReplaceAll(content, []byte("/api/stream/"), []byte("/api/public/s/"+token+"/stream/"))
+}
+
+// servePublicHLSPlaylist reads an m3u8 playlist file, rewrites its internal
+// URLs for share-scoped access, and writes it with HLS headers.
+func servePublicHLSPlaylist(w http.ResponseWriter, path, contentType, token string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		writeFileError(w, err)
+		return
+	}
+	data = rewriteShareHLS(data, token)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.Write(data)
 }

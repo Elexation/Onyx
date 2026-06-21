@@ -14,13 +14,13 @@ export type ProbeStatus = "ok" | "no-video" | "error";
 
 export type ProbeResult = { status: ProbeStatus; info?: ProbeInfo };
 
-export function getStreamInfoUrl(path: string): string {
-	return `/api/stream/info${encodeFilePath(path)}`;
+export function getStreamInfoUrl(path: string, infoBase = "/api/stream/info"): string {
+	return `${infoBase}${encodeFilePath(path)}`;
 }
 
-export async function fetchProbeInfo(path: string): Promise<ProbeResult> {
+export async function fetchProbeInfo(path: string, infoBase = "/api/stream/info"): Promise<ProbeResult> {
 	try {
-		const res = await fetch(getStreamInfoUrl(path), { credentials: "same-origin" });
+		const res = await fetch(getStreamInfoUrl(path, infoBase), { credentials: "same-origin" });
 		if (res.status === 415) return { status: "no-video" };
 		if (!res.ok) return { status: "error" };
 		const info = (await res.json()) as ProbeInfo;

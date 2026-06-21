@@ -28,7 +28,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	versionHandler := handler.NewVersionHandler(versions)
 	searchHandler := handler.NewSearchHandler(search)
 	shareHandler := handler.NewShareHandler(shares)
-	publicHandler := handler.NewPublicHandler(shares, files, shareRL, trustedProxy, requireHTTPS)
+	publicHandler := handler.NewPublicHandler(shares, files, probe, transcode, shareRL, trustedProxy, requireHTTPS)
 	tokenHandler := handler.NewTokenHandler(tokens)
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
@@ -120,6 +120,16 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
 	r.Get("/api/public/s/{token}/dl", publicHandler.Download)
 	r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
+	r.Group(func(r chi.Router) {
+		r.Use(shareRL.Middleware)
+		r.Get("/api/public/s/{token}/stream/info", publicHandler.StreamInfo)
+		r.Get("/api/public/s/{token}/stream/info/*", publicHandler.StreamInfo)
+		r.Get("/api/public/s/{token}/stream/master", publicHandler.StreamMaster)
+		r.Get("/api/public/s/{token}/stream/master/*", publicHandler.StreamMaster)
+		r.Get("/api/public/s/{token}/stream/playlist/{v}/*", publicHandler.StreamPlaylist)
+		r.Get("/api/public/s/{token}/stream/init/{v}/*", publicHandler.StreamInit)
+		r.Get("/api/public/s/{token}/stream/segment/{v}/{n}/*", publicHandler.StreamSegment)
+	})
 
 	r.NotFound(apiAware404(web.SPAHandler()))
 

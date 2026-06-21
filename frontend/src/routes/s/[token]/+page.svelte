@@ -5,8 +5,8 @@
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
-	import BrandMark from "$lib/components/BrandMark.svelte";
 	import FileIcon from "$lib/components/FileIcon.svelte";
+	import ShareHeader from "$lib/components/share/ShareHeader.svelte";
 	import { Download, Lock, Eye, Folder } from "lucide-svelte";
 	import type { FileInfo } from "$lib/types.js";
 	import { canPreview } from "$lib/preview.js";
@@ -29,8 +29,11 @@
 	let mimeType = $state("");
 	let fileSize = $state(0);
 	let items = $state<FileInfo[]>([]);
+	let expiresAt = $state(0);
 
 	let showPreview = $state(false);
+	let previewItem = $state<FileInfo>({ name: "", path: "", isDir: false, size: 0, modTime: 0, mimeType: "" });
+	let previewOpen = $state(false);
 
 	const fileInfo: FileInfo = $derived({ name: fileName, path: "", isDir: false, size: fileSize, modTime: 0, mimeType });
 	const previewable = $derived(!isDir && fileName && canPreview(fileInfo));
@@ -38,8 +41,60 @@
 	const lastDot = $derived(fileName.lastIndexOf("."));
 	const ext = $derived(!isDir && lastDot > 0 ? fileName.slice(lastDot + 1, lastDot + 5).toUpperCase() : null);
 
-	function rawUrl() {
+	const totalSize = $derived(items.reduce((sum, i) => sum + (i.size || 0), 0));
+
+	function stripLeadingSlash(p: string): string {
+		return p.replace(/^\/+/, "");
+	}
+
+	function rawUrl(subPath?: string) {
+		if (subPath) {
+			return `/api/public/s/${safeToken}/raw/${encodeFilePath(stripLeadingSlash(subPath))}`;
+		}
 		return `/api/public/s/${safeToken}/raw`;
+	}
+
+	function downloadUrl(subPath?: string) {
+		if (subPath) {
+			return `/api/public/s/${safeToken}/dl/${encodeFilePath(stripLeadingSlash(subPath))}`;
+		}
+		return `/api/public/s/${safeToken}/dl`;
+	}
+
+	function streamBase() {
+		return `/api/public/s/${safeToken}/stream`;
+	}
+
+	function formatRelativeExpiry(ts: number): string {
+		const nowSec = Date.now() / 1000;
+		const diff = ts - nowSec;
+		if (diff <= 0) return "soon";
+		const days = diff / 86400;
+		if (days >= 2) return `in ${Math.round(days)} days`;
+		if (days >= 1) return "in 1 day";
+		const hours = diff / 3600;
+		if (hours >= 2) return `in ${Math.round(hours)} hours`;
+		if (hours >= 1) return "in 1 hour";
+		const minutes = diff / 60;
+		if (minutes >= 1) return `in ${Math.round(minutes)} minutes`;
+		return "soon";
+	}
+
+	function openItem(item: FileInfo) {
+		if (item.isDir) return;
+		if (canPreview(item)) {
+			previewItem = item;
+			previewOpen = true;
+			return;
+		}
+		downloadItem(item);
+	}
+
+	function downloadItem(item: FileInfo) {
+		const a = document.createElement("a");
+		a.href = downloadUrl(item.path);
+		a.download = item.name;
+		a.click();
 	}
 
 	$effect(() => {
@@ -49,6 +104,12 @@
 	async function loadShare() {
 		loading = true;
 		error = "";
+		fileName = "";
+		isDir = false;
+		mimeType = "";
+		fileSize = 0;
+		items = [];
+		expiresAt = 0;
 		try {
 			const res = await fetch(`/api/public/s/${safeToken}`);
 			if (!res.ok) {
@@ -102,183 +163,229 @@
 		mimeType = data.mimeType || "";
 		fileSize = data.size || 0;
 		items = data.items || [];
-	}
-
-	function downloadUrl(subPath?: string) {
-		if (subPath) {
-			return `/api/public/s/${safeToken}/dl${encodeFilePath(subPath)}`;
-		}
-		return `/api/public/s/${safeToken}/dl`;
+		expiresAt = data.expiresAt || 0;
 	}
 </script>
 
-<div class="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">
-	<BrandMark href={`/s/${safeToken}`} />
-
-	{#if loading}
-		<Card.Root class="w-full max-w-sm">
-			<Card.Content class="py-10 text-center text-[15px] text-muted-foreground">
-				Loading…
-			</Card.Content>
-		</Card.Root>
-	{:else if error}
-		<Card.Root class="w-full max-w-sm">
-			<Card.Content class="py-10 text-center text-[15px] text-muted-foreground">
-				{error}
-			</Card.Content>
-		</Card.Root>
-	{:else if passwordRequired}
-		<Card.Root class="w-full max-w-sm">
-			<Card.Header>
-				<Card.Title class="flex items-center gap-2 text-lg font-bold tracking-[-0.01em]">
-					<Lock class="size-4" />
-					Password Required
-				</Card.Title>
-				<Card.Description>This share is password protected.</Card.Description>
-			</Card.Header>
-			<Card.Content>
-				<form onsubmit={verifyPassword} class="grid gap-4">
-					<div class="grid gap-2">
-						<Label for="share-pw">Password</Label>
-						<Input
-							id="share-pw"
-							type="password"
-							bind:value={password}
-							required
-							autofocus
-						/>
-					</div>
-					{#if verifyError}
-						<p class="text-sm text-destructive">{verifyError}</p>
-					{/if}
-					<Button type="submit" size="lg" class="w-full" disabled={verifying}>
-						{verifying ? "Verifying…" : "Unlock"}
-					</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
-	{:else if isDir}
-		<div class="flex w-full max-w-3xl flex-col gap-4">
-			<div class="flex flex-col gap-3 rounded-xl border border-border bg-card p-[14px] md:flex-row md:items-center md:justify-between">
-				<div class="flex min-w-0 items-center gap-3">
-					<Folder class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
-					<div class="min-w-0">
-						<div class="truncate text-[15px] font-medium">{fileName}</div>
-						<div class="font-mono text-[13px] text-muted-foreground">
-							{items.length} item{items.length !== 1 ? "s" : ""}
+{#if passwordRequired}
+	<div class="flex min-h-screen flex-col">
+		<ShareHeader token={token ?? ""} />
+		<main class="flex flex-1 items-center justify-center px-4 py-10">
+			<Card.Root class="w-full max-w-sm">
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em]">
+						<span class="grid size-7 place-items-center rounded-lg bg-muted text-accent-brand">
+							<Lock class="size-3.5" />
+						</span>
+						Password Required
+					</Card.Title>
+					<Card.Description>This share is password protected.</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<form onsubmit={verifyPassword} class="grid gap-4">
+						<div class="grid gap-2">
+							<Label for="share-pw">Password</Label>
+							<Input
+								id="share-pw"
+								type="password"
+								bind:value={password}
+								required
+								autofocus
+							/>
 						</div>
-					</div>
-				</div>
-				<a href={`/api/public/s/${safeToken}/zip`} class="shrink-0">
-					<Button class="w-full md:w-auto">
-						<Download class="mr-2 size-4" />
-						Download All
-					</Button>
-				</a>
-			</div>
-
-			{#if items.length === 0}
-				<div class="flex items-center justify-center rounded-xl border border-border bg-card py-20 text-[15px] text-muted-foreground">
-					This folder is empty.
-				</div>
-			{:else}
-				<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
-					<div class="hidden border-b border-border px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_100px_40px] md:gap-3">
-						<div>Name</div>
-						<div class="text-right">Size</div>
-						<div></div>
-					</div>
-					{#each items as item (item.path)}
-						{@const itemLastDot = item.name.lastIndexOf(".")}
-						{@const itemExt = !item.isDir && itemLastDot > 0 ? item.name.slice(itemLastDot + 1, itemLastDot + 5).toUpperCase() : null}
-						{#if item.isDir}
-							<div class="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-[14px] py-3.5 text-muted-foreground last:border-b-0 md:grid-cols-[minmax(0,1fr)_100px_40px] md:py-[11px]">
-								<div class="flex min-w-0 items-center gap-3">
-									<FileIcon
-										isDir={true}
-										class="size-6 shrink-0 text-accent-brand md:size-5"
-										strokeWidth={1.4}
-									/>
-									<span class="truncate text-[15px]">{item.name}</span>
-								</div>
-								<div class="hidden text-right font-mono text-[13px] md:block">—</div>
-								<div class="hidden md:block"></div>
-							</div>
-						{:else}
-							<a
-								href={downloadUrl(item.path)}
-								class="group grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-[14px] py-3.5 transition-colors last:border-b-0 hover:bg-muted md:grid-cols-[minmax(0,1fr)_100px_40px] md:py-[11px]"
-							>
-								<div class="flex min-w-0 items-center gap-3">
-									<FileIcon
-										mimeType={item.mimeType}
-										class="size-6 shrink-0 text-muted-foreground md:size-5"
-										strokeWidth={1.4}
-									/>
-									<span class="truncate text-[15px] font-medium">{item.name}</span>
-									{#if itemExt}
-										<span class="shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
-											{itemExt}
-										</span>
-									{/if}
-								</div>
-								<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
-									{formatFileSize(item.size)}
-								</div>
-								<div class="hidden items-center justify-end text-muted-foreground transition-colors group-hover:text-foreground md:flex">
-									<Download class="size-4" />
-								</div>
-							</a>
+						{#if verifyError}
+							<p class="text-sm text-destructive">{verifyError}</p>
 						{/if}
-					{/each}
-				</div>
-			{/if}
-		</div>
-	{:else}
-		<Card.Root class="w-full max-w-sm">
-			<Card.Content class="flex flex-col gap-5 py-6">
-				<div class="flex flex-col items-center gap-3 text-center">
-					<div class="flex size-16 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-						<FileIcon {mimeType} class="size-8" strokeWidth={1.2} />
-					</div>
-					<div class="flex min-w-0 flex-col items-center gap-1">
-						<div class="w-full truncate text-[15px] font-medium">{fileName}</div>
-						<div class="flex items-center gap-2 font-mono text-[13px] text-muted-foreground">
-							{#if ext}
-								<span class="rounded-[5px] bg-muted px-1.5 py-0.5 text-[11px] font-medium tracking-[0.02em]">
-									{ext}
-								</span>
-							{/if}
-							<span>{formatFileSize(fileSize)}</span>
+						<Button type="submit" size="lg" class="w-full" disabled={verifying}>
+							{verifying ? "Verifying…" : "Unlock"}
+						</Button>
+					</form>
+				</Card.Content>
+			</Card.Root>
+		</main>
+	</div>
+{:else if isDir}
+	<div class="flex min-h-screen flex-col">
+		<ShareHeader token={token ?? ""} />
+		<main class="flex flex-1 flex-col items-center gap-4 px-4 py-10">
+			<div class="flex w-full max-w-3xl flex-col gap-4">
+				<div class="flex flex-col gap-3 rounded-xl border border-border bg-card p-[14px] md:flex-row md:items-center md:justify-between">
+					<div class="flex min-w-0 items-center gap-3">
+						<Folder class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
+						<div class="min-w-0">
+							<div class="truncate text-[15px] font-medium">{fileName}</div>
+							<div class="font-mono text-[13px] text-muted-foreground">
+								{items.length} item{items.length !== 1 ? "s" : ""} · {formatFileSize(totalSize)}
+							</div>
 						</div>
 					</div>
-				</div>
-				<div class="flex flex-col gap-2">
-					{#if previewable}
-						<Button size="lg" class="w-full" onclick={() => showPreview = true}>
-							<Eye class="mr-2 size-4" />
-							Preview
-						</Button>
-					{/if}
-					<a href={downloadUrl()} class="block">
-						<Button variant={previewable ? "outline" : "default"} size="lg" class="w-full">
+					<a href={`/api/public/s/${safeToken}/zip`} download class="shrink-0">
+						<Button class="w-full md:w-auto">
 							<Download class="mr-2 size-4" />
-							Download
+							Download All
 						</Button>
 					</a>
 				</div>
-			</Card.Content>
-		</Card.Root>
-	{/if}
-</div>
 
-{#if showPreview}
+				{#if items.length === 0}
+					<div class="flex items-center justify-center rounded-xl border border-border bg-card py-20 text-[15px] text-muted-foreground">
+						This folder is empty.
+					</div>
+				{:else}
+					<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+						<div class="hidden border-b border-border px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_100px_40px] md:gap-3">
+							<div>Name</div>
+							<div class="text-right">Size</div>
+							<div></div>
+						</div>
+						{#each items as item (item.path)}
+							{@const itemLastDot = item.name.lastIndexOf(".")}
+							{@const itemExt = !item.isDir && itemLastDot > 0 ? item.name.slice(itemLastDot + 1, itemLastDot + 5).toUpperCase() : null}
+							{#if item.isDir}
+								<div class="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-[14px] py-3.5 text-muted-foreground last:border-b-0 md:grid-cols-[minmax(0,1fr)_100px_40px] md:py-[11px]">
+									<div class="flex min-w-0 items-center gap-3">
+										<FileIcon
+											isDir={true}
+											class="size-6 shrink-0 text-accent-brand md:size-5"
+											strokeWidth={1.4}
+										/>
+										<span class="truncate text-[15px]">{item.name}</span>
+									</div>
+									<div class="hidden text-right font-mono text-[13px] md:block">—</div>
+									<div class="hidden md:block"></div>
+								</div>
+							{:else}
+								<button
+									type="button"
+									onclick={() => openItem(item)}
+									class="group grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-[14px] py-3.5 text-left transition-colors last:border-b-0 hover:bg-muted md:grid-cols-[minmax(0,1fr)_100px_40px] md:py-[11px]"
+								>
+									<div class="flex min-w-0 items-center gap-3">
+										<FileIcon
+											mimeType={item.mimeType}
+											class="size-6 shrink-0 text-muted-foreground md:size-5"
+											strokeWidth={1.4}
+										/>
+										<span class="truncate text-[15px] font-medium">{item.name}</span>
+										{#if itemExt}
+											<span class="shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
+												{itemExt}
+											</span>
+										{/if}
+									</div>
+									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+										{formatFileSize(item.size)}
+									</div>
+									<div class="hidden items-center justify-end md:flex">
+										<span
+											role="button"
+											tabindex="0"
+											title="Download"
+											aria-label="Download {item.name}"
+											onclick={(e) => { e.stopPropagation(); downloadItem(item); }}
+											onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); downloadItem(item); } }}
+											class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+										>
+											<Download class="size-4" />
+										</span>
+									</div>
+								</button>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+
+				{#if expiresAt > 0}
+					<div class="mt-2 text-center font-mono text-[11px] text-muted-foreground">
+						Expires {formatRelativeExpiry(expiresAt)}
+					</div>
+				{/if}
+			</div>
+		</main>
+	</div>
+{:else}
+	<div class="flex min-h-screen flex-col">
+		<ShareHeader token={token ?? ""} />
+		<main class="flex flex-1 items-center justify-center px-4 py-10">
+			<div class="flex w-full max-w-sm flex-col gap-4">
+				{#if loading}
+					<Card.Root>
+						<Card.Content class="py-10 text-center text-[15px] text-muted-foreground">
+							Loading…
+						</Card.Content>
+					</Card.Root>
+				{:else if error}
+					<Card.Root>
+						<Card.Content class="flex flex-col items-center gap-2 py-10 text-center">
+							<h1 class="text-lg font-bold tracking-[-0.01em]">Share unavailable</h1>
+							<p class="text-[13px] text-muted-foreground">
+								The share link may have expired or been revoked.
+							</p>
+						</Card.Content>
+					</Card.Root>
+				{:else}
+					<Card.Root>
+						<Card.Content class="flex flex-col gap-5 py-6">
+							<div class="flex flex-col items-center gap-3 text-center">
+								<div class="flex size-16 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+									<FileIcon {mimeType} class="size-8" strokeWidth={1.2} />
+								</div>
+								<div class="flex min-w-0 flex-col items-center gap-1">
+									<div class="w-full truncate text-[15px] font-medium">{fileName}</div>
+									<div class="flex items-center gap-2 font-mono text-[13px] text-muted-foreground">
+										{#if ext}
+											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 text-[11px] font-medium tracking-[0.02em]">
+												{ext}
+											</span>
+										{/if}
+										<span>{formatFileSize(fileSize)}</span>
+									</div>
+								</div>
+							</div>
+							<div class="flex flex-col gap-2">
+								{#if previewable}
+									<Button size="lg" class="w-full" onclick={() => showPreview = true}>
+										<Eye class="mr-2 size-4" />
+										Preview
+									</Button>
+								{/if}
+								<a href={downloadUrl()} download class="block">
+									<Button variant={previewable ? "outline" : "default"} size="lg" class="w-full">
+										<Download class="mr-2 size-4" />
+										Download
+									</Button>
+								</a>
+							</div>
+						</Card.Content>
+					</Card.Root>
+					{#if expiresAt > 0}
+						<div class="mt-2 text-center font-mono text-[11px] text-muted-foreground">
+							Expires {formatRelativeExpiry(expiresAt)}
+						</div>
+					{/if}
+				{/if}
+			</div>
+		</main>
+	</div>
+{/if}
+
+{#if previewOpen}
+	<PreviewModal
+		bind:file={previewItem}
+		items={items.filter((i) => !i.isDir)}
+		onclose={() => previewOpen = false}
+		url={rawUrl(previewItem.path)}
+		downloadUrl={downloadUrl(previewItem.path)}
+		streamBase={streamBase()}
+	/>
+{:else if showPreview}
 	<PreviewModal
 		file={fileInfo}
 		items={[]}
 		onclose={() => showPreview = false}
 		url={rawUrl()}
 		downloadUrl={downloadUrl()}
+		streamBase={streamBase()}
 	/>
 {/if}
 <Toaster theme="dark" />

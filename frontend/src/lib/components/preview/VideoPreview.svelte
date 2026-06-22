@@ -13,8 +13,11 @@
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
+	import ChevronsLeftIcon from "@lucide/svelte/icons/chevrons-left";
+	import ChevronsRightIcon from "@lucide/svelte/icons/chevrons-right";
+	import { fade } from "svelte/transition";
 
-	let { file, onclose, url }: { file: FileInfo; onclose: () => void; url?: string } = $props();
+	let { file, onclose, url, streamBase }: { file: FileInfo; onclose: () => void; url?: string; streamBase?: string } = $props();
 
 	type PlaybackMode = "loading" | "native" | "transcode-required" | "no-video";
 
@@ -31,6 +34,25 @@
 	let probeInfo = $state<ProbeInfo | null>(null);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
+
+	// Scrub state — separate from playhead so drag motion doesn't hit
+	// videoEl.currentTime on every input event. Commit happens on `change`
+	// (pointerup / Enter / blur), one write per gesture.
+	let scrubbing = $state(false);
+	let scrubTime = $state(0);
+
+	// Arrow-key seek accumulates into a settle timer so held/mashed
+	// presses produce one currentTime write, not one per keydown. Held
+	// keys throttle accumulation to ~6.7/sec so the offset grows at a
+	// usable rate instead of tracking the OS key-repeat frequency.
+	// Commit fires only when all arrows are released — committing mid-hold
+	// causes a visible jolt as the UI snaps between pre- and post-commit.
+	let keySeekOffset = $state(0);
+	let keySeekTimer: ReturnType<typeof setTimeout> | null = null;
+	const heldArrows = new Set<string>();
+	let lastKeyAccumAt = 0;
+	const KEY_SEEK_SETTLE_MS = 400;
+	const KEY_SEEK_ACCUM_MS = 80;
 
 	let detectedMode = $state<PlaybackMode>("loading");
 	let nativeSupported = $state(false);
@@ -94,8 +116,19 @@
 		return "";
 	});
 
-	const seekPercent = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
+	const displayTime = $derived.by(() => {
+		if (scrubbing) return scrubTime;
+		if (keySeekOffset !== 0) {
+			return Math.max(0, Math.min(duration, currentTime + keySeekOffset));
+		}
+		return currentTime;
+	});
+	const seekPercent = $derived(duration > 0 ? (displayTime / duration) * 100 : 0);
 	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
+
+	// Force the bottom bar visible while any scrub is in flight; the
+	// normal 3s auto-hide resumes once the gesture settles.
+	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0);
 
 	function restorePosition() {
 		if (!videoEl) return;
@@ -186,9 +219,30 @@
 		else containerEl.requestFullscreen();
 	}
 
-	function seek(offset: number) {
+	function queueKeySeek(delta: number, force: boolean) {
 		if (!videoEl) return;
-		videoEl.currentTime = Math.max(0, Math.min(duration, videoEl.currentTime + offset));
+		const now = Date.now();
+		if (!force && now - lastKeyAccumAt < KEY_SEEK_ACCUM_MS) return;
+		keySeekOffset += delta;
+		lastKeyAccumAt = now;
+		// Cancel any pending commit — we'll restart the settle timer on keyup.
+		if (keySeekTimer) {
+			clearTimeout(keySeekTimer);
+			keySeekTimer = null;
+		}
+	}
+
+	function commitKeySeek() {
+		if (videoEl && keySeekOffset !== 0) {
+			const target = Math.max(0, Math.min(duration, videoEl.currentTime + keySeekOffset));
+			videoEl.currentTime = target;
+			// Sync local state so displayTime doesn't briefly snap back to
+			// the pre-commit value before ontimeupdate catches up.
+			currentTime = target;
+		}
+		keySeekOffset = 0;
+		keySeekTimer = null;
+		resetControlsTimer();
 	}
 
 	function resetControlsTimer() {
@@ -209,8 +263,18 @@
 	}
 
 	function handleSeekInput(e: Event) {
+		scrubbing = true;
+		scrubTime = Number((e.target as HTMLInputElement).value);
+	}
+
+	function handleSeekChange(e: Event) {
 		if (!videoEl) return;
-		videoEl.currentTime = Number((e.target as HTMLInputElement).value);
+		const target = Number((e.target as HTMLInputElement).value);
+		videoEl.currentTime = target;
+		currentTime = target;
+		scrubTime = target;
+		scrubbing = false;
+		resetControlsTimer();
 	}
 
 	function handleVolumeInput(e: Event) {
@@ -221,6 +285,23 @@
 		if (v > 0 && muted) {
 			videoEl.muted = false;
 		}
+	}
+
+	function handleKeyup(e: KeyboardEvent) {
+		if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+		heldArrows.delete(e.key);
+		if (heldArrows.size > 0) return;
+		if (keySeekTimer) clearTimeout(keySeekTimer);
+		keySeekTimer = setTimeout(commitKeySeek, KEY_SEEK_SETTLE_MS);
+	}
+
+	function handleWindowBlur() {
+		// Alt-tab / focus loss while arrows held — we'll never get keyup.
+		// Commit whatever accumulated and clear held state.
+		if (heldArrows.size === 0 && keySeekOffset === 0) return;
+		heldArrows.clear();
+		if (keySeekTimer) clearTimeout(keySeekTimer);
+		commitKeySeek();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -234,11 +315,13 @@
 				break;
 			case "ArrowLeft":
 				e.preventDefault();
-				seek(-10);
+				heldArrows.add(e.key);
+				queueKeySeek(-10, !e.repeat);
 				break;
 			case "ArrowRight":
 				e.preventDefault();
-				seek(10);
+				heldArrows.add(e.key);
+				queueKeySeek(10, !e.repeat);
 				break;
 			case "ArrowUp":
 				e.preventDefault();
@@ -316,6 +399,7 @@
 			el.pause();
 			if (controlsTimer) clearTimeout(controlsTimer);
 			if (clickTimer) clearTimeout(clickTimer);
+			if (keySeekTimer) clearTimeout(keySeekTimer);
 		};
 	});
 
@@ -334,7 +418,7 @@
 
 	$effect(() => {
 		const path = file.path;
-		if (url) {
+		if (url && !streamBase) {
 			detectedMode = "native";
 			nativeSupported = true;
 			return;
@@ -345,7 +429,8 @@
 		userPickedHeight = null;
 		pendingSeek = null;
 		probeInfo = null;
-		fetchProbeInfo(path).then(async (result) => {
+		const infoBase = streamBase ? `${streamBase}/info` : "/api/stream/info";
+		fetchProbeInfo(path, infoBase).then(async (result) => {
 			if (path !== file.path) return;
 			if (result.status === "no-video") {
 				detectedMode = "no-video";
@@ -377,7 +462,8 @@
 
 		if (mode !== "transcode-required") return;
 
-		const masterUrl = `/api/stream/master${encodeFilePath(filePath)}`;
+		const masterBase = streamBase ? `${streamBase}/master` : "/api/stream/master";
+		const masterUrl = `${masterBase}${encodeFilePath(filePath)}`;
 		let localHandle: HlsHandle | null = null;
 		let cancelled = false;
 
@@ -410,6 +496,9 @@
 				handle.onLevelSwitched((idx) => {
 					currentAutoLevel = idx;
 				});
+				handle.onFatalError(() => {
+					failed = true;
+				});
 				return;
 			}
 			if (canPlayHlsNatively(el)) {
@@ -432,7 +521,7 @@
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onkeyup={handleKeyup} onblur={handleWindowBlur} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
@@ -493,13 +582,28 @@
 				</div>
 			</button>
 		{/if}
+
+		{#if keySeekOffset !== 0}
+			<div
+				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 font-mono text-[13px] text-white backdrop-blur-sm"
+				transition:fade={{ duration: 120 }}
+			>
+				{#if keySeekOffset < 0}
+					<ChevronsLeftIcon class="size-4" />
+					<span class="tabular-nums">{Math.abs(keySeekOffset)}s</span>
+				{:else}
+					<span class="tabular-nums">{keySeekOffset}s</span>
+					<ChevronsRightIcon class="size-4" />
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	{#if !failed}
 	<div
 		class="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-black/70 px-3 py-2 backdrop-blur-sm transition-opacity duration-200"
-		class:opacity-0={!showControls}
-		class:pointer-events-none={!showControls}
+		class:opacity-0={!controlsVisible}
+		class:pointer-events-none={!controlsVisible}
 		onclick={(e) => e.stopPropagation()}
 	>
 		<div class="seek-bar relative h-1 w-full cursor-pointer rounded-full bg-white/20">
@@ -516,8 +620,9 @@
 				min="0"
 				max={duration}
 				step="0.1"
-				value={currentTime}
+				value={displayTime}
 				oninput={handleSeekInput}
+				onchange={handleSeekChange}
 				class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
 			/>
 		</div>
@@ -535,7 +640,7 @@
 			</button>
 
 			<span class="min-w-0 font-mono text-[13px] text-white/80 tabular-nums">
-				{formatMediaTime(currentTime)} / {formatMediaTime(duration)}
+				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
 			</span>
 
 			<div class="flex-1"></div>

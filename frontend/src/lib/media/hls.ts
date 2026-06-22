@@ -23,6 +23,7 @@ export type HlsHandle = {
 	setAutoLevelCap: (maxHeight: number) => void;
 	onLevelsLoaded: (cb: (levels: HlsLevel[]) => void) => void;
 	onLevelSwitched: (cb: (index: number) => void) => void;
+	onFatalError: (cb: (data: unknown) => void) => void;
 };
 
 export function isHlsSupported(): boolean {
@@ -35,6 +36,7 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 		return null;
 	}
 
+	let fatalCb: ((data: unknown) => void) | null = null;
 	const hls = new Hls();
 	hls.attachMedia(videoEl);
 	hls.on(Hls.Events.MEDIA_ATTACHED, () => {
@@ -42,6 +44,7 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	});
 	hls.on(Hls.Events.ERROR, (_event, data) => {
 		if (!data.fatal) return;
+		console.error("[hls] fatal error", data);
 		switch (data.type) {
 			case Hls.ErrorTypes.NETWORK_ERROR:
 				hls.startLoad();
@@ -51,6 +54,7 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 				return;
 			default:
 				hls.destroy();
+				fatalCb?.(data);
 		}
 	});
 
@@ -100,6 +104,9 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 		},
 		onLevelSwitched: (cb) => {
 			hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => cb(data.level));
+		},
+		onFatalError: (cb) => {
+			fatalCb = cb;
 		},
 	};
 }

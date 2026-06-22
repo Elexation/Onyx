@@ -19,12 +19,14 @@
 		onclose,
 		url,
 		downloadUrl,
+		streamBase,
 	}: {
 		file: FileInfo;
 		items: FileInfo[];
 		onclose: () => void;
 		url?: string;
 		downloadUrl?: string;
+		streamBase?: string;
 	} = $props();
 
 	const type = $derived(getPreviewType(file));
@@ -95,7 +97,7 @@
 				{url}
 			/>
 		{:else if type === "video"}
-			<VideoPreview {file} {onclose} {url} />
+			<VideoPreview {file} {onclose} {url} {streamBase} />
 		{:else if type === "audio"}
 			<AudioPreview path={file.path} {url} />
 		{:else if type === "pdf"}

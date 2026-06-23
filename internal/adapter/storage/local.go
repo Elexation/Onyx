@@ -77,7 +77,14 @@ func (s *LocalStorage) ListDir(dirPath string) ([]domain.FileInfo, error) {
 			ModTime: info.ModTime().Unix(),
 		}
 
-		if !entry.IsDir() {
+		if entry.IsDir() {
+			if sub, err := s.root.Open(itemPath); err == nil {
+				if subEntries, err := sub.ReadDir(-1); err == nil {
+					fi.ItemCount = int64(len(subEntries))
+				}
+				sub.Close()
+			}
+		} else {
 			fi.MIMEType = s.detectFileMIME(itemPath, entry.Name())
 		}
 
@@ -109,6 +116,24 @@ func (s *LocalStorage) Stat(filePath string) (*domain.FileInfo, error) {
 	}
 
 	return fi, nil
+}
+
+// Lstat returns metadata for a single path without following symlinks.
+func (s *LocalStorage) Lstat(filePath string) (*domain.FileInfo, error) {
+	filePath = cleanPath(filePath)
+
+	info, err := s.root.Lstat(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.FileInfo{
+		Name:    info.Name(),
+		Path:    "/" + filePath,
+		IsDir:   info.IsDir(),
+		Size:    info.Size(),
+		ModTime: info.ModTime().Unix(),
+	}, nil
 }
 
 // Open returns a ReadSeekCloser for the file at the given path,

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,13 @@ import (
 	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/domain"
 )
+
+// ConflictInfo describes an existing file that collides with an incoming upload.
+type ConflictInfo struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	ModTime int64  `json:"modTime"`
+}
 
 type FileService struct {
 	storage  *storage.LocalStorage
@@ -279,22 +287,27 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 	return results
 }
 
-// CheckConflicts returns the subset of paths that already exist in targetDir.
-func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) ([]string, error) {
-	var conflicts []string
+// CheckConflicts returns metadata for the subset of paths that already exist in targetDir.
+func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) ([]ConflictInfo, error) {
+	var conflicts []ConflictInfo
 	for _, rp := range relativePaths {
 		clean := path.Clean(strings.TrimLeft(rp, "/"))
 		if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 			return nil, fmt.Errorf("invalid relative path: %q", rp)
 		}
 		fullPath := path.Join(targetDir, clean)
-		exists, err := s.storage.Exists(fullPath)
+		info, err := s.storage.Lstat(fullPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return nil, err
 		}
-		if exists {
-			conflicts = append(conflicts, rp)
-		}
+		conflicts = append(conflicts, ConflictInfo{
+			Path:    rp,
+			Size:    info.Size,
+			ModTime: info.ModTime,
+		})
 	}
 	return conflicts, nil
 }

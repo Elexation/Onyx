@@ -2,11 +2,10 @@ import { request } from "$lib/api";
 import { encodeFilePath } from "$lib/utils";
 import type { DirectoryListing } from "$lib/types";
 
-export async function listDirectory(path: string, showHidden = false): Promise<DirectoryListing> {
+export async function listDirectory(path: string): Promise<DirectoryListing> {
 	const trimmed = path.replace(/^\/+/, "");
 	const normalized = trimmed ? `/${encodeFilePath(trimmed)}` : "/";
-	const params = showHidden ? "?showHidden=true" : "";
-	return request<DirectoryListing>("GET", `/api/files${normalized}${params}`);
+	return request<DirectoryListing>("GET", `/api/files${normalized}?showHidden=true`);
 }
 
 export function getDownloadUrl(path: string): string {

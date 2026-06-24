@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
@@ -12,6 +13,7 @@
 
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
@@ -27,7 +29,7 @@
 	import NewFolderDialog from "$lib/components/dialogs/NewFolderDialog.svelte";
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
-	import ConflictDialog from "$lib/components/dialogs/ConflictDialog.svelte";
+	import ConflictDialog, { type ConflictPair } from "$lib/components/dialogs/ConflictDialog.svelte";
 	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
 	import ShareDialog from "$lib/components/dialogs/ShareDialog.svelte";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
@@ -72,7 +74,7 @@
 
 	// Upload state
 	let conflictOpen = $state(false);
-	let conflictNames = $state<string[]>([]);
+	let conflictPairs = $state<ConflictPair[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
 
 	function handleShareSelected() {
@@ -82,11 +84,11 @@
 		if (item) handleShare(item);
 	}
 
-	async function load(dirPath: string, showHidden: boolean, isCancelled?: () => boolean) {
+	async function load(dirPath: string, isCancelled?: () => boolean) {
 		loading = true;
 		error = null;
 		try {
-			const result = await listDirectory(dirPath, showHidden);
+			const result = await listDirectory(dirPath);
 			if (isCancelled?.()) return;
 			listing = result;
 		} catch (e) {
@@ -100,7 +102,8 @@
 
 	$effect(() => {
 		let cancelled = false;
-		load(path, preferences.showHidden, () => cancelled);
+		load(path, () => cancelled);
+		if (untrack(() => sharesEnabled.enabled)) sharedPaths.refresh();
 		return () => {
 			cancelled = true;
 		};
@@ -164,7 +167,7 @@
 	}
 
 	function refresh() {
-		load(path, preferences.showHidden);
+		load(path);
 	}
 
 	// Actions
@@ -306,6 +309,7 @@
 
 	// Upload handling
 	async function handleUpload(files: File[]) {
+		if (conflictOpen) return;
 		const targetDir = path || "/";
 		const relativePaths = files.map(
 			(f) => (f as any).webkitRelativePath || (f as any).relativePath || f.name,
@@ -314,8 +318,20 @@
 		try {
 			const { conflicts } = await checkConflicts(targetDir, relativePaths);
 			if (conflicts.length > 0) {
+				const incomingByPath = new Map<string, File>();
+				files.forEach((f, i) => incomingByPath.set(relativePaths[i], f));
 				pendingUploadFiles = files;
-				conflictNames = conflicts;
+				conflictPairs = conflicts.map((c) => {
+					const f = incomingByPath.get(c.path);
+					return {
+						path: c.path,
+						existing: { size: c.size, modTime: c.modTime },
+						incoming: {
+							size: f?.size ?? 0,
+							modTime: Math.floor((f?.lastModified ?? 0) / 1000),
+						},
+					};
+				});
 				conflictOpen = true;
 			} else {
 				await addFiles(files, targetDir);
@@ -331,9 +347,10 @@
 	async function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
 		conflictOpen = false;
 		const targetDir = path || "/";
-		await addFiles(pendingUploadFiles, targetDir, resolutions);
-		startUpload().catch(() => {});
+		const filesToUpload = pendingUploadFiles;
 		pendingUploadFiles = [];
+		await addFiles(filesToUpload, targetDir, resolutions);
+		startUpload().catch(() => {});
 	}
 
 	// Refresh file list when uploads complete
@@ -347,7 +364,7 @@
 			const timer = setTimeout(async () => {
 				timers.delete(timer);
 				if (cancelled) return;
-				await load(path, preferences.showHidden);
+				await load(path);
 				if (cancelled) return;
 				if (error) {
 					const retry = setTimeout(() => {
@@ -416,12 +433,32 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
-	class="flex h-full flex-col gap-4 p-4"
+	class="flex h-full flex-col"
 	tabindex={0}
 	role="application"
 	use:shortcuts={shortcutMap}
 >
-	<Breadcrumbs {path} ondrop={handleDrop} />
+	{#if !loading && !error}
+		<div class="border-b border-border px-4 py-3">
+			<FileToolbar
+				onnewfolder={() => (newFolderOpen = true)}
+				onrefresh={refresh}
+				ondelete={() => handleDelete([...selection.items])}
+				onpaste={handlePaste}
+				ondownload={handleDownload}
+				onshare={handleShareSelected}
+				onupload={handleUpload}
+			>
+				{#snippet viewControls()}
+					<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
+				{/snippet}
+			</FileToolbar>
+		</div>
+	{/if}
+
+	<div class="border-b border-border px-4 py-3">
+		<Breadcrumbs {path} ondrop={handleDrop} />
+	</div>
 
 	{#if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
@@ -432,24 +469,9 @@
 			{error}
 		</div>
 	{:else}
-		<FileToolbar
-			onnewfolder={() => (newFolderOpen = true)}
-			onrefresh={refresh}
-			ondelete={() => handleDelete([...selection.items])}
-			onpaste={handlePaste}
-			oncopy={handleCopy}
-			oncut={handleCut}
-			ondownload={handleDownload}
-			onupload={handleUpload}
-		>
-			{#snippet viewControls()}
-				<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
-			{/snippet}
-		</FileToolbar>
-
 		<UploadZone currentDir={path || "/"} onupload={handleUpload}>
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-			<div class="flex min-h-0 flex-1 flex-col" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
+			<div class="flex min-h-0 flex-1 flex-col p-4" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
 				{#if activeView === "grid"}
 					<FileGrid
 						items={sorted}
@@ -554,7 +576,7 @@
 
 {#if conflictOpen}
 	<ConflictDialog
-		conflicts={conflictNames}
+		conflicts={conflictPairs}
 		onresolve={handleConflictResolve}
 	/>
 {/if}

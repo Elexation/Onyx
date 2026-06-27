@@ -6,6 +6,8 @@
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
+	import { Link2 } from "lucide-svelte";
+	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
@@ -92,9 +94,7 @@
 		tabindex={0}
 		role="gridcell"
 	>
-		<div
-			class="flex aspect-square w-full items-center justify-center rounded-lg bg-background"
-		>
+		<div class="mx-auto flex h-24 w-24 items-center justify-center">
 			<FileIcon isDir={true} class="size-12 opacity-50" strokeWidth={1.2} />
 		</div>
 		<span class="w-full truncate text-center text-sm font-medium">..</span>
@@ -114,7 +114,7 @@
 		{#snippet children(triggerProps)}
 			<div
 				{...triggerProps}
-				class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
+				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
 					{isSelected
 					? 'border-accent-brand bg-accent-brand-dim'
 					: 'border-border bg-card hover:border-border-2'}
@@ -131,46 +131,58 @@
 				tabindex={0}
 				role="gridcell"
 			>
-				<div
-					class="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-background"
-				>
-					{#if hasThumbnail}
-						<ThumbnailImage
-							path={item.path}
-							size="large"
-							class="flex h-full w-full items-center justify-center"
-						>
-							{#snippet children()}
-								<FileIcon
-									mimeType={item.mimeType}
-									isDir={false}
-									class="size-10 text-muted-foreground opacity-80"
-									strokeWidth={1.2}
-								/>
-							{/snippet}
-						</ThumbnailImage>
-					{:else}
-						<FileIcon
-							mimeType={item.mimeType}
-							isDir={item.isDir}
-							class={item.isDir ? "size-12 text-accent-brand" : "size-10 text-muted-foreground opacity-80"}
-							strokeWidth={1.2}
-						/>
-						{#if ext}
-							<span
-								class="absolute right-1.5 bottom-1.5 rounded-[3px] bg-muted px-1 py-[1px] font-mono text-[9px] font-semibold tracking-wider text-muted-foreground"
+				<div class="relative mx-auto w-24">
+					<div
+						class="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg"
+					>
+						{#if hasThumbnail}
+							<ThumbnailImage
+								path={item.path}
+								size="large"
+								class="flex h-full w-full items-center justify-center"
 							>
-								{ext}
-							</span>
+								{#snippet children()}
+									<FileIcon
+										mimeType={item.mimeType}
+										name={item.name}
+										isDir={false}
+										class="size-10"
+										strokeWidth={1.2}
+									/>
+								{/snippet}
+							</ThumbnailImage>
+						{:else}
+							<FileIcon
+								mimeType={item.mimeType}
+								name={item.name}
+								isDir={item.isDir}
+								class={item.isDir ? "size-12 text-accent-brand" : "size-10 text-muted-foreground"}
+								strokeWidth={1.2}
+							/>
 						{/if}
+					</div>
+					{#if !hasThumbnail && ext}
+						<span
+							class="absolute -right-[2px] -bottom-[2px] rounded border border-border-2 bg-background px-[5px] py-[1px] font-mono text-[9px] font-semibold tracking-wider text-muted-foreground uppercase"
+						>
+							{ext}
+						</span>
 					{/if}
 				</div>
 				<span class="w-full truncate text-center text-sm font-medium text-foreground">
 					{item.name}
 				</span>
 				<span class="w-full truncate text-center font-mono text-[11px] text-muted-foreground">
-					{item.isDir ? "Folder" : formatFileSize(item.size)}
+					{item.isDir ? `${item.itemCount ?? 0} items` : formatFileSize(item.size)}
 				</span>
+				{#if sharedPaths.has(item.path)}
+					<span
+						class="absolute top-2 right-2 flex size-5 items-center justify-center rounded-full border border-border-2 bg-background text-accent-brand"
+						aria-label="Shared"
+					>
+						<Link2 class="size-[11px]" strokeWidth={2.5} />
+					</span>
+				{/if}
 			</div>
 		{/snippet}
 	</FileContextMenu>

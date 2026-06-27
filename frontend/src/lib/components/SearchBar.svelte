@@ -195,7 +195,11 @@
 					}}
 					onclick={() => navigateTo(result)}
 				>
-					<FileIcon isDir={result.isDir} class="size-4 shrink-0 text-muted-foreground" />
+					<FileIcon
+						isDir={result.isDir}
+						name={result.name}
+						class="size-4 shrink-0 {result.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+					/>
 					<span class="min-w-0 truncate">
 						{#each highlightSegments(result.name, query) as seg}
 							{#if seg.match}<mark

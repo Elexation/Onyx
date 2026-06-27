@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { List, LayoutGrid, Eye, EyeOff } from "lucide-svelte";
-	import { preferences, type ViewMode } from "$lib/stores/preferences.svelte.js";
+	import { List, LayoutGrid } from "lucide-svelte";
+	import type { ViewMode } from "$lib/stores/preferences.svelte.js";
 
 	let {
 		viewMode,
@@ -12,20 +12,6 @@
 </script>
 
 <div class="flex items-center gap-2">
-	<button
-		type="button"
-		class="inline-flex size-[30px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-		onclick={() => (preferences.showHidden = !preferences.showHidden)}
-		title={preferences.showHidden ? "Hide hidden files" : "Show hidden files"}
-		aria-pressed={preferences.showHidden}
-	>
-		{#if preferences.showHidden}
-			<Eye class="size-[15px]" strokeWidth={2} />
-		{:else}
-			<EyeOff class="size-[15px]" strokeWidth={2} />
-		{/if}
-	</button>
-
 	<div class="inline-flex rounded-lg border border-border-2 bg-card p-[2px]">
 		<button
 			type="button"

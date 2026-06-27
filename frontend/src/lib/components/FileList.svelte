@@ -4,7 +4,8 @@
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { ArrowUp, ArrowDown, ChevronRight, MoreVertical } from "lucide-svelte";
+	import { ArrowUp, ArrowDown, ChevronRight, Link2, MoreVertical } from "lucide-svelte";
+	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
@@ -114,14 +115,13 @@
 			<!-- Header: desktop only -->
 			<div
 				bind:this={headerEl}
-				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
 			>
 				{#each columns as col}
 					<button
-						class="inline-flex items-center gap-1 transition-colors hover:text-foreground {col.align ===
-						'right'
-							? 'justify-end text-right'
-							: 'text-left'}"
+						class="inline-flex items-center gap-1 transition-colors hover:text-foreground
+							{preferences.sortField === col.field ? 'text-foreground' : ''}
+							{col.align === 'right' ? 'justify-end text-right' : 'text-left'}"
 						onclick={() => handleSort(col.field)}
 					>
 						{col.label}
@@ -216,6 +216,7 @@
 												{#snippet children()}
 													<FileIcon
 														mimeType={file.mimeType}
+														name={file.name}
 														isDir={false}
 														class="size-4 text-muted-foreground"
 														strokeWidth={1.4}
@@ -225,6 +226,7 @@
 										{:else}
 											<FileIcon
 												mimeType={file.mimeType}
+												name={file.name}
 												isDir={file.isDir}
 												class="size-7 shrink-0 md:size-6 {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 												strokeWidth={1.4}
@@ -233,13 +235,24 @@
 										<span class="min-w-0 flex-1 truncate text-[15px] font-medium md:text-base">
 											{file.name}
 										</span>
-										{#if ext}
-											<span
-												class="hidden shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground md:inline-flex"
-											>
-												{ext}
-											</span>
-										{/if}
+										<div class="flex w-[13px] shrink-0 items-center justify-center">
+											{#if sharedPaths.has(file.path)}
+												<Link2
+													class="size-[13px] text-accent-brand"
+													strokeWidth={2}
+													aria-label="Shared"
+												/>
+											{/if}
+										</div>
+										<div class="hidden w-10 shrink-0 items-center justify-center md:flex">
+											{#if ext}
+												<span
+													class="inline-flex justify-center rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground"
+												>
+													{ext}
+												</span>
+											{/if}
+										</div>
 									</div>
 									<div
 										class="flex shrink-0 items-center gap-2 font-mono text-xs text-muted-foreground md:hidden"

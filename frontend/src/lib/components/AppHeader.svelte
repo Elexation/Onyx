@@ -71,7 +71,7 @@
 				<SearchIcon class="size-[18px]" strokeWidth={2} />
 			</button>
 			<UserChip />
-			<Button variant="ghost" size="icon-sm" onclick={logout} title="Sign out" aria-label="Sign out">
+			<Button variant="ghost" size="icon-sm" onclick={logout} title="Sign out" aria-label="Sign out" class="lg:hidden">
 				<LogOut class="size-[18px]" strokeWidth={2} />
 			</Button>
 		</div>

@@ -6,6 +6,7 @@
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { Switch } from "$lib/components/ui/switch/index.js";
 	import { createShare, getShareByPath, deleteShare } from "$lib/api/shares.js";
+	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { toast } from "svelte-sonner";
 	import { Check, Copy, Link, Loader2 } from "lucide-svelte";
 	import type { ShareLink } from "$lib/types.js";
@@ -81,6 +82,7 @@
 			shareUrl = `${window.location.origin}/s/${result.token}`;
 			existing = null;
 			showCreateForm = false;
+			sharedPaths.add(path);
 			toast.success("Share link created");
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : "Failed to create share";
@@ -98,6 +100,7 @@
 			await deleteShare(existing.id);
 			existing = null;
 			showCreateForm = true;
+			sharedPaths.remove(path);
 			toast.success("Share link revoked");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Failed to revoke share");

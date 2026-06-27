@@ -5,6 +5,17 @@
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { getDownloadUrl } from "$lib/api/files.js";
+	import EyeIcon from "@lucide/svelte/icons/eye";
+	import PencilIcon from "@lucide/svelte/icons/pencil";
+	import CopyIcon from "@lucide/svelte/icons/copy";
+	import ScissorsIcon from "@lucide/svelte/icons/scissors";
+	import ClipboardPasteIcon from "@lucide/svelte/icons/clipboard-paste";
+	import FolderInputIcon from "@lucide/svelte/icons/folder-input";
+	import FolderOutputIcon from "@lucide/svelte/icons/folder-output";
+	import Share2Icon from "@lucide/svelte/icons/share-2";
+	import DownloadIcon from "@lucide/svelte/icons/download";
+	import HistoryIcon from "@lucide/svelte/icons/history";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
 	import type { Snippet } from "svelte";
 
 	let {
@@ -65,21 +76,25 @@
 	<DropdownMenu.Content class="w-52" align="end">
 		{#if item}
 			<DropdownMenu.Item onclick={onopen}>
+				<EyeIcon />
 				Open
 				<DropdownMenu.Shortcut>Enter</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 			{#if selection.count <= 1}
 				<DropdownMenu.Item onclick={onrename}>
+					<PencilIcon />
 					Rename
 					<DropdownMenu.Shortcut>F2</DropdownMenu.Shortcut>
 				</DropdownMenu.Item>
 			{/if}
 			<DropdownMenu.Item onclick={handleCopy}>
+				<CopyIcon />
 				Copy
 				<DropdownMenu.Shortcut>Ctrl+C</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={handleCut}>
+				<ScissorsIcon />
 				Cut
 				<DropdownMenu.Shortcut>Ctrl+X</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
@@ -89,27 +104,44 @@
 		{/if}
 		{#if clipboard.hasItems}
 			<DropdownMenu.Item onclick={onpaste}>
+				<ClipboardPasteIcon />
 				Paste
 				<DropdownMenu.Shortcut>Ctrl+V</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 		{/if}
 		{#if item}
 			<DropdownMenu.Separator />
-			<DropdownMenu.Item onclick={onmoveto}>Move to...</DropdownMenu.Item>
-			<DropdownMenu.Item onclick={oncopyto}>Copy to...</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={onmoveto}>
+				<FolderInputIcon />
+				Move to...
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={oncopyto}>
+				<FolderOutputIcon />
+				Copy to...
+			</DropdownMenu.Item>
 			{#if sharesEnabled.enabled}
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item onclick={onshare}>Share</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={onshare}>
+					<Share2Icon />
+					Share
+				</DropdownMenu.Item>
 			{/if}
 			{#if !item.isDir}
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item onclick={handleDownload}>Download</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={handleDownload}>
+					<DownloadIcon />
+					Download
+				</DropdownMenu.Item>
 				{#if versioningEnabled.enabled}
-					<DropdownMenu.Item onclick={onversions}>Version history</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={onversions}>
+						<HistoryIcon />
+						Version history
+					</DropdownMenu.Item>
 				{/if}
 			{/if}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={ondelete}>
+				<Trash2Icon />
 				Delete
 				<DropdownMenu.Shortcut>Del</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>

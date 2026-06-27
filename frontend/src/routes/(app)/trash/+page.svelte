@@ -307,9 +307,10 @@
 			Loading…
 		</div>
 	{:else if items.length === 0}
-		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-			<Trash2 class="size-12 opacity-30" strokeWidth={1.5} />
-			<p class="text-[15px]">Trash is empty</p>
+		<div class="rounded-xl border border-border bg-card p-12 text-center">
+			<Trash2 class="mx-auto size-8 text-muted-foreground" strokeWidth={1.5} />
+			<div class="mt-3 text-sm font-medium">Trash is empty</div>
+			<div class="mt-1 text-[13px] text-muted-foreground">Deleted items will appear here.</div>
 		</div>
 	{:else if preferences.viewMode === "grid"}
 		<!-- Grid View -->
@@ -338,6 +339,7 @@
 									<div class="flex flex-1 items-center justify-center">
 										<FileIcon
 											isDir={item.isDir}
+											name={itemName(item)}
 											class="size-12 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 											strokeWidth={1.2}
 										/>
@@ -378,7 +380,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
 				onclick={(e) => e.stopPropagation()}
 			>
 				<div class="flex items-center">
@@ -428,6 +430,7 @@
 									<div class="flex min-w-0 items-center gap-3">
 										<FileIcon
 											isDir={item.isDir}
+											name={itemName(item)}
 											class="size-7 shrink-0 md:size-6 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 											strokeWidth={1.4}
 										/>

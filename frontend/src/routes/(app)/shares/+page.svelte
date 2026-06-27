@@ -3,10 +3,11 @@
 	import { toast } from "svelte-sonner";
 	import { listShares, deleteShare } from "$lib/api/shares.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
-	import { formatDate } from "$lib/utils/format.js";
+	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-	import { Link, Link2Off, Trash2, FolderOpen, FileText, Lock } from "lucide-svelte";
+	import { Link, Link2Off, Trash2, Lock } from "lucide-svelte";
+	import FileIcon from "$lib/components/FileIcon.svelte";
 	import type { ShareLink } from "$lib/types.js";
 
 	let shares = $state<ShareLink[]>([]);
@@ -38,6 +39,7 @@
 		submitting = true;
 		try {
 			await deleteShare(deleteTarget.id);
+			sharedPaths.remove(deleteTarget.filePath);
 			shares = shares.filter((s) => s.id !== deleteTarget!.id);
 			toast.success("Share link deleted");
 			deleteConfirmOpen = false;
@@ -92,16 +94,11 @@
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
 			Loading…
 		</div>
-	{:else if shares.length === 0}
-		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-			<Link class="size-12 opacity-30" strokeWidth={1.5} />
-			<p class="text-[15px]">No active share links</p>
-		</div>
 	{:else}
-		<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card {shares.length === 0 ? '' : 'min-h-0 flex-1'}">
 			<!-- Table header (desktop) -->
 			<div
-				class="hidden border-b border-border font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
 			>
 				<div>File</div>
 				<div>Expires</div>
@@ -109,24 +106,24 @@
 				<div></div>
 			</div>
 
-			<!-- Rows -->
-			<div class="flex flex-col overflow-auto">
-				{#each shares as share (share.id)}
+			{#if shares.length === 0}
+				<div class="px-[14px] py-12 text-center text-[13px] text-muted-foreground">
+					No active shares. Create one from a file's context menu.
+				</div>
+			{:else}
+				<!-- Rows -->
+				<div class="flex flex-col overflow-auto">
+					{#each shares as share (share.id)}
 					<div
 						class="group grid items-center border-b border-border transition-colors last:border-b-0 hover:bg-muted grid-cols-[1fr_auto] md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 px-[14px] py-3.5 md:py-[11px]"
 					>
 						<div class="flex min-w-0 items-center gap-3">
-							{#if share.isDir}
-								<FolderOpen
-									class="size-6 shrink-0 text-accent-brand"
-									strokeWidth={1.4}
-								/>
-							{:else}
-								<FileText
-									class="size-6 shrink-0 text-muted-foreground"
-									strokeWidth={1.4}
-								/>
-							{/if}
+							<FileIcon
+								isDir={share.isDir}
+								name={fileName(share.filePath)}
+								class="size-6 shrink-0 {share.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+								strokeWidth={1.4}
+							/>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-[15px] font-medium md:text-base">
 									{fileName(share.filePath)}
@@ -172,8 +169,9 @@
 							</Button>
 						</div>
 					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>

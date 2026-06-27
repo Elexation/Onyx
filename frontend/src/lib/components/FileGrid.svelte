@@ -32,7 +32,7 @@
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
 	const minItemWidth = 148;
-	const itemHeight = 210;
+	const itemHeight = 168;
 	const gap = 10;
 
 	$effect(() => {

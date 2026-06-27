@@ -43,7 +43,7 @@
 
 	async function loadChildren(parentPath: string) {
 		try {
-			const listing = await listDirectory(parentPath, false);
+			const listing = await listDirectory(parentPath);
 			const dirs = listing.items
 				.filter((f) => f.isDir)
 				.map((f): TreeNode => ({

@@ -6,7 +6,6 @@ interface Preferences {
 	viewMode: ViewMode;
 	sortField: SortField;
 	sortDir: SortDir;
-	showHidden: boolean;
 }
 
 const STORAGE_KEY = "onyx-preferences";
@@ -15,7 +14,6 @@ const DEFAULTS: Preferences = {
 	viewMode: "list",
 	sortField: "name",
 	sortDir: "asc",
-	showHidden: false,
 };
 
 function loadPreferences(): Preferences {
@@ -43,7 +41,4 @@ export const preferences = {
 
 	get sortDir() { return prefs.sortDir; },
 	set sortDir(v: SortDir) { prefs.sortDir = v; save(prefs); },
-
-	get showHidden() { return prefs.showHidden; },
-	set showHidden(v: boolean) { prefs.showHidden = v; save(prefs); },
 };

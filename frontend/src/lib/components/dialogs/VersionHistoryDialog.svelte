@@ -87,8 +87,8 @@
 					{#each versions as v (v.id)}
 						<li class="flex items-center justify-between gap-3 px-3 py-2.5">
 							<div class="min-w-0 flex-1">
-								<p class="truncate font-mono text-[13px] text-foreground">{formatDate(v.createdAt)}</p>
-								<p class="font-mono text-[11px] text-muted-foreground">{formatFileSize(v.size)}</p>
+								<p class="truncate text-[13px] tabular-nums text-foreground">{formatDate(v.createdAt)}</p>
+								<p class="text-[11px] tabular-nums text-muted-foreground">{formatFileSize(v.size)}</p>
 							</div>
 							<div class="flex shrink-0 gap-2">
 								<Button

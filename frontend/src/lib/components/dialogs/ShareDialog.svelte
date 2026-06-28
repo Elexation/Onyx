@@ -203,20 +203,20 @@
 				<div class="rounded-lg border border-border bg-background p-3 space-y-2 text-sm">
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Created</span>
-						<span class="font-mono text-[13px]">{formatDate(existing.createdAt)}</span>
+						<span class="text-[13px] tabular-nums">{formatDate(existing.createdAt)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Expires</span>
-						<span class="font-mono text-[13px]">{formatExpiry(existing)}</span>
+						<span class="text-[13px] tabular-nums">{formatExpiry(existing)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Downloads</span>
-						<span class="font-mono text-[13px]">{existing.downloadCount}</span>
+						<span class="text-[13px] tabular-nums">{existing.downloadCount}</span>
 					</div>
 					{#if existing.hasPassword}
 						<div class="flex justify-between">
 							<span class="text-muted-foreground">Password</span>
-							<span class="font-mono text-[13px]">Yes</span>
+							<span class="text-[13px]">Yes</span>
 						</div>
 					{/if}
 				</div>

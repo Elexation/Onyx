@@ -115,7 +115,7 @@
 			<!-- Header: desktop only -->
 			<div
 				bind:this={headerEl}
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
 			>
 				{#each columns as col}
 					<button
@@ -255,7 +255,7 @@
 										</div>
 									</div>
 									<div
-										class="flex shrink-0 items-center gap-2 font-mono text-xs text-muted-foreground md:hidden"
+										class="flex shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground md:hidden"
 									>
 										{file.isDir ? "—" : formatFileSize(file.size)}
 										{#if file.isDir}
@@ -263,12 +263,12 @@
 										{/if}
 									</div>
 									<div
-										class="hidden text-right font-mono text-[13px] text-muted-foreground md:block"
+										class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block"
 									>
 										{file.isDir ? "—" : formatFileSize(file.size)}
 									</div>
 									<div
-										class="hidden text-right font-mono text-[13px] text-muted-foreground md:block"
+										class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block"
 									>
 										{formatDate(file.modTime)}
 									</div>

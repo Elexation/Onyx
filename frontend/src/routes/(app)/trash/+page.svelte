@@ -241,7 +241,7 @@
 			<Trash2 class="size-5 text-muted-foreground" strokeWidth={2} />
 			<h1 class="text-lg font-bold tracking-[-0.01em]">Trash</h1>
 			{#if items.length > 0}
-				<span class="font-mono text-[13px] text-muted-foreground">
+				<span class="text-[13px] tabular-nums text-muted-foreground">
 					{items.length} {items.length === 1 ? "item" : "items"}
 				</span>
 			{/if}
@@ -249,7 +249,7 @@
 
 		{#if selected.size > 0}
 			<div class="flex items-center gap-1 rounded-lg border border-border-2 bg-card px-2 py-1">
-				<span class="font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
+				<span class="text-[11px] font-medium tabular-nums tracking-[0.02em] text-muted-foreground">
 					{selected.size} selected
 				</span>
 				<Button variant="ghost" size="icon-xs" onclick={(e) => { e.stopPropagation(); handleBulkRestore(); }} title="Restore">
@@ -347,9 +347,9 @@
 									<span class="w-full truncate text-center text-sm font-medium">
 										{itemName(item)}
 									</span>
-									<div class="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+									<div class="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
 										{#if ext}
-											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-medium tracking-[0.02em]">
+											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-mono font-medium tracking-[0.02em]">
 												{ext}
 											</span>
 										{/if}
@@ -380,7 +380,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
 				onclick={(e) => e.stopPropagation()}
 			>
 				<div class="flex items-center">
@@ -445,16 +445,16 @@
 											</span>
 										{/if}
 									</div>
-									<div class="flex shrink-0 items-center font-mono text-xs text-muted-foreground md:hidden">
+									<div class="flex shrink-0 items-center text-xs tabular-nums text-muted-foreground md:hidden">
 										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
 									<div class="hidden truncate font-mono text-[13px] text-muted-foreground md:block">
 										{parent}
 									</div>
-									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
 										{formatDate(item.deletedAt)}
 									</div>
-									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
 										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
 								</div>

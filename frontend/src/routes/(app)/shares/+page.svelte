@@ -77,7 +77,7 @@
 		<Link class="size-5 text-muted-foreground" strokeWidth={2} />
 		<h1 class="text-lg font-bold tracking-[-0.01em]">Shares</h1>
 		{#if shares.length > 0}
-			<span class="font-mono text-[13px] text-muted-foreground">
+			<span class="text-[13px] tabular-nums text-muted-foreground">
 				{shares.length} {shares.length === 1 ? "link" : "links"}
 			</span>
 		{/if}
@@ -98,7 +98,7 @@
 		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card {shares.length === 0 ? '' : 'min-h-0 flex-1'}">
 			<!-- Table header (desktop) -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
 			>
 				<div>File</div>
 				<div>Expires</div>
@@ -140,7 +140,7 @@
 								/>
 							{/if}
 						</div>
-						<div class="flex shrink-0 items-center justify-end font-mono text-[13px] text-muted-foreground md:hidden">
+						<div class="flex shrink-0 items-center justify-end text-[13px] tabular-nums text-muted-foreground md:hidden">
 							<Button
 								variant="ghost"
 								size="icon-xs"
@@ -151,10 +151,10 @@
 								<Trash2 class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
-						<div class="hidden font-mono text-[13px] text-muted-foreground md:block">
+						<div class="hidden text-[13px] tabular-nums text-muted-foreground md:block">
 							{formatExpiry(share)}
 						</div>
-						<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+						<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
 							{share.downloadCount}
 						</div>
 						<div class="hidden text-right md:block">

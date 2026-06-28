@@ -214,7 +214,7 @@
 						<Folder class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
 						<div class="min-w-0">
 							<div class="truncate text-[15px] font-medium">{fileName}</div>
-							<div class="font-mono text-[13px] text-muted-foreground">
+							<div class="text-[13px] tabular-nums text-muted-foreground">
 								{items.length} item{items.length !== 1 ? "s" : ""} · {formatFileSize(totalSize)}
 							</div>
 						</div>
@@ -233,7 +233,7 @@
 					</div>
 				{:else}
 					<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
-						<div class="hidden border-b border-border px-[14px] py-2.5 font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_100px_40px] md:gap-3">
+						<div class="hidden border-b border-border px-[14px] py-2.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_100px_40px] md:gap-3">
 							<div>Name</div>
 							<div class="text-right">Size</div>
 							<div></div>
@@ -251,7 +251,7 @@
 										/>
 										<span class="truncate text-[15px]">{item.name}</span>
 									</div>
-									<div class="hidden text-right font-mono text-[13px] md:block">—</div>
+									<div class="hidden text-right text-[13px] tabular-nums md:block">—</div>
 									<div class="hidden md:block"></div>
 								</div>
 							{:else}
@@ -273,7 +273,7 @@
 											</span>
 										{/if}
 									</div>
-									<div class="hidden text-right font-mono text-[13px] text-muted-foreground md:block">
+									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
 										{formatFileSize(item.size)}
 									</div>
 									<div class="hidden items-center justify-end md:flex">
@@ -296,7 +296,7 @@
 				{/if}
 
 				{#if expiresAt > 0}
-					<div class="mt-2 text-center font-mono text-[11px] text-muted-foreground">
+					<div class="mt-2 text-center text-[11px] tabular-nums text-muted-foreground">
 						Expires {formatRelativeExpiry(expiresAt)}
 					</div>
 				{/if}
@@ -332,9 +332,9 @@
 								</div>
 								<div class="flex min-w-0 flex-col items-center gap-1">
 									<div class="w-full truncate text-[15px] font-medium">{fileName}</div>
-									<div class="flex items-center gap-2 font-mono text-[13px] text-muted-foreground">
+									<div class="flex items-center gap-2 text-[13px] tabular-nums text-muted-foreground">
 										{#if ext}
-											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 text-[11px] font-medium tracking-[0.02em]">
+											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em]">
 												{ext}
 											</span>
 										{/if}
@@ -359,7 +359,7 @@
 						</Card.Content>
 					</Card.Root>
 					{#if expiresAt > 0}
-						<div class="mt-2 text-center font-mono text-[11px] text-muted-foreground">
+						<div class="mt-2 text-center text-[11px] tabular-nums text-muted-foreground">
 							Expires {formatRelativeExpiry(expiresAt)}
 						</div>
 					{/if}

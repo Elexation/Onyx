@@ -172,7 +172,7 @@
 				<span class="w-full truncate text-center text-sm font-medium text-foreground">
 					{item.name}
 				</span>
-				<span class="w-full truncate text-center font-mono text-[11px] text-muted-foreground">
+				<span class="w-full truncate text-center text-[11px] tabular-nums text-muted-foreground">
 					{item.isDir ? `${item.itemCount ?? 0} items` : formatFileSize(item.size)}
 				</span>
 				{#if sharedPaths.has(item.path)}

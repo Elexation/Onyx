@@ -4,6 +4,7 @@
 	import { FolderOpen, Link as LinkIcon, Trash2, Settings } from "lucide-svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import StorageMeter from "./StorageMeter.svelte";
 
@@ -20,10 +21,16 @@
 	];
 
 	onMount(() => {
-		trashCount.startPolling();
 		sharesEnabled.refresh();
+		trashEnabled.refresh();
 		versioningEnabled.refresh();
-		return () => trashCount.stopPolling();
+	});
+
+	$effect(() => {
+		if (trashEnabled.enabled) {
+			trashCount.startPolling();
+			return () => trashCount.stopPolling();
+		}
 	});
 
 	function activeFor(href: string) {
@@ -36,10 +43,16 @@
 >
 	<nav class="flex flex-col gap-[2px]">
 		{#each links as link}
-			{@const disabled = link.href === "/shares" && !sharesEnabled.enabled}
+			{@const disabled =
+				(link.href === "/shares" && !sharesEnabled.enabled) ||
+				(link.href === "/trash" && !trashEnabled.enabled)}
 			{@const active = activeFor(link.href)}
 			{#if disabled}
 				<span
+					aria-disabled="true"
+					title={link.href === "/trash"
+						? "Trash is disabled. Enable it in Settings."
+						: "Sharing is disabled. Enable it in Settings."}
 					class="flex min-h-[38px] cursor-not-allowed items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium text-muted-foreground/40"
 				>
 					<link.icon class="size-[17px]" strokeWidth={2} />

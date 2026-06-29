@@ -4,7 +4,6 @@
 	import { goto } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
 	import { checkConflicts } from "$lib/api/upload.js";
-	import { getSettings } from "$lib/api/settings.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
@@ -12,6 +11,7 @@
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
+	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
@@ -56,10 +56,6 @@
 	let previewFile = $state<FileInfo | null>(null);
 	let shareOpen = $state(false);
 	let shareTarget = $state<FileInfo | null>(null);
-
-	// Trash setting
-	let trashEnabled = $state(true);
-	getSettings().then((s) => { trashEnabled = s["trash.enabled"] !== "false"; }).catch(() => {});
 
 	// Background context menu state
 	let bgMenuOpen = $state(false);
@@ -563,7 +559,7 @@
 <DeleteDialog
 	bind:open={deleteOpen}
 	paths={deletePaths}
-	{trashEnabled}
+	trashEnabled={trashEnabled.enabled}
 	onsuccess={handleDeleteSuccess}
 />
 

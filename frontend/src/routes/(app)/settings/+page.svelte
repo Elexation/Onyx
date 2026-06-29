@@ -6,6 +6,7 @@
 	import { versionCount } from "$lib/api/versions";
 	import { listTokens, revokeToken } from "$lib/api/tokens";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
+	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from "$lib/components/ui/tabs/index.js";
 	import { Switch } from "$lib/components/ui/switch/index.js";
@@ -95,6 +96,9 @@
 		if (key === "versions.enabled") {
 			versioningEnabled.set(checked);
 			versioningChecked = checked;
+		}
+		if (key === "trash.enabled") {
+			trashEnabled.set(checked);
 		}
 	}
 

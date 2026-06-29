@@ -13,7 +13,8 @@
 	import VirtualList from "$lib/components/VirtualList.svelte";
 	import VirtualGrid from "$lib/components/VirtualGrid.svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
-	import { Trash2, RotateCcw, List, LayoutGrid } from "lucide-svelte";
+	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
+	import { Trash2, RotateCcw, List, LayoutGrid, Info } from "lucide-svelte";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -301,10 +302,26 @@
 		</div>
 	</div>
 
+	<!-- Disabled banner (items still present after disable) -->
+	{#if !trashEnabled.enabled && items.length > 0 && !loading}
+		<div class="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-[13px] text-muted-foreground">
+			<Info class="mt-px size-4 shrink-0" strokeWidth={2} />
+			<span>
+				Trash is disabled — new deletions are permanent. Existing items can still be restored or purged.
+			</span>
+		</div>
+	{/if}
+
 	<!-- Content -->
 	{#if loading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
 			Loading…
+		</div>
+	{:else if !trashEnabled.enabled && items.length === 0}
+		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
+			<Trash2 class="size-12 opacity-30" strokeWidth={1.5} />
+			<p class="text-[15px]">Trash is disabled</p>
+			<p class="text-[13px]">Enable it in Settings to keep deleted files recoverable.</p>
 		</div>
 	{:else if items.length === 0}
 		<div class="rounded-xl border border-border bg-card p-12 text-center">

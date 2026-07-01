@@ -6,7 +6,7 @@
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-	import { Link, Link2Off, Trash2, Lock } from "lucide-svelte";
+	import { Link, Link2Off, X, Lock } from "lucide-svelte";
 	import FileIcon from "$lib/components/FileIcon.svelte";
 	import type { ShareLink } from "$lib/types.js";
 
@@ -71,7 +71,7 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-4 p-4">
+<div class="flex flex-col gap-4 p-4">
 	<!-- Header -->
 	<div class="flex items-center gap-2">
 		<Link class="size-5 text-muted-foreground" strokeWidth={2} />
@@ -95,15 +95,15 @@
 			Loading…
 		</div>
 	{:else}
-		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card {shares.length === 0 ? '' : 'min-h-0 flex-1'}">
+		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
 			<!-- Table header (desktop) -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_60px] md:gap-3 md:px-[14px] md:py-2.5"
 			>
 				<div>File</div>
-				<div>Expires</div>
-				<div class="text-right">Downloads</div>
-				<div></div>
+				<div class="text-center">Access</div>
+				<div class="text-center">Expires</div>
+				<div class="text-center"></div>
 			</div>
 
 			{#if shares.length === 0}
@@ -112,10 +112,10 @@
 				</div>
 			{:else}
 				<!-- Rows -->
-				<div class="flex flex-col overflow-auto">
+				<div class="flex flex-col">
 					{#each shares as share (share.id)}
 					<div
-						class="group grid items-center border-b border-border transition-colors last:border-b-0 hover:bg-muted grid-cols-[1fr_auto] md:grid-cols-[minmax(0,1fr)_140px_120px_60px] md:gap-3 px-[14px] py-3.5 md:py-[11px]"
+						class="grid items-center border-b border-border transition-colors last:border-b-0 grid-cols-[1fr_auto] md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_60px] md:gap-3 px-[14px] py-3.5 md:py-[11px]"
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							<FileIcon
@@ -132,40 +132,42 @@
 									{parentDir(share.filePath)}
 								</p>
 							</div>
+						</div>
+						<div class="hidden text-center md:block">
 							{#if share.hasPassword}
-								<Lock
-									class="size-3.5 shrink-0 text-muted-foreground"
-									strokeWidth={2}
-									aria-label="Password protected"
-								/>
+								<span class="inline-flex items-center gap-1 rounded-md border border-border-2 bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+									<Lock class="size-2.5" strokeWidth={2.5} />
+									password
+								</span>
+							{:else}
+								<span class="inline-flex items-center rounded-md border border-border-2 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+									public
+								</span>
 							{/if}
 						</div>
 						<div class="flex shrink-0 items-center justify-end text-[13px] tabular-nums text-muted-foreground md:hidden">
 							<Button
 								variant="ghost"
 								size="icon-xs"
-								class="text-muted-foreground hover:text-destructive"
+								class="cursor-pointer"
 								onclick={() => confirmDelete(share)}
 								title="Revoke link"
 							>
-								<Trash2 class="size-3.5" strokeWidth={2} />
+								<X class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
-						<div class="hidden text-[13px] tabular-nums text-muted-foreground md:block">
+						<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
 							{formatExpiry(share)}
 						</div>
-						<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
-							{share.downloadCount}
-						</div>
-						<div class="hidden text-right md:block">
+						<div class="hidden text-center md:block">
 							<Button
 								variant="ghost"
 								size="icon-xs"
-								class="text-muted-foreground hover:text-destructive"
+								class="cursor-pointer"
 								onclick={() => confirmDelete(share)}
 								title="Revoke link"
 							>
-								<Trash2 class="size-3.5" strokeWidth={2} />
+								<X class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
 					</div>

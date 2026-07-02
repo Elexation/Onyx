@@ -61,6 +61,10 @@
 		return `${Math.ceil(remaining / 86400)}d`;
 	}
 
+	function isExpired(share: ShareLink): boolean {
+		return !!share.expiresAt && share.expiresAt <= Date.now() / 1000;
+	}
+
 	function fileName(path: string): string {
 		return path.split("/").pop() ?? path;
 	}
@@ -156,8 +160,16 @@
 								<X class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
-						<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
-							{formatExpiry(share)}
+						<div class="hidden text-center md:block">
+							{#if isExpired(share)}
+								<span class="inline-flex items-center rounded-md border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+									Expired
+								</span>
+							{:else}
+								<span class="text-[13px] tabular-nums text-muted-foreground">
+									{formatExpiry(share)}
+								</span>
+							{/if}
 						</div>
 						<div class="hidden text-center md:block">
 							<Button

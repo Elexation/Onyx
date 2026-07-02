@@ -40,6 +40,7 @@
 		{ value: "168h", label: "7 days" },
 		{ value: "720h", label: "30 days" },
 		{ value: "2160h", label: "90 days" },
+		{ value: "never", label: "Never" },
 	];
 
 	const selectedLabel = $derived(
@@ -76,7 +77,7 @@
 			const result = await createShare({
 				path,
 				isDir,
-				expiresIn,
+				expiresIn: expiresIn === "never" ? undefined : expiresIn,
 				password: usePassword ? password : undefined,
 			});
 			shareUrl = `${window.location.origin}/s/${result.token}`;

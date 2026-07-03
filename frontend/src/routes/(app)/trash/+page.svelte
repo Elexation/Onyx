@@ -2,19 +2,16 @@
 	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 	import { listTrash, restoreTrashItem, permanentDeleteTrashItem, emptyTrash } from "$lib/api/trash.js";
+	import { getSettings } from "$lib/api/settings.js";
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
 	import type { TrashItem } from "$lib/types";
-	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
-	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import FileIcon from "$lib/components/FileIcon.svelte";
-	import VirtualList from "$lib/components/VirtualList.svelte";
-	import VirtualGrid from "$lib/components/VirtualGrid.svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
-	import { Trash2, RotateCcw, List, LayoutGrid, Info } from "lucide-svelte";
+	import { Trash2, RotateCcw, Info } from "lucide-svelte";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -28,9 +25,55 @@
 	let selected = $state<Set<string>>(new Set());
 	let lastSelected = $state<string | null>(null);
 
+	// Auto-purge config — drives header subtitle and per-row "purges in" cell.
+	// `null` = settings fetch failed; hide subtitle/cell.
+	let purgeAgeHours = $state<number | null>(null);
+
 	const allIds = $derived(items.map((i) => i.id));
-	const allSelected = $derived(items.length > 0 && selected.size === items.length);
-	const someSelected = $derived(selected.size > 0 && selected.size < items.length);
+
+	// Parse a Go duration string ("720h", "30m", "0", "1h30m") into hours.
+	// Bare numbers are treated as seconds (Go convention).
+	function parseDurationHours(s: string): number {
+		if (!s) return 0;
+		let totalSec = 0;
+		let any = false;
+		const re = /(\d+(?:\.\d+)?)(h|m|s)/g;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(s)) !== null) {
+			any = true;
+			const n = parseFloat(m[1]);
+			if (m[2] === "h") totalSec += n * 3600;
+			else if (m[2] === "m") totalSec += n * 60;
+			else totalSec += n;
+		}
+		if (!any) {
+			const n = parseFloat(s);
+			if (!isNaN(n)) return n / 3600;
+		}
+		return totalSec / 3600;
+	}
+
+	const purgeSubtitle = $derived.by(() => {
+		if (purgeAgeHours === null) return null;
+		if (purgeAgeHours <= 0) return "Items never auto-purge.";
+		if (purgeAgeHours >= 24) {
+			const days = Math.floor(purgeAgeHours / 24);
+			return `Items auto-purge after ${days} ${days === 1 ? "day" : "days"}.`;
+		}
+		const h = Math.floor(purgeAgeHours);
+		return `Items auto-purge after ${h} ${h === 1 ? "hour" : "hours"}.`;
+	});
+
+	function purgesIn(deletedAt: number): string {
+		if (purgeAgeHours === null || purgeAgeHours <= 0) return "—";
+		const purgeAtMs = deletedAt * 1000 + purgeAgeHours * 3600 * 1000;
+		const remainingMs = purgeAtMs - Date.now();
+		if (remainingMs <= 0) return "purges soon";
+		const days = Math.ceil(remainingMs / 86400000);
+		if (days >= 1) return `purges in ${days}d`;
+		const hours = Math.ceil(remainingMs / 3600000);
+		return `purges in ${hours}h`;
+	}
 
 	function handleItemClick(e: MouseEvent, item: TrashItem) {
 		e.stopPropagation();
@@ -64,22 +107,6 @@
 		}
 	}
 
-	function toggleItem(id: string) {
-		const next = new Set(selected);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selected = next;
-		lastSelected = id;
-	}
-
-	function toggleSelectAll() {
-		if (allSelected) {
-			selected = new Set();
-		} else {
-			selected = new Set(allIds);
-		}
-	}
-
 	function clearSelection() {
 		selected = new Set();
 		lastSelected = null;
@@ -93,11 +120,22 @@
 		return item.originalPath.split("/").pop() ?? "";
 	}
 
+	function parentDir(path: string): string {
+		const i = path.lastIndexOf("/");
+		return i <= 0 ? "/" : path.substring(0, i);
+	}
+
 	async function load() {
 		try {
-			const res = await listTrash();
-			items = res.items;
+			const [trashRes, settings] = await Promise.all([
+				listTrash(),
+				getSettings().catch(() => null),
+			]);
+			items = trashRes.items;
 			trashCount.set(items.length);
+			if (settings) {
+				purgeAgeHours = parseDurationHours(settings["trash.purge_age"] ?? "720h");
+			}
 		} catch {
 			toast.error("Failed to load trash");
 		} finally {
@@ -235,72 +273,63 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="flex h-full flex-col gap-4 p-4" onclick={clearSelection}>
-	<!-- Toolbar -->
+<div class="flex min-h-full flex-col gap-4 p-4" onclick={clearSelection}>
+	<!-- Header (always visible) -->
 	<div class="flex items-center gap-3">
-		<div class="flex items-center gap-2">
-			<Trash2 class="size-5 text-muted-foreground" strokeWidth={2} />
-			<h1 class="text-lg font-bold tracking-[-0.01em]">Trash</h1>
-			{#if items.length > 0}
-				<span class="text-[13px] tabular-nums text-muted-foreground">
-					{items.length} {items.length === 1 ? "item" : "items"}
-				</span>
+		<div class="flex flex-1 flex-col">
+			<div class="flex items-center gap-2">
+				<Trash2 class="size-5 text-muted-foreground" strokeWidth={2} />
+				<h1 class="text-lg font-bold tracking-[-0.01em]">Trash</h1>
+				{#if items.length > 0}
+					<span class="text-[13px] tabular-nums text-muted-foreground">
+						{items.length} {items.length === 1 ? "item" : "items"}
+					</span>
+				{/if}
+			</div>
+			{#if purgeSubtitle}
+				<p class="mt-1 text-[13px] text-muted-foreground">{purgeSubtitle}</p>
 			{/if}
 		</div>
 
-		{#if selected.size > 0}
-			<div class="flex items-center gap-1 rounded-lg border border-border-2 bg-card px-2 py-1">
-				<span class="text-[11px] font-medium tabular-nums tracking-[0.02em] text-muted-foreground">
-					{selected.size} selected
-				</span>
-				<Button variant="ghost" size="icon-xs" onclick={(e) => { e.stopPropagation(); handleBulkRestore(); }} title="Restore">
-					<RotateCcw class="size-3.5" strokeWidth={2} />
-				</Button>
-				<Button
-					variant="ghost"
-					size="icon-xs"
-					class="text-muted-foreground hover:text-destructive"
-					onclick={(e) => { e.stopPropagation(); confirmBulkDelete(); }}
-					title="Delete permanently"
-				>
-					<Trash2 class="size-3.5" strokeWidth={2} />
-				</Button>
-			</div>
-		{/if}
-
 		{#if items.length > 0}
-			<Button variant="destructive" size="sm" onclick={(e) => { e.stopPropagation(); emptyConfirmOpen = true; }}>
-				Empty Trash
+			<Button
+				variant="destructive"
+				size="default"
+				onclick={(e) => { e.stopPropagation(); emptyConfirmOpen = true; }}
+			>
+				<Trash2 class="size-4" strokeWidth={2} />
+				<span>Empty trash</span>
 			</Button>
 		{/if}
-
-		<div class="ml-auto inline-flex rounded-lg border border-border-2 bg-card p-[2px]">
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors {preferences.viewMode ===
-				'grid'
-					? 'bg-muted text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={(e) => { e.stopPropagation(); preferences.viewMode = "grid"; }}
-				title="Grid view"
-				aria-pressed={preferences.viewMode === "grid"}
-			>
-				<LayoutGrid class="size-[15px]" strokeWidth={2} />
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition-colors {preferences.viewMode ===
-				'list'
-					? 'bg-muted text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={(e) => { e.stopPropagation(); preferences.viewMode = "list"; }}
-				title="List view"
-				aria-pressed={preferences.viewMode === "list"}
-			>
-				<List class="size-[15px]" strokeWidth={2} />
-			</button>
-		</div>
 	</div>
+
+	<!-- Selection toolbar (only when active) -->
+	{#if selected.size > 0}
+		<div class="flex items-center gap-2">
+			<span
+				class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-[13px] font-medium tabular-nums text-accent-brand"
+			>
+				{selected.size} selected
+			</span>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={(e) => { e.stopPropagation(); handleBulkRestore(); }}
+			>
+				<RotateCcw class="size-[15px]" strokeWidth={2} />
+				<span>Restore</span>
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+				onclick={(e) => { e.stopPropagation(); confirmBulkDelete(); }}
+			>
+				<Trash2 class="size-[15px]" strokeWidth={2} />
+				<span>Delete permanently</span>
+			</Button>
+		</div>
+	{/if}
 
 	<!-- Disabled banner (items still present after disable) -->
 	{#if !trashEnabled.enabled && items.length > 0 && !loading}
@@ -329,150 +358,81 @@
 			<div class="mt-3 text-sm font-medium">Trash is empty</div>
 			<div class="mt-1 text-[13px] text-muted-foreground">Deleted items will appear here.</div>
 		</div>
-	{:else if preferences.viewMode === "grid"}
-		<!-- Grid View -->
-		<div class="flex min-h-0 flex-1 flex-col">
-			<VirtualGrid items={items}>
-				{#snippet cell({ item: raw })}
-					{@const item = raw as TrashItem}
-					{@const isSelected = selected.has(item.id)}
-					{@const lastDot = itemName(item).lastIndexOf(".")}
-					{@const ext = !item.isDir && lastDot > 0
-						? itemName(item).slice(lastDot + 1, lastDot + 5).toUpperCase()
-						: null}
-					<ContextMenu.Root>
-						<ContextMenu.Trigger>
-							{#snippet child({ props })}
-								<div
-									{...props}
-									class="relative flex h-full cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 transition-colors select-none
-										{isSelected
-											? 'border-accent-brand bg-accent-brand-dim'
-											: 'border-border hover:border-border-2 hover:bg-muted'}"
-									onclick={(e) => handleItemClick(e, item)}
-									role="gridcell"
-									tabindex={0}
-								>
-									<div class="flex flex-1 items-center justify-center">
-										<FileIcon
-											isDir={item.isDir}
-											name={itemName(item)}
-											class="size-12 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
-											strokeWidth={1.2}
-										/>
-									</div>
-									<span class="w-full truncate text-center text-sm font-medium">
-										{itemName(item)}
-									</span>
-									<div class="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-										{#if ext}
-											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-mono font-medium tracking-[0.02em]">
-												{ext}
-											</span>
-										{/if}
-										{#if !item.isDir}
-											<span>{formatFileSize(item.size)}</span>
-										{/if}
-									</div>
-								</div>
-							{/snippet}
-						</ContextMenu.Trigger>
-						<ContextMenu.Content class="w-48">
-							<ContextMenu.Item onclick={() => handleContextRestore(item)}>
-								{selected.has(item.id) && selected.size > 1 ? `Restore ${selected.size} items` : "Restore"}
-							</ContextMenu.Item>
-							<ContextMenu.Separator />
-							<ContextMenu.Item variant="destructive" onclick={() => handleContextDelete(item)}>
-								{selected.has(item.id) && selected.size > 1 ? `Delete ${selected.size} items` : "Delete permanently"}
-							</ContextMenu.Item>
-						</ContextMenu.Content>
-					</ContextMenu.Root>
-				{/snippet}
-			</VirtualGrid>
-		</div>
 	{:else}
-		<!-- List View -->
-		<div
-			class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card"
-		>
+		<!-- List -->
+		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+			<!-- Table header (desktop) -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 md:px-[14px] md:py-2.5"
 				onclick={(e) => e.stopPropagation()}
 			>
-				<div class="flex items-center">
-					<Checkbox
-						checked={allSelected}
-						indeterminate={!allSelected && someSelected}
-						onCheckedChange={toggleSelectAll}
-					/>
-				</div>
 				<div>Name</div>
-				<div>Original Location</div>
-				<div class="text-right">Deleted</div>
-				<div class="text-right">Size</div>
+				<div class="text-center">Deleted</div>
+				<div class="text-center">Size</div>
+				<div class="text-center">Purges in</div>
+				<div></div>
 			</div>
 
-			<VirtualList items={items} estimateSize={() => 48}>
-				{#snippet row({ item: raw, style })}
-					{@const item = raw as TrashItem}
+			<!-- Rows -->
+			<div class="flex flex-col">
+				{#each items as item (item.id)}
 					{@const isSelected = selected.has(item.id)}
-					{@const lastDot = itemName(item).lastIndexOf(".")}
-					{@const ext = !item.isDir && lastDot > 0
-						? itemName(item).slice(lastDot + 1, lastDot + 5).toUpperCase()
-						: null}
-					{@const parent = item.originalPath.substring(0, item.originalPath.lastIndexOf("/")) || "/"}
+					{@const parent = parentDir(item.originalPath)}
 					<ContextMenu.Root>
 						<ContextMenu.Trigger>
 							{#snippet child({ props })}
 								<div
 									{...props}
-									class="grid cursor-pointer items-center border-b border-border transition-colors select-none grid-cols-[1fr_auto] md:grid-cols-[40px_minmax(0,1fr)_220px_160px_110px] md:gap-3 px-[14px] py-3.5 md:py-[11px]
-										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted'}"
-									{style}
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 grid-cols-[1fr_auto] md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 px-[14px] py-2.5 md:py-2
+										{isSelected ? 'bg-accent-brand-dim' : ''}"
 									onclick={(e) => handleItemClick(e, item)}
 									role="row"
 									tabindex={0}
 								>
-									<div
-										class="hidden items-center md:flex"
-										onclick={(e) => e.stopPropagation()}
-										role="presentation"
-									>
-										<Checkbox
-											checked={isSelected}
-											onCheckedChange={() => toggleItem(item.id)}
-										/>
-									</div>
 									<div class="flex min-w-0 items-center gap-3">
 										<FileIcon
 											isDir={item.isDir}
 											name={itemName(item)}
-											class="size-7 shrink-0 md:size-6 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+											class="size-8 shrink-0 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 											strokeWidth={1.4}
 										/>
-										<span class="min-w-0 flex-1 truncate text-[15px] font-medium md:text-base">
-											{itemName(item)}
-										</span>
-										{#if ext}
-											<span
-												class="hidden shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground md:inline-flex"
-											>
-												{ext}
+										<div class="flex min-w-0 flex-1 flex-col">
+											<span class="truncate text-[15px] font-medium md:text-[15px]">
+												{itemName(item)}
 											</span>
-										{/if}
+											<span
+												class="truncate font-mono text-[11px] text-muted-foreground"
+												title={item.originalPath}
+											>
+												{parent}
+											</span>
+										</div>
 									</div>
 									<div class="flex shrink-0 items-center text-xs tabular-nums text-muted-foreground md:hidden">
 										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
-									<div class="hidden truncate font-mono text-[13px] text-muted-foreground md:block">
-										{parent}
-									</div>
-									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
 										{formatDate(item.deletedAt)}
 									</div>
-									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
 										{item.isDir ? "—" : formatFileSize(item.size)}
+									</div>
+									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
+										{purgesIn(item.deletedAt)}
+									</div>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div
+										class="hidden justify-end md:flex"
+										onclick={(e) => e.stopPropagation()}
+									>
+										<Button
+											variant="outline"
+											size="xs"
+											onclick={() => handleRestore(item)}
+										>
+											Restore
+										</Button>
 									</div>
 								</div>
 							{/snippet}
@@ -487,8 +447,8 @@
 							</ContextMenu.Item>
 						</ContextMenu.Content>
 					</ContextMenu.Root>
-				{/snippet}
-			</VirtualList>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

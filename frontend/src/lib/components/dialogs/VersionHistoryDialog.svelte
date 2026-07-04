@@ -101,8 +101,7 @@
 								</Button>
 								<Button
 									size="sm"
-									variant="ghost"
-									class="text-muted-foreground hover:text-destructive"
+									variant="destructive"
 									disabled={busy !== null}
 									onclick={() => handleDelete(v)}
 								>

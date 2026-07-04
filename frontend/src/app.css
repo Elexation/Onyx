@@ -88,6 +88,14 @@
 		outline-offset: 2px;
 	}
 
+	button:not(:disabled),
+	[role="button"]:not([aria-disabled="true"]),
+	[role="menuitem"]:not([aria-disabled="true"]),
+	[role="option"]:not([aria-disabled="true"]),
+	a[href] {
+		cursor: pointer;
+	}
+
 	::-webkit-scrollbar {
 		width: 8px;
 		height: 8px;

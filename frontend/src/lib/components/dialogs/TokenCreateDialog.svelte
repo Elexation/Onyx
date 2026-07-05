@@ -40,7 +40,7 @@
 		{ value: "180", label: "180 days" },
 		{ value: "365", label: "1 year" },
 		{ value: "730", label: "2 years" },
-		{ value: "none", label: "No expiration" },
+		{ value: "none", label: "Never" },
 	];
 
 	const selectedScopeLabel = $derived(
@@ -175,7 +175,7 @@
 
 			<Dialog.Footer>
 				<Button onclick={() => (open = false)} disabled={!closeEnabled}>
-					{closeEnabled ? "Close" : "Close (wait…)"}
+					Close
 				</Button>
 			</Dialog.Footer>
 		{:else}

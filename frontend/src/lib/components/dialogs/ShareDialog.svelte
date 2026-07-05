@@ -33,6 +33,7 @@
 	let showCreateForm = $state(false);
 	let createError = $state("");
 	let urlInputRef = $state<HTMLInputElement | null>(null);
+	let closeEnabled = $state(false);
 
 	const expiryOptions = [
 		{ value: "1h", label: "1 hour" },
@@ -57,6 +58,7 @@
 			existing = null;
 			showCreateForm = false;
 			createError = "";
+			closeEnabled = false;
 			loading = true;
 			getShareByPath(path)
 				.then((link) => {
@@ -68,6 +70,15 @@
 				.finally(() => {
 					loading = false;
 				});
+		}
+	});
+
+	$effect(() => {
+		if (shareUrl) {
+			const timer = setTimeout(() => {
+				closeEnabled = true;
+			}, 2000);
+			return () => clearTimeout(timer);
 		}
 	});
 
@@ -194,7 +205,7 @@
 				</p>
 			</div>
 			<Dialog.Footer>
-				<Button onclick={() => (open = false)}>Done</Button>
+				<Button onclick={() => (open = false)} disabled={!closeEnabled}>Done</Button>
 			</Dialog.Footer>
 		{:else if existing && !showCreateForm}
 			<div class="flex flex-col gap-4">

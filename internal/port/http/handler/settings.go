@@ -10,13 +10,21 @@ import (
 )
 
 type SettingsHandler struct {
-	settings *service.SettingsService
-	shares   *service.ShareService
-	versions *service.VersionService
+	settings         *service.SettingsService
+	shares           *service.ShareService
+	versions         *service.VersionService
+	activeListenPort string
+	envOverrides     map[string]string
 }
 
-func NewSettingsHandler(settings *service.SettingsService, shares *service.ShareService, versions *service.VersionService) *SettingsHandler {
-	return &SettingsHandler{settings: settings, shares: shares, versions: versions}
+func NewSettingsHandler(settings *service.SettingsService, shares *service.ShareService, versions *service.VersionService, activeListenPort string, envOverrides map[string]string) *SettingsHandler {
+	return &SettingsHandler{
+		settings:         settings,
+		shares:           shares,
+		versions:         versions,
+		activeListenPort: activeListenPort,
+		envOverrides:     envOverrides,
+	}
 }
 
 func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +33,13 @@ func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to load settings"}`, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, all)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"values": all,
+		"meta": map[string]any{
+			"envOverrides":     h.envOverrides,
+			"activeListenPort": h.activeListenPort,
+		},
+	})
 }
 
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -68,4 +82,3 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"errors": errors,
 	})
 }
-

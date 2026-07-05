@@ -406,7 +406,7 @@
 	$effect(() => {
 		getSettings()
 			.then((s) => {
-				const raw = s["playback.default_quality_ceiling"];
+				const raw = s.values["playback.default_quality_ceiling"];
 				const n = raw ? parseInt(raw, 10) : NaN;
 				if (!isNaN(n)) {
 					defaultQualityCeiling = n;

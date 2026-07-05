@@ -15,6 +15,7 @@ import (
 	"github.com/Elexation/onyx/internal/adapter/media"
 	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/adapter/upload"
+	"github.com/Elexation/onyx/internal/domain"
 	server "github.com/Elexation/onyx/internal/port/http"
 	"github.com/Elexation/onyx/internal/service"
 )
@@ -23,7 +24,6 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	port := env("ONYX_PORT", "8080")
 	dataDir := env("ONYX_DATA", "data")
 	configDir := env("ONYX_CONFIG", "config")
 	cacheDir := env("ONYX_CACHE", ".cache")
@@ -47,6 +47,8 @@ func main() {
 
 	settingsRepo := database.NewSettingsRepo(db)
 	settingsService := service.NewSettingsService(settingsRepo)
+
+	port, envOverrides := resolveListenPort(settingsService)
 
 	userRepo := database.NewUserRepo(db)
 	sessionRepo := database.NewSessionRepo(db)
@@ -164,9 +166,9 @@ func main() {
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, trustedProxy, requireHTTPS)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, trustedProxy, requireHTTPS, port, envOverrides)
 
-	slog.Info("starting server", "port", port)
+	slog.Info("starting server", "port", port, "envOverrides", envOverrides)
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
@@ -178,6 +180,38 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// resolveListenPort resolves the HTTP listen port via env -> DB -> default,
+// and returns a map of env-overridden setting keys -> reason for the UI to
+// lock fields the operator can't actually change at runtime.
+//
+// "docker" reason: in-container listen port is fixed by the docker-compose
+// port mapping (host:container). Changing the in-container port would silently
+// break access since compose maps to :8080 by default.
+func resolveListenPort(settings *service.SettingsService) (string, map[string]string) {
+	envOverrides := map[string]string{}
+
+	if v := os.Getenv("ONYX_PORT"); v != "" {
+		envOverrides[domain.SettingServerListenPort] = "ONYX_PORT"
+		return v, envOverrides
+	}
+
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		envOverrides[domain.SettingServerListenPort] = "docker"
+		return "8080", envOverrides
+	}
+
+	stored, err := settings.Get(domain.SettingServerListenPort)
+	if err != nil || stored == "" {
+		return "8080", envOverrides
+	}
+	n, perr := strconv.Atoi(stored)
+	if perr != nil || n < 1024 || n > 65535 {
+		slog.Warn("invalid stored listen port, using default", "value", stored)
+		return "8080", envOverrides
+	}
+	return stored, envOverrides
 }
 
 // ensureNoDirOverlap rejects configurations where dataDir overlaps with any

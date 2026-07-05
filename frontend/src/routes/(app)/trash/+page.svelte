@@ -134,7 +134,7 @@
 			items = trashRes.items;
 			trashCount.set(items.length);
 			if (settings) {
-				purgeAgeHours = parseDurationHours(settings["trash.purge_age"] ?? "720h");
+				purgeAgeHours = parseDurationHours(settings.values["trash.purge_age"] ?? "720h");
 			}
 		} catch {
 			toast.error("Failed to load trash");

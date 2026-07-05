@@ -12,7 +12,7 @@ export const versioningEnabled = {
 	async refresh() {
 		try {
 			const s = await getSettings();
-			enabled = s["versions.enabled"] !== "false";
+			enabled = s.values["versions.enabled"] !== "false";
 		} catch {
 			// ignore
 		}

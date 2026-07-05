@@ -15,7 +15,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy, requireHTTPS bool) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy, requireHTTPS bool, activeListenPort string, envOverrides map[string]string) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
 	shareRL := middleware.NewRateLimiter(trustedProxy)
@@ -24,7 +24,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
 	uploadHandler := handler.NewUploadHandler(files)
-	settingsHandler := handler.NewSettingsHandler(settings, shares, versions)
+	settingsHandler := handler.NewSettingsHandler(settings, shares, versions, activeListenPort, envOverrides)
 	trashHandler := handler.NewTrashHandler(trash)
 	versionHandler := handler.NewVersionHandler(versions)
 	searchHandler := handler.NewSearchHandler(search)

@@ -1,7 +1,17 @@
 import { request } from "$lib/api";
 
-export async function getSettings(): Promise<Record<string, string>> {
-	return request<Record<string, string>>("GET", "/api/settings");
+export type SettingsMeta = {
+	envOverrides: Record<string, string>;
+	activeListenPort: string;
+};
+
+export type SettingsResponse = {
+	values: Record<string, string>;
+	meta: SettingsMeta;
+};
+
+export async function getSettings(): Promise<SettingsResponse> {
+	return request<SettingsResponse>("GET", "/api/settings");
 }
 
 export async function updateSettings(updates: Record<string, string>): Promise<{

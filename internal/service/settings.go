@@ -150,6 +150,15 @@ func validateSetting(key, value string) error {
 			return fmt.Errorf("must be one of 0, 480, 720, 1080, 1440, 2160")
 		}
 
+	case domain.SettingServerListenPort:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("must be a number")
+		}
+		if n < 1024 || n > 65535 {
+			return fmt.Errorf("must be between 1024 and 65535")
+		}
+
 	}
 
 	return nil

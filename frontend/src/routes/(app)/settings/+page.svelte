@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onDestroy, onMount } from "svelte";
 	import { toast } from "svelte-sonner";
-	import { getSettings, updateSettings, changePassword } from "$lib/api/settings";
+	import {
+		getSettings,
+		updateSettings,
+		changePassword,
+		type SettingsMeta,
+	} from "$lib/api/settings";
 	import { shareCount } from "$lib/api/shares";
 	import { versionCount } from "$lib/api/versions";
 	import { listTokens, revokeToken } from "$lib/api/tokens";
@@ -24,6 +29,8 @@
 		Play,
 		Shield,
 		KeyRound,
+		Server,
+		X,
 	} from "lucide-svelte";
 	import type { Snippet } from "svelte";
 
@@ -38,7 +45,8 @@
 		| "uploads"
 		| "playback"
 		| "security"
-		| "tokens";
+		| "tokens"
+		| "advanced";
 
 	const sections: { key: SectionKey; label: string; icon: IconComponent; desc: string }[] = [
 		{
@@ -83,6 +91,12 @@
 			icon: KeyRound,
 			desc: "Personal access tokens for scripts and automation.",
 		},
+		{
+			key: "advanced",
+			label: "Advanced",
+			icon: Server,
+			desc: "Server configuration that takes effect on restart.",
+		},
 	];
 
 	const caps: Record<string, { min: number; max: number; label: string }> = {
@@ -94,10 +108,12 @@
 		"trash.max_size": { min: 0, max: 102400, label: "Max trash size" },
 		"session.lifetime": { min: 1, max: 720, label: "Session lifetime" },
 		"upload.max_size": { min: 0, max: 102400, label: "Max file size" },
+		"server.listen_port": { min: 1024, max: 65535, label: "Listen port" },
 	};
 
 	let section = $state<SectionKey>("versioning");
 	let settings = $state<Record<string, string>>({});
+	let meta = $state<SettingsMeta>({ envOverrides: {}, activeListenPort: "8080" });
 	let loading = $state(true);
 
 	let currentPassword = $state("");
@@ -136,7 +152,9 @@
 
 	onMount(async () => {
 		try {
-			settings = await getSettings();
+			const res = await getSettings();
+			settings = res.values;
+			meta = res.meta;
 			versioningChecked = settings["versions.enabled"] === "true";
 			sharingChecked = settings["shares.enabled"] === "true";
 		} catch {
@@ -158,6 +176,8 @@
 				const result = await updateSettings({ [key]: value });
 				if (result.errors && Object.keys(result.errors).length > 0) {
 					toast.error(Object.values(result.errors)[0]);
+				} else if (key === "server.listen_port") {
+					toast.success("Saved — restart server to apply");
 				} else {
 					toast.success("Setting saved");
 				}
@@ -446,7 +466,7 @@
 			{#if loading}
 				<p class="text-sm text-muted-foreground">Loading settings…</p>
 			{:else}
-				<header class="mb-5 flex items-start justify-between gap-4">
+				<header class="mb-5 flex items-center justify-between gap-4">
 					<div class="min-w-0">
 						<h1 class="text-[22px] font-bold tracking-[-0.01em]">{currentSection.label}</h1>
 						<p class="mt-1 text-[13px] text-muted-foreground">{currentSection.desc}</p>
@@ -482,7 +502,7 @@
 							step="1"
 							value={settings["versions.max_count"] ?? "10"}
 							onchange={(e) => validateAndSaveInt("versions.max_count", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -499,7 +519,7 @@
 							step="1"
 							value={durationToHours(settings["versions.max_age"] ?? "2160h")}
 							onchange={(e) => validateAndSaveDuration("versions.max_age", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -516,7 +536,7 @@
 							step="1"
 							value={bytesToMB(settings["versions.max_file_size"] ?? "1073741824")}
 							onchange={(e) => validateAndSaveMB("versions.max_file_size", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -533,7 +553,7 @@
 							step="1"
 							value={bytesToMB(settings["versions.max_storage"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("versions.max_storage", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -564,7 +584,7 @@
 							step="1"
 							value={durationToHours(settings["trash.purge_age"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("trash.purge_age", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -581,7 +601,7 @@
 							step="1"
 							value={bytesToMB(settings["trash.max_size"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("trash.max_size", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -614,7 +634,7 @@
 							step="1"
 							value={bytesToMB(settings["upload.max_size"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("upload.max_size", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -657,7 +677,7 @@
 							step="1"
 							value={durationToHours(settings["session.lifetime"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("session.lifetime", e.currentTarget.value)}
-							class="w-[140px]"
+							class="w-[110px] tabular-nums"
 						/>
 					{/snippet}
 					{@render row(
@@ -743,11 +763,11 @@
 											<Button
 												variant="ghost"
 												size="icon-xs"
-												class="shrink-0 cursor-pointer text-muted-foreground hover:text-destructive"
+												class="shrink-0 cursor-pointer"
 												onclick={() => askRevokeToken(tok)}
 												title="Revoke token"
 											>
-												<Trash2 class="size-4" strokeWidth={2} />
+												<X class="size-3.5" strokeWidth={2} />
 											</Button>
 										</div>
 									</div>
@@ -755,6 +775,47 @@
 							</div>
 						{/if}
 					</div>
+				{/if}
+
+				{#if section === "advanced"}
+					{@const lockReason = meta.envOverrides["server.listen_port"]}
+					{@const isLocked = !!lockReason}
+					{@const configuredPort = settings["server.listen_port"] ?? "8080"}
+					{@const activePort = meta.activeListenPort}
+					{@const restartPending = !isLocked && configuredPort !== activePort}
+
+					{#if restartPending}
+						<div class="mb-5 rounded-lg border border-border-2 bg-muted/30 px-4 py-3 text-[13px]">
+							<span class="font-medium text-foreground">Restart pending</span>
+							<span class="text-muted-foreground">
+								— currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
+								will switch to <span class="font-mono tabular-nums text-foreground">:{configuredPort}</span>
+								on next restart.
+							</span>
+						</div>
+					{/if}
+
+					{#snippet listenPortInput()}
+						<Input
+							type="number"
+							min="1024"
+							max="65535"
+							step="1"
+							value={isLocked ? activePort : configuredPort}
+							disabled={isLocked}
+							onchange={(e) => validateAndSaveInt("server.listen_port", e.currentTarget.value)}
+							class="w-[110px] tabular-nums"
+						/>
+					{/snippet}
+					{@render row(
+						"Listen port",
+						lockReason === "ONYX_PORT"
+							? "Locked — set by ONYX_PORT environment variable. Unset and restart to use this field."
+							: lockReason === "docker"
+								? "Locked — running in Docker. Change the host-side port via the ONYX_PORT env var on your Docker host, then restart with docker compose up -d."
+								: "Port the server binds to. Range 1024–65535. Takes effect after restart. If you get locked out, set the ONYX_PORT environment variable and restart.",
+						listenPortInput,
+					)}
 				{/if}
 			{/if}
 		</div>

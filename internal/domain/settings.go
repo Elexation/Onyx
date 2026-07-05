@@ -18,6 +18,8 @@ const (
 	SettingSessionLifetime = "session.lifetime"
 	SettingUploadMaxSize = "upload.max_size"
 	SettingPlaybackDefaultQualityCeiling = "playback.default_quality_ceiling"
+
+	SettingServerListenPort = "server.listen_port"
 )
 
 var Defaults = map[string]string{
@@ -33,6 +35,8 @@ var Defaults = map[string]string{
 	SettingSessionLifetime: "720h", // 30 days
 	SettingUploadMaxSize:       "0",     // 0 = unlimited
 	SettingPlaybackDefaultQualityCeiling: "1080", // pixel height; 0 = unlimited
+
+	SettingServerListenPort: "8080",
 }
 
 func GetBool(value string) bool {

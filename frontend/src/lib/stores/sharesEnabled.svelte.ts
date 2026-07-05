@@ -12,7 +12,7 @@ export const sharesEnabled = {
 	async refresh() {
 		try {
 			const s = await getSettings();
-			enabled = s["shares.enabled"] !== "false";
+			enabled = s.values["shares.enabled"] !== "false";
 		} catch {
 			// ignore
 		}

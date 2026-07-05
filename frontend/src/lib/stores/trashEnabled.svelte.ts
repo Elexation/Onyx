@@ -12,7 +12,7 @@ export const trashEnabled = {
 	async refresh() {
 		try {
 			const s = await getSettings();
-			enabled = s["trash.enabled"] !== "false";
+			enabled = s.values["trash.enabled"] !== "false";
 		} catch {
 			// ignore
 		}

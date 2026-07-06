@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { logout } from "$lib/auth.svelte.js";
-	import { Button } from "$lib/components/ui/button/index.js";
-	import { LogOut, Menu, Search as SearchIcon, X } from "lucide-svelte";
+	import { Menu, Search as SearchIcon, X } from "lucide-svelte";
 	import SearchBar from "./SearchBar.svelte";
 	import BrandMark from "./BrandMark.svelte";
 	import UserChip from "./UserChip.svelte";
@@ -71,9 +69,6 @@
 				<SearchIcon class="size-[18px]" strokeWidth={2} />
 			</button>
 			<UserChip />
-			<Button variant="ghost" size="icon-sm" onclick={logout} title="Sign out" aria-label="Sign out" class="lg:hidden">
-				<LogOut class="size-[18px]" strokeWidth={2} />
-			</Button>
 		</div>
 	{/if}
 </header>

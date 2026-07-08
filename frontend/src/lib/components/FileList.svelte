@@ -4,8 +4,9 @@
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { ArrowUp, ArrowDown, ChevronRight, Link2, MoreVertical } from "lucide-svelte";
+	import { ArrowUp, ArrowDown, Link2, MoreVertical } from "lucide-svelte";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
@@ -58,6 +59,14 @@
 
 	function handleRowClick(e: MouseEvent, item: FileInfo) {
 		e.stopPropagation();
+		if (viewport.isMobile) {
+			if (selection.isActive) {
+				selection.toggle(item.path);
+			} else {
+				onopen(item);
+			}
+			return;
+		}
 		if (e.shiftKey) {
 			e.preventDefault();
 			selection.selectRange(item.path, items.filter((i) => i.name !== "..").map((i) => i.path));
@@ -142,8 +151,16 @@
 					{@const file = item as FileInfo}
 					{#if file.name === ".."}
 						<div
-							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
+							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
 							{style}
+							onclick={(e) => {
+								if (viewport.isMobile) {
+									e.stopPropagation();
+									if (!selection.isActive) {
+										onopen(file);
+									}
+								}
+							}}
 							ondblclick={(e) => {
 								e.stopPropagation();
 								onopen(file);
@@ -191,7 +208,7 @@
 								<div
 									{...triggerProps}
 									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
-										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted'}
+										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted active:bg-muted'}
 										{isCut ? 'opacity-50' : ''}"
 									{style}
 									onclick={(e) => handleRowClick(e, file)}
@@ -232,9 +249,14 @@
 												strokeWidth={1.4}
 											/>
 										{/if}
-										<span class="min-w-0 flex-1 truncate text-[15px] font-medium md:text-base">
-											{file.name}
-										</span>
+										<div class="flex min-w-0 flex-1 flex-col">
+											<span class="truncate text-[15px] font-medium md:text-base">
+												{file.name}
+											</span>
+											<span class="truncate text-[11px] tabular-nums text-muted-foreground md:hidden">
+												{formatDate(file.modTime)}
+											</span>
+										</div>
 										<div class="flex w-[13px] shrink-0 items-center justify-center">
 											{#if sharedPaths.has(file.path)}
 												<Link2
@@ -255,14 +277,6 @@
 										</div>
 									</div>
 									<div
-										class="flex shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground md:hidden"
-									>
-										{file.isDir ? "—" : formatFileSize(file.size)}
-										{#if file.isDir}
-											<ChevronRight class="size-4" strokeWidth={2} />
-										{/if}
-									</div>
-									<div
 										class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block"
 									>
 										{file.isDir ? "—" : formatFileSize(file.size)}
@@ -273,7 +287,8 @@
 										{formatDate(file.modTime)}
 									</div>
 									<div
-										class="hidden items-center justify-end md:flex"
+										class="flex items-center justify-end"
+										onpointerdown={(e) => e.stopPropagation()}
 										onclick={(e) => e.stopPropagation()}
 										role="presentation"
 									>

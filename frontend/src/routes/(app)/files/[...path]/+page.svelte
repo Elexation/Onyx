@@ -24,7 +24,6 @@
 	import ViewControls from "$lib/components/ViewControls.svelte";
 	import UploadZone from "$lib/components/UploadZone.svelte";
 	import MobileFAB from "$lib/components/MobileFAB.svelte";
-	import MobileSelectionBar from "$lib/components/MobileSelectionBar.svelte";
 	import RenameDialog from "$lib/components/dialogs/RenameDialog.svelte";
 	import NewFolderDialog from "$lib/components/dialogs/NewFolderDialog.svelte";
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
@@ -506,12 +505,6 @@
 			onfiles={handleUpload}
 		/>
 	{/if}
-	<MobileSelectionBar
-		oncopy={handleCopy}
-		ondownload={handleDownload}
-		onshare={handleShareSelected}
-		ondelete={() => handleDelete([...selection.items])}
-	/>
 </div>
 
 {#if bgMenuOpen}

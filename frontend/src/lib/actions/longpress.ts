@@ -11,7 +11,7 @@ export const longpress: Action<HTMLElement, () => void> = (node, callback) => {
 		timer = setTimeout(() => {
 			fired = true;
 			currentCallback();
-		}, 500);
+		}, 300);
 	}
 
 	function cancel() {

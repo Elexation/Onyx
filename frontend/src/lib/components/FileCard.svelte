@@ -8,6 +8,7 @@
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import { Link2 } from "lucide-svelte";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
@@ -51,6 +52,14 @@
 
 	function handleClick(e: MouseEvent) {
 		e.stopPropagation();
+		if (viewport.isMobile) {
+			if (selection.isActive) {
+				selection.toggle(item.path);
+			} else {
+				onopen(item);
+			}
+			return;
+		}
 		if (e.shiftKey) {
 			e.preventDefault();
 			selection.selectRange(item.path, allPaths);
@@ -79,7 +88,15 @@
 
 {#if item.name === ".."}
 	<div
-		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 text-muted-foreground transition-colors select-none hover:border-border-2"
+		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 text-muted-foreground transition-colors select-none hover:border-border-2 active:bg-muted"
+		onclick={(e) => {
+			if (viewport.isMobile) {
+				e.stopPropagation();
+				if (!selection.isActive) {
+					onopen(item);
+				}
+			}
+		}}
 		ondblclick={(e) => {
 			e.stopPropagation();
 			onopen(item);
@@ -117,7 +134,7 @@
 				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
 					{isSelected
 					? 'border-accent-brand bg-accent-brand-dim'
-					: 'border-border bg-card hover:border-border-2'}
+					: 'border-border bg-card hover:border-border-2 active:bg-muted'}
 					{isCut ? 'opacity-50' : ''}"
 				onclick={handleClick}
 				ondblclick={(e) => {

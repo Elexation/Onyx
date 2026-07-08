@@ -34,40 +34,34 @@
 
 <div class="flex min-h-9 flex-wrap items-center gap-2">
 	{#if selection.isActive}
-		<!-- Selection-active: primary toolbar is replaced. Hidden on mobile (MobileSelectionBar handles it). -->
+		<!-- Selection-active: primary toolbar is replaced. Mobile shows icons only. -->
 		<span
-			class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-[13px] font-medium tabular-nums text-accent-brand max-md:hidden"
+			class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-[13px] font-medium tabular-nums text-accent-brand"
 		>
 			{selection.count} selected
 		</span>
-		<div class="max-md:hidden">
-			<Button variant="outline" size="sm" onclick={ondownload}>
-				<DownloadIcon class="size-[15px]" strokeWidth={2} />
-				<span>Download</span>
-			</Button>
-		</div>
-		<div class="max-md:hidden">
-			<Button
-				variant="outline"
-				size="sm"
-				disabled={selection.count !== 1}
-				onclick={onshare}
-			>
-				<Share2Icon class="size-[15px]" strokeWidth={2} />
-				<span>Share</span>
-			</Button>
-		</div>
-		<div class="max-md:hidden">
-			<Button
-				variant="outline"
-				size="sm"
-				class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-				onclick={ondelete}
-			>
-				<Trash2Icon class="size-[15px]" strokeWidth={2} />
-				<span>Delete</span>
-			</Button>
-		</div>
+		<Button variant="outline" size="sm" onclick={ondownload}>
+			<DownloadIcon class="size-[15px]" strokeWidth={2} />
+			<span class="max-md:hidden">Download</span>
+		</Button>
+		<Button
+			variant="outline"
+			size="sm"
+			disabled={selection.count !== 1}
+			onclick={onshare}
+		>
+			<Share2Icon class="size-[15px]" strokeWidth={2} />
+			<span class="max-md:hidden">Share</span>
+		</Button>
+		<Button
+			variant="outline"
+			size="sm"
+			class="text-destructive hover:bg-destructive/10 hover:text-destructive"
+			onclick={ondelete}
+		>
+			<Trash2Icon class="size-[15px]" strokeWidth={2} />
+			<span class="max-md:hidden">Delete</span>
+		</Button>
 	{:else}
 		<div class="max-md:hidden">
 			<UploadButton onfiles={onupload} />

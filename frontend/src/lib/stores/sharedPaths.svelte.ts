@@ -1,4 +1,5 @@
 import { listShares } from "$lib/api/shares.js";
+import { changes } from "$lib/changes";
 
 let paths = $state<Set<string>>(new Set());
 
@@ -29,3 +30,11 @@ export const sharedPaths = {
 		}
 	},
 };
+
+// Cross-tab sync: refresh the cache when any tab/device creates or revokes
+// a share. Module-load subscription is safe because changes.on() just
+// registers the callback — events flow only after changes.start() runs from
+// (app)/+layout.svelte. Cost is one always-on listener for the SPA lifetime.
+changes.on("share.changed", () => {
+	sharedPaths.refresh();
+});

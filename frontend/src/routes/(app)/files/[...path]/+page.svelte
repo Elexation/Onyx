@@ -14,7 +14,8 @@
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
-	import { addFiles, startUpload, getUppy } from "$lib/upload/uppy.js";
+	import { addFiles, startUpload } from "$lib/upload/uppy.js";
+	import { changes } from "$lib/changes";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
 	import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
@@ -348,37 +349,38 @@
 		startUpload().catch(() => {});
 	}
 
-	// Refresh file list when uploads complete
-	// Small delay: tus signals completion to the client before the server
-	// finishes moving the file from the upload store to the data directory.
+	// Live updates: refetch this directory's listing when the server emits
+	// a relevant event. Replaces the prior setTimeout(load, 500) hack tied
+	// to uppy 'complete' — server now emits file.changed after CompleteUpload's
+	// rename completes, so the next 5s poll picks it up deterministically.
 	$effect(() => {
-		const uppy = getUppy();
-		const timers = new Set<ReturnType<typeof setTimeout>>();
-		let cancelled = false;
-		const handler = () => {
-			const timer = setTimeout(async () => {
-				timers.delete(timer);
-				if (cancelled) return;
-				await load(path);
-				if (cancelled) return;
-				if (error) {
-					const retry = setTimeout(() => {
-						timers.delete(retry);
-						if (!cancelled) refresh();
-					}, 2000);
-					timers.add(retry);
-				}
-			}, 500);
-			timers.add(timer);
-		};
-		uppy.on("complete", handler);
+		const dir = normalizeDir(path);
+		const isInDir = (parent: string) => parent === dir;
+		const refetch = () => load(path);
+
+		const offFile = changes.on("file.changed", (p) => {
+			if (isInDir(p.parentPath)) refetch();
+		});
+		const offThumb = changes.on("thumb.ready", (p) => {
+			const parent = p.path.substring(0, p.path.lastIndexOf("/")) || "/";
+			if (isInDir(parent)) refetch();
+		});
+		const offBehind = changes.onBehind(refetch);
 		return () => {
-			cancelled = true;
-			for (const t of timers) clearTimeout(t);
-			timers.clear();
-			uppy.off("complete", handler);
+			offFile();
+			offThumb();
+			offBehind();
 		};
 	});
+
+	// Convert SvelteKit's path param ("foo/bar" or "") into the server-side
+	// form ("/foo/bar" or "/") used in event payloads' parentPath.
+	function normalizeDir(d: string): string {
+		if (!d) return "/";
+		const n = d.startsWith("/") ? d : "/" + d;
+		if (n.length > 1 && n.endsWith("/")) return n.slice(0, -1);
+		return n;
+	}
 
 	// Keyboard shortcuts
 	const shortcutMap: ShortcutMap = {

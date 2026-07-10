@@ -9,6 +9,7 @@
 	import { Link, Link2Off, X, Lock } from "lucide-svelte";
 	import FileIcon from "$lib/components/FileIcon.svelte";
 	import type { ShareLink } from "$lib/types.js";
+	import { changes } from "$lib/changes";
 
 	let shares = $state<ShareLink[]>([]);
 	let loading = $state(true);
@@ -28,6 +29,15 @@
 	}
 
 	onMount(() => { load(); });
+
+	$effect(() => {
+		const offShare = changes.on("share.changed", load);
+		const offBehind = changes.onBehind(load);
+		return () => {
+			offShare();
+			offBehind();
+		};
+	});
 
 	function confirmDelete(share: ShareLink) {
 		deleteTarget = share;

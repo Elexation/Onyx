@@ -15,7 +15,7 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
-func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, trustedProxy, requireHTTPS bool, activeListenPort string, envOverrides map[string]string) http.Handler {
+func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, events *service.EventStore, trustedProxy, requireHTTPS bool, activeListenPort string, envOverrides map[string]string) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
 	shareRL := middleware.NewRateLimiter(trustedProxy)
@@ -34,6 +34,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
 	storageHandler := handler.NewStorageHandler(files)
+	changesHandler := handler.NewChangesHandler(events)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -114,6 +115,8 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Get("/", tokenHandler.List)
 			r.Delete("/{id}", tokenHandler.Delete)
 		})
+
+		r.Get("/changes", changesHandler.Get)
 	})
 
 	// Public share API routes (no auth)

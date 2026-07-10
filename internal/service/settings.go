@@ -15,11 +15,16 @@ type SettingsRepo interface {
 }
 
 type SettingsService struct {
-	repo SettingsRepo
+	repo   SettingsRepo
+	events EventRecorder
 }
 
 func NewSettingsService(repo SettingsRepo) *SettingsService {
 	return &SettingsService{repo: repo}
+}
+
+func (s *SettingsService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 func (s *SettingsService) Get(key string) (string, error) {
@@ -52,6 +57,9 @@ func (s *SettingsService) Update(updates map[string]string) (saved []string, err
 			continue
 		}
 		saved = append(saved, key)
+	}
+	if len(saved) > 0 {
+		recordIf(s.events, "settings.changed", SettingsChangedPayload{Keys: saved})
 	}
 	return saved, errors
 }

@@ -106,6 +106,8 @@ type ThumbnailService struct {
 
 	failTTL  time.Duration
 	lruTTL   time.Duration
+
+	events EventRecorder
 }
 
 // NewThumbnailService wires the service. ffmpeg is probed here; if missing,
@@ -142,6 +144,10 @@ func (ts *ThumbnailService) Start() {
 	for i := 0; i < ts.workers; i++ {
 		go ts.worker()
 	}
+}
+
+func (ts *ThumbnailService) SetEvents(r EventRecorder) {
+	ts.events = r
 }
 
 // StartJanitor periodically sweeps stale fail markers and LRU-evicts old thumbs.
@@ -234,7 +240,9 @@ func (ts *ThumbnailService) run(job thumbJob) {
 		if markerErr := ts.store.WriteFailMarker(job.failDst); markerErr != nil {
 			slog.Warn("thumbnail: fail marker write", "error", markerErr)
 		}
+		return
 	}
+	recordIf(ts.events, "thumb.ready", ThumbReadyPayload{Path: job.relPath})
 }
 
 func (ts *ThumbnailService) generateImage(job thumbJob) error {
@@ -379,4 +387,3 @@ func resizeKeepAspect(src image.Image, maxEdge int) image.Image {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Src, nil)
 	return dst
 }
-

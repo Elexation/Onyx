@@ -36,6 +36,7 @@ type TrashService struct {
 	realDataDir string
 	trashDir    string
 	versions    *VersionService
+	events      EventRecorder
 }
 
 func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDir string) (*TrashService, error) {
@@ -59,6 +60,10 @@ func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDi
 // circular init dependency with VersionService (constructed after trash).
 func (s *TrashService) SetVersioning(v *VersionService) {
 	s.versions = v
+}
+
+func (s *TrashService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 // resolveDataSubpath performs a lexical safety check on a data-relative path
@@ -161,6 +166,7 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("record trash item: %s", err)}
 	}
 
+	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "add", ID: id})
 	return MoveToTrashResult{Path: filePath, Success: true}
 }
 
@@ -216,10 +222,20 @@ func (s *TrashService) Restore(id string) error {
 		return fmt.Errorf("remove trash record: %w", err)
 	}
 
+	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "restore", ID: id})
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       item.OriginalPath,
+		ParentPath: parentOf(item.OriginalPath),
+		Kind:       "create",
+	})
 	return nil
 }
 
 func (s *TrashService) PermanentDelete(id string) error {
+	return s.permanentDeleteWithKind(id, "purge")
+}
+
+func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 	item, err := s.repo.GetByID(id)
 	if err != nil {
 		return fmt.Errorf("get trash item: %w", err)
@@ -248,6 +264,7 @@ func (s *TrashService) PermanentDelete(id string) error {
 		}
 	}
 
+	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: kind, ID: id})
 	return nil
 }
 
@@ -269,6 +286,9 @@ func (s *TrashService) EmptyTrash() error {
 		}
 	}
 
+	if len(items) > 0 {
+		recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "empty"})
+	}
 	return nil
 }
 
@@ -295,7 +315,7 @@ func (s *TrashService) AutoPurge() {
 			slog.Warn("trash auto-purge: failed to list expired", "error", err)
 		} else {
 			for _, item := range expired {
-				if err := s.PermanentDelete(item.ID); err != nil {
+				if err := s.permanentDeleteWithKind(item.ID, "auto-purge"); err != nil {
 					slog.Warn("trash auto-purge: failed to delete", "id", item.ID, "error", err)
 				}
 			}
@@ -336,7 +356,7 @@ func (s *TrashService) AutoPurge() {
 		if totalSize <= maxSize {
 			break
 		}
-		if err := s.PermanentDelete(item.ID); err != nil {
+		if err := s.permanentDeleteWithKind(item.ID, "auto-purge"); err != nil {
 			slog.Warn("trash auto-purge: failed to delete for size", "id", item.ID, "error", err)
 			continue
 		}

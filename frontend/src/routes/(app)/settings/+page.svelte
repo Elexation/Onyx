@@ -33,6 +33,7 @@
 		X,
 	} from "lucide-svelte";
 	import type { Snippet } from "svelte";
+	import { changes } from "$lib/changes";
 
 	type IconComponent = typeof History;
 
@@ -166,6 +167,42 @@
 
 	onDestroy(() => {
 		for (const t of Object.values(debounceTimers)) clearTimeout(t);
+	});
+
+	async function refreshSettingsQuiet() {
+		try {
+			const res = await getSettings();
+			settings = res.values;
+			meta = res.meta;
+			versioningChecked = settings["versions.enabled"] === "true";
+			sharingChecked = settings["shares.enabled"] === "true";
+		} catch {
+			// silent — background refresh shouldn't toast
+		}
+	}
+
+	async function refreshTokensQuiet() {
+		try {
+			const res = await listTokens();
+			tokens = res.tokens ?? [];
+			tokenMax = res.max;
+		} catch {
+			// silent — background refresh shouldn't toast
+		}
+	}
+
+	$effect(() => {
+		const offSettings = changes.on("settings.changed", refreshSettingsQuiet);
+		const offTokens = changes.on("token.changed", refreshTokensQuiet);
+		const offBehind = changes.onBehind(() => {
+			refreshSettingsQuiet();
+			refreshTokensQuiet();
+		});
+		return () => {
+			offSettings();
+			offTokens();
+			offBehind();
+		};
 	});
 
 	function save(key: string, value: string) {

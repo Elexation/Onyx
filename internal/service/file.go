@@ -28,6 +28,7 @@ type FileService struct {
 	versions *VersionService
 	settings *SettingsService
 	indexer  *Indexer
+	events   EventRecorder
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
@@ -51,6 +52,10 @@ func (s *FileService) SetVersioning(versions *VersionService) {
 
 func (s *FileService) SetIndexer(indexer *Indexer) {
 	s.indexer = indexer
+}
+
+func (s *FileService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 // ListDirectory returns the contents of a directory, optionally filtering
@@ -104,9 +109,15 @@ func (s *FileService) MakeDir(dirPath string) error {
 	if err := s.storage.MakeDir(dirPath); err != nil {
 		return err
 	}
+	full := ensureSlashPrefix(dirPath)
 	if s.indexer != nil {
-		s.indexer.NotifyCreated(ensureSlashPrefix(dirPath), true, 0, time.Now().Unix())
+		s.indexer.NotifyCreated(full, true, 0, time.Now().Unix())
 	}
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       full,
+		ParentPath: parentOf(full),
+		Kind:       "create",
+	})
 	return nil
 }
 
@@ -154,6 +165,13 @@ func (s *FileService) Rename(filePath, newName string) error {
 			}
 		}
 	}
+	newFull := ensureSlashPrefix(targetPath)
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       newFull,
+		ParentPath: parentOf(newFull),
+		OldPath:    ensureSlashPrefix(filePath),
+		Kind:       "rename",
+	})
 	return nil
 }
 
@@ -205,6 +223,12 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 				}
 			}
 		}
+		recordIf(s.events, "file.changed", FileChangedPayload{
+			Path:       newPath,
+			ParentPath: parentOf(newPath),
+			OldPath:    oldPath,
+			Kind:       "move",
+		})
 	}
 
 	return results, nil
@@ -231,20 +255,25 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 	}
 
 	results := s.storage.Copy(paths, destination)
-	if s.indexer != nil {
-		for i, r := range results {
-			if !r.Success {
-				continue
-			}
-			base := paths[i]
-			if idx := strings.LastIndex(base, "/"); idx >= 0 {
-				base = base[idx+1:]
-			}
-			newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+	for i, r := range results {
+		if !r.Success {
+			continue
+		}
+		base := paths[i]
+		if idx := strings.LastIndex(base, "/"); idx >= 0 {
+			base = base[idx+1:]
+		}
+		newPath := ensureSlashPrefix(strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base)
+		if s.indexer != nil {
 			if info, err := s.storage.Stat(newPath); err == nil {
-				s.indexer.NotifyCopied(ensureSlashPrefix(newPath), info.IsDir, info.Size, info.ModTime)
+				s.indexer.NotifyCopied(newPath, info.IsDir, info.Size, info.ModTime)
 			}
 		}
+		recordIf(s.events, "file.changed", FileChangedPayload{
+			Path:       newPath,
+			ParentPath: parentOf(newPath),
+			Kind:       "create",
+		})
 	}
 	return results, nil
 }
@@ -273,16 +302,21 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 	if results == nil {
 		results = s.storage.Delete(paths)
 	}
-	if s.indexer != nil {
-		var deleted []string
-		for i, r := range results {
-			if r.Success {
-				deleted = append(deleted, ensureSlashPrefix(paths[i]))
-			}
+	var deleted []string
+	for i, r := range results {
+		if r.Success {
+			deleted = append(deleted, ensureSlashPrefix(paths[i]))
 		}
-		if len(deleted) > 0 {
-			s.indexer.NotifyDeleted(deleted)
-		}
+	}
+	if s.indexer != nil && len(deleted) > 0 {
+		s.indexer.NotifyDeleted(deleted)
+	}
+	for _, p := range deleted {
+		recordIf(s.events, "file.changed", FileChangedPayload{
+			Path:       p,
+			ParentPath: parentOf(p),
+			Kind:       "delete",
+		})
 	}
 	return results
 }
@@ -366,6 +400,11 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 			s.indexer.NotifyCreated(finalPath, false, info.Size, info.ModTime)
 		}
 	}
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       finalPath,
+		ParentPath: parentOf(finalPath),
+		Kind:       "create",
+	})
 	return finalPath, nil
 }
 

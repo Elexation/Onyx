@@ -38,6 +38,7 @@ type VersionService struct {
 	store    *storage.VersionStore
 	settings *SettingsService
 	dataDir  string
+	events   EventRecorder
 }
 
 func NewVersionService(repo VersionRepo, store *storage.VersionStore, settings *SettingsService, dataDir string) *VersionService {
@@ -47,6 +48,10 @@ func NewVersionService(repo VersionRepo, store *storage.VersionStore, settings *
 		settings: settings,
 		dataDir:  dataDir,
 	}
+}
+
+func (s *VersionService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 // CreateVersion stores a version of the file currently at filePath. filePath
@@ -114,6 +119,7 @@ func (s *VersionService) CreateVersion(filePath string) error {
 	if info.Size() > largeFileThreshold {
 		s.enforceLargeFileCap(filePath)
 	}
+	recordIf(s.events, "version.changed", VersionChangedPayload{Kind: "add", ID: v.ID})
 	return nil
 }
 
@@ -158,6 +164,12 @@ func (s *VersionService) RestoreVersion(id int64) error {
 	if err := s.store.RestoreVersion(v.FilePath, v.VersionPath); err != nil {
 		return fmt.Errorf("restore version file: %w", err)
 	}
+	recordIf(s.events, "version.changed", VersionChangedPayload{Kind: "restore", ID: v.ID})
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       v.FilePath,
+		ParentPath: parentOf(v.FilePath),
+		Kind:       "update",
+	})
 	return nil
 }
 
@@ -191,7 +203,11 @@ func (s *VersionService) DeleteVersion(id int64) error {
 	if v == nil {
 		return fmt.Errorf("version not found")
 	}
-	return s.deleteVersionRow(*v)
+	if err := s.deleteVersionRow(*v); err != nil {
+		return err
+	}
+	recordIf(s.events, "version.changed", VersionChangedPayload{Kind: "delete", ID: id})
+	return nil
 }
 
 func (s *VersionService) deleteVersionRow(v domain.FileVersion) error {
@@ -300,37 +316,36 @@ func (s *VersionService) ApplyRetention() {
 	}
 
 	// Global storage cap.
-	if maxStorage <= 0 {
-		return
-	}
-	total, err := s.repo.TotalSize()
-	if err != nil {
-		slog.Warn("retention: total size", "error", err)
-		return
-	}
-	if total <= maxStorage {
-		return
+	storageDeleted := 0
+	if maxStorage > 0 {
+		total, err := s.repo.TotalSize()
+		if err != nil {
+			slog.Warn("retention: total size", "error", err)
+		} else if total > maxStorage {
+			oldest, err := s.repo.ListOldestFirst()
+			if err != nil {
+				slog.Warn("retention: list oldest", "error", err)
+			} else {
+				for _, v := range oldest {
+					if total <= maxStorage {
+						break
+					}
+					if err := s.deleteVersionRow(v); err != nil {
+						slog.Warn("retention: delete oldest version", "id", v.ID, "error", err)
+						continue
+					}
+					total -= v.Size
+					storageDeleted++
+				}
+				if storageDeleted > 0 {
+					slog.Info("retention: deleted versions for storage cap", "count", storageDeleted)
+				}
+			}
+		}
 	}
 
-	oldest, err := s.repo.ListOldestFirst()
-	if err != nil {
-		slog.Warn("retention: list oldest", "error", err)
-		return
-	}
-	storageDeleted := 0
-	for _, v := range oldest {
-		if total <= maxStorage {
-			break
-		}
-		if err := s.deleteVersionRow(v); err != nil {
-			slog.Warn("retention: delete oldest version", "id", v.ID, "error", err)
-			continue
-		}
-		total -= v.Size
-		storageDeleted++
-	}
-	if storageDeleted > 0 {
-		slog.Info("retention: deleted versions for storage cap", "count", storageDeleted)
+	if perFileDeleted+storageDeleted > 0 {
+		recordIf(s.events, "version.changed", VersionChangedPayload{Kind: "retention"})
 	}
 }
 

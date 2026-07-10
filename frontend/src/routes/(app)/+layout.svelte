@@ -1,13 +1,20 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import { page } from "$app/state";
 	import AppHeader from "$lib/components/AppHeader.svelte";
 	import Sidebar from "$lib/components/Sidebar.svelte";
 	import MobileDrawer from "$lib/components/MobileDrawer.svelte";
 	import UploadPanel from "$lib/components/UploadPanel.svelte";
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
+	import { changes } from "$lib/changes";
 
 	let { children } = $props();
 	let drawerOpen = $state(false);
+
+	onMount(() => {
+		changes.start();
+		return () => changes.stop();
+	});
 
 	// Close the mobile drawer on any route change. Sidebar's onNavigate prop
 	// covers sidebar link clicks, but programmatic navigation (e.g. SearchBar

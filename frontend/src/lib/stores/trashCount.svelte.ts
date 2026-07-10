@@ -1,7 +1,8 @@
 import { trashCount as fetchTrashCount } from "$lib/api/trash.js";
+import { changes } from "$lib/changes";
 
 let count = $state(0);
-let polling: ReturnType<typeof setInterval> | null = null;
+let unsub: (() => void) | null = null;
 
 export const trashCount = {
 	get count() { return count; },
@@ -20,15 +21,15 @@ export const trashCount = {
 	},
 
 	startPolling() {
-		if (polling) return;
+		if (unsub) return;
 		this.refresh();
-		polling = setInterval(() => this.refresh(), 30_000);
+		unsub = changes.on("trash.changed", () => this.refresh());
 	},
 
 	stopPolling() {
-		if (polling) {
-			clearInterval(polling);
-			polling = null;
+		if (unsub) {
+			unsub();
+			unsub = null;
 		}
 	},
 };

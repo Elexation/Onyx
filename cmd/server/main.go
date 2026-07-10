@@ -48,6 +48,10 @@ func main() {
 	settingsRepo := database.NewSettingsRepo(db)
 	settingsService := service.NewSettingsService(settingsRepo)
 
+	eventStore := service.NewEventStore(db)
+	eventStore.StartPruner(service.EventPrunerInterval, service.EventRetention)
+	settingsService.SetEvents(eventStore)
+
 	port, envOverrides := resolveListenPort(settingsService)
 
 	userRepo := database.NewUserRepo(db)
@@ -62,6 +66,7 @@ func main() {
 	}
 	defer localStorage.Close()
 	fileService := service.NewFileService(localStorage)
+	fileService.SetEvents(eventStore)
 
 	trashRepo := database.NewTrashRepo(db)
 	trashService, err := service.NewTrashService(trashRepo, settingsService, dataDir, trashDir)
@@ -69,6 +74,7 @@ func main() {
 		slog.Error("trash service init failed", "error", err)
 		os.Exit(1)
 	}
+	trashService.SetEvents(eventStore)
 	fileService.SetTrash(trashService, settingsService)
 	trashService.StartAutoPurge(1 * time.Hour)
 
@@ -80,6 +86,7 @@ func main() {
 	}
 	versionStore.TestReflink()
 	versionService := service.NewVersionService(versionRepo, versionStore, settingsService, dataDir)
+	versionService.SetEvents(eventStore)
 	fileService.SetVersioning(versionService)
 	trashService.SetVersioning(versionService)
 
@@ -96,16 +103,19 @@ func main() {
 
 	searchRepo := database.NewSearchRepo(db)
 	indexer := service.NewIndexer(searchRepo, localStorage)
+	indexer.SetEvents(eventStore)
 	searchService := service.NewSearchService(searchRepo)
 	fileService.SetIndexer(indexer)
 	indexer.Start(5 * time.Minute)
 
 	shareRepo := database.NewShareRepo(db)
 	shareService := service.NewShareService(shareRepo, settingsService, fileService)
+	shareService.SetEvents(eventStore)
 	shareService.StartCleanup(24 * time.Hour)
 
 	tokenRepo := database.NewTokenRepo(db)
 	tokenService := service.NewTokenService(tokenRepo)
+	tokenService.SetEvents(eventStore)
 	tokenService.StartCleanup(24 * time.Hour)
 
 	thumbsDir := filepath.Join(cacheDir, "thumbs")
@@ -114,6 +124,7 @@ func main() {
 		slog.Error("thumbnail service init failed", "error", err)
 		os.Exit(1)
 	}
+	thumbService.SetEvents(eventStore)
 	thumbService.Start()
 	thumbService.StartJanitor(6 * time.Hour)
 
@@ -166,7 +177,7 @@ func main() {
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, trustedProxy, requireHTTPS, port, envOverrides)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, eventStore, trustedProxy, requireHTTPS, port, envOverrides)
 
 	slog.Info("starting server", "port", port, "envOverrides", envOverrides)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

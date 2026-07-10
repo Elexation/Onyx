@@ -27,10 +27,15 @@ type Indexer struct {
 	repo    SearchRepo
 	storage *storage.LocalStorage
 	mu      sync.Mutex
+	events  EventRecorder
 }
 
 func NewIndexer(repo SearchRepo, st *storage.LocalStorage) *Indexer {
 	return &Indexer{repo: repo, storage: st}
+}
+
+func (idx *Indexer) SetEvents(r EventRecorder) {
+	idx.events = r
 }
 
 func (idx *Indexer) Start(interval time.Duration) {
@@ -108,6 +113,9 @@ func (idx *Indexer) scan() int {
 		slog.Info("search indexer: removed stale entries", "count", removed)
 	}
 
+	if count > 0 || removed > 0 {
+		recordIf(idx.events, "search.reindexed", SearchReindexedPayload{})
+	}
 	return count
 }
 

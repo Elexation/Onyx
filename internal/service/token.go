@@ -27,11 +27,16 @@ type TokenRepo interface {
 }
 
 type TokenService struct {
-	repo TokenRepo
+	repo   TokenRepo
+	events EventRecorder
 }
 
 func NewTokenService(repo TokenRepo) *TokenService {
 	return &TokenService{repo: repo}
+}
+
+func (s *TokenService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 // Create generates a new PAT. expiresAt is an absolute unix seconds timestamp;
@@ -83,6 +88,7 @@ func (s *TokenService) Create(name, scope string, expiresAt *int64) (*domain.Per
 	if expiresAt != nil {
 		tok.ExpiresAt = *expiresAt
 	}
+	recordIf(s.events, "token.changed", TokenChangedPayload{Kind: "create", ID: id})
 	return tok, fullToken, nil
 }
 
@@ -122,7 +128,11 @@ func (s *TokenService) List() ([]domain.PersonalAccessToken, error) {
 }
 
 func (s *TokenService) Delete(id int64) error {
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	recordIf(s.events, "token.changed", TokenChangedPayload{Kind: "revoke", ID: id})
+	return nil
 }
 
 func (s *TokenService) Count() (int64, error) {
@@ -144,6 +154,7 @@ func (s *TokenService) CleanExpired() {
 	}
 	if n > 0 {
 		slog.Info("cleaned up expired tokens", "count", n)
+		recordIf(s.events, "token.changed", TokenChangedPayload{Kind: "expired"})
 	}
 }
 
@@ -167,7 +178,8 @@ func CheckScope(scope, method, path string) bool {
 	// or alter server settings.
 	if strings.HasPrefix(path, "/api/tokens") ||
 		strings.HasPrefix(path, "/api/auth") ||
-		strings.HasPrefix(path, "/api/settings") {
+		strings.HasPrefix(path, "/api/settings") ||
+		strings.HasPrefix(path, "/api/changes") {
 		return false
 	}
 

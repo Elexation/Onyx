@@ -37,10 +37,15 @@ type ShareService struct {
 	repo     ShareRepo
 	settings *SettingsService
 	files    SharePathChecker
+	events   EventRecorder
 }
 
 func NewShareService(repo ShareRepo, settings *SettingsService, files SharePathChecker) *ShareService {
 	return &ShareService{repo: repo, settings: settings, files: files}
+}
+
+func (s *ShareService) SetEvents(r EventRecorder) {
+	s.events = r
 }
 
 func (s *ShareService) GetByPath(filePath string) (*domain.ShareLink, error) {
@@ -50,6 +55,7 @@ func (s *ShareService) GetByPath(filePath string) (*domain.ShareLink, error) {
 	}
 	if link != nil && link.ExpiresAt > 0 && link.ExpiresAt < time.Now().Unix() {
 		_ = s.repo.Delete(link.ID)
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "expired", ID: link.ID})
 		return nil, nil
 	}
 	return link, nil
@@ -135,6 +141,7 @@ func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Durat
 		link.ExpiresAt = *expiresAt
 	}
 
+	recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "create", ID: id})
 	return link, fullToken, nil
 }
 
@@ -166,7 +173,11 @@ func (s *ShareService) List() ([]domain.ShareLink, error) {
 }
 
 func (s *ShareService) Delete(id int64) error {
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "revoke", ID: id})
+	return nil
 }
 
 func (s *ShareService) RecordAccess(id int64) {
@@ -191,6 +202,7 @@ func (s *ShareService) CleanExpired() {
 	}
 	if count > 0 {
 		slog.Info("cleaned up expired shares", "count", count)
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "expired"})
 	}
 }
 

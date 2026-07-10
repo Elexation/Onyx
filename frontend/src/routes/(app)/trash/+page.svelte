@@ -12,6 +12,7 @@
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { Trash2, RotateCcw, Info } from "lucide-svelte";
+	import { changes } from "$lib/changes";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -144,6 +145,15 @@
 	}
 
 	onMount(() => { load(); });
+
+	$effect(() => {
+		const offTrash = changes.on("trash.changed", load);
+		const offBehind = changes.onBehind(load);
+		return () => {
+			offTrash();
+			offBehind();
+		};
+	});
 
 	async function handleRestore(item: TrashItem) {
 		try {

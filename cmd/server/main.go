@@ -111,6 +111,13 @@ func main() {
 	shareRepo := database.NewShareRepo(db)
 	shareService := service.NewShareService(shareRepo, settingsService, fileService)
 	shareService.SetEvents(eventStore)
+	fileService.SetShares(shareService)
+	trashService.SetShares(shareService)
+	if n, err := shareService.SweepOrphans(); err != nil {
+		slog.Warn("share orphan sweep failed", "error", err)
+	} else if n > 0 {
+		slog.Info("share orphan sweep removed dead links", "count", n)
+	}
 	shareService.StartCleanup(24 * time.Hour)
 
 	tokenRepo := database.NewTokenRepo(db)

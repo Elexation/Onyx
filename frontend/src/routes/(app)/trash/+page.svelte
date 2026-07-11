@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
-	import { listTrash, restoreTrashItem, permanentDeleteTrashItem, emptyTrash } from "$lib/api/trash.js";
+	import {
+		listTrash,
+		restoreTrashItem,
+		permanentDeleteTrashItem,
+		emptyTrash,
+		checkRestoreConflicts,
+		type RestoreStrategy,
+		type RestoreConflictItem,
+	} from "$lib/api/trash.js";
 	import { getSettings } from "$lib/api/settings.js";
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
 	import type { TrashItem } from "$lib/types";
@@ -9,6 +17,7 @@
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import FileIcon from "$lib/components/FileIcon.svelte";
+	import ConflictDialog, { type ConflictPair } from "$lib/components/dialogs/ConflictDialog.svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
@@ -22,6 +31,12 @@
 	let bulkDeleteConfirmOpen = $state(false);
 	let deleteTarget = $state<TrashItem | null>(null);
 	let submitting = $state(false);
+
+	// Snapshot counts at dialog-open time so the title doesn't flicker when
+	// items[]/selected mutate during the await (or the change feed lands
+	// mid-flight).
+	let emptyConfirmCount = $state(0);
+	let bulkDeleteConfirmCount = $state(0);
 
 	// Selection state
 	let selected = $state<Set<string>>(new Set());
@@ -156,41 +171,158 @@
 		};
 	});
 
-	async function handleRestore(item: TrashItem) {
+	// Conflict-resolution dialog state. Resolver promise pattern lets the
+	// async restore loop await the user's choice without callback gymnastics.
+	let restoreConflictOpen = $state(false);
+	let restoreConflictPairs = $state<ConflictPair[]>([]);
+	let restoreResolver: ((r: Record<string, RestoreStrategy>) => void) | null = null;
+
+	function awaitConflictResolution(pairs: ConflictPair[]) {
+		return new Promise<Record<string, RestoreStrategy>>((resolve) => {
+			restoreConflictPairs = pairs;
+			restoreResolver = resolve;
+			restoreConflictOpen = true;
+		});
+	}
+
+	function handleRestoreConflictResolve(resolutions: Record<string, RestoreStrategy>) {
+		restoreConflictOpen = false;
+		const r = restoreResolver;
+		restoreResolver = null;
+		if (r) r(resolutions);
+	}
+
+	type RestoreTally = "plain" | "replaced" | "keptBoth" | "skipped" | "failed";
+
+	// tryRestore wraps a single restore call with mid-batch 409 recovery.
+	// When two trash items target the same OriginalPath, the upfront
+	// pre-check sees the path empty (0 conflicts), the first restore wins,
+	// and the second collides at the server. We fetch the now-real conflict
+	// and surface the dialog inline so the user can pick a per-item strategy.
+	async function tryRestore(
+		id: string,
+		strategy: RestoreStrategy | undefined,
+	): Promise<RestoreTally> {
 		try {
-			await restoreTrashItem(item.id);
-			toast.success(`Restored "${itemName(item)}"`);
-			items = items.filter((i) => i.id !== item.id);
-			selected.delete(item.id);
-			selected = new Set(selected);
-			if (lastSelected === item.id) lastSelected = null;
-			trashCount.set(items.length);
+			await restoreTrashItem(id, strategy);
+			if (strategy === "replace") return "replaced";
+			if (strategy === "keepBoth") return "keptBoth";
+			return "plain";
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Restore failed");
+			const status = (e as { status?: number })?.status;
+			if (status !== 409) return "failed";
+
+			// Server now sees the just-restored peer as the conflicting "existing".
+			let conflictPair: ConflictPair | null = null;
+			try {
+				const { conflicts } = await checkRestoreConflicts([id]);
+				if (conflicts.length > 0) {
+					const c = conflicts[0];
+					conflictPair = { path: c.path, existing: c.existing, incoming: c.restoring };
+				}
+			} catch {
+				return "failed";
+			}
+			if (!conflictPair) return "failed";
+
+			const resolutions = await awaitConflictResolution([conflictPair]);
+			const chosen = resolutions[conflictPair.path];
+			if (!chosen || chosen === "skip") return "skipped";
+
+			try {
+				await restoreTrashItem(id, chosen);
+				if (chosen === "replace") return "replaced";
+				if (chosen === "keepBoth") return "keptBoth";
+				return "plain";
+			} catch {
+				return "failed";
+			}
 		}
 	}
 
-	async function handleBulkRestore() {
-		const ids = [...selected];
-		let restored = 0;
+	// Unified restore flow: single-row Restore, bulk-toolbar Restore, and
+	// context-menu Restore all funnel through here. Pre-checks for conflicts,
+	// prompts via ConflictDialog if any, then restores each item with the
+	// chosen strategy. Selection mutations are scoped to actually-restored ids.
+	async function restoreItems(ids: string[]) {
+		if (ids.length === 0) return;
+
+		let conflicts: RestoreConflictItem[] = [];
+		try {
+			({ conflicts } = await checkRestoreConflicts(ids));
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Failed to check for conflicts");
+			return;
+		}
+
+		let resolutions: Record<string, RestoreStrategy> = {};
+		if (conflicts.length > 0) {
+			const pairs: ConflictPair[] = conflicts.map((c) => ({
+				path: c.path,
+				existing: c.existing,
+				incoming: c.restoring,
+			}));
+			resolutions = await awaitConflictResolution(pairs);
+		}
+
+		const conflictPathByID = new Map(conflicts.map((c) => [c.id, c.path]));
+
+		// Capture single-item name before mutating items.
+		const singleItemName =
+			ids.length === 1
+				? (items.find((i) => i.id === ids[0])?.originalPath.split("/").pop() ?? "")
+				: "";
+
+		let plain = 0;
+		let replaced = 0;
+		let keptBoth = 0;
+		let skipped = 0;
 		let failed = 0;
+		const restoredIds: string[] = [];
+
 		for (const id of ids) {
-			try {
-				await restoreTrashItem(id);
-				restored++;
-			} catch {
-				failed++;
+			const conflictPath = conflictPathByID.get(id);
+			const strategy = conflictPath ? resolutions[conflictPath] : undefined;
+			if (conflictPath && (!strategy || strategy === "skip")) {
+				skipped++;
+				continue;
+			}
+			const tally = await tryRestore(id, strategy);
+			if (tally === "failed") failed++;
+			else if (tally === "skipped") skipped++;
+			else {
+				restoredIds.push(id);
+				if (tally === "replaced") replaced++;
+				else if (tally === "keptBoth") keptBoth++;
+				else plain++;
 			}
 		}
-		if (failed === 0) {
-			items = items.filter((i) => !ids.includes(i.id));
-			toast.success(`Restored ${restored} item${restored !== 1 ? "s" : ""}`);
-		} else {
+
+		if (failed > 0) {
 			await load();
-			toast.error(`${failed} item(s) failed to restore`);
+		} else {
+			items = items.filter((i) => !restoredIds.includes(i.id));
 		}
+		for (const id of restoredIds) selected.delete(id);
+		selected = new Set(selected);
+		if (lastSelected !== null && restoredIds.includes(lastSelected)) lastSelected = null;
 		trashCount.set(items.length);
-		clearSelection();
+
+		const totalRestored = plain + replaced + keptBoth;
+		if (failed > 0) {
+			toast.error(`${failed} item${failed !== 1 ? "s" : ""} failed to restore`);
+		} else if (totalRestored === 0 && skipped > 0) {
+			toast.info(`Skipped ${skipped} item${skipped !== 1 ? "s" : ""}`);
+		} else if (ids.length === 1 && totalRestored === 1 && skipped === 0) {
+			toast.success(`Restored "${singleItemName}"`);
+		} else if (totalRestored > 0) {
+			const parts: string[] = [];
+			if (replaced) parts.push(`${replaced} replaced`);
+			if (keptBoth) parts.push(`${keptBoth} kept both`);
+			if (skipped) parts.push(`${skipped} skipped`);
+			const suffix = parts.length ? ` (${parts.join(" · ")})` : "";
+			toast.success(`Restored ${totalRestored} item${totalRestored !== 1 ? "s" : ""}${suffix}`);
+		}
 	}
 
 	function confirmDelete(item: TrashItem) {
@@ -199,6 +331,7 @@
 	}
 
 	function confirmBulkDelete() {
+		bulkDeleteConfirmCount = selected.size;
 		bulkDeleteConfirmOpen = true;
 	}
 
@@ -265,12 +398,7 @@
 	}
 
 	async function handleContextRestore(item: TrashItem) {
-		const ids = getContextIds(item);
-		if (ids.length === 1) {
-			await handleRestore(item);
-		} else {
-			await handleBulkRestore();
-		}
+		await restoreItems(getContextIds(item));
 	}
 
 	function handleContextDelete(item: TrashItem) {
@@ -306,7 +434,7 @@
 			<Button
 				variant="destructive"
 				size="default"
-				onclick={(e) => { e.stopPropagation(); emptyConfirmOpen = true; }}
+				onclick={(e) => { e.stopPropagation(); emptyConfirmCount = items.length; emptyConfirmOpen = true; }}
 			>
 				<Trash2 class="size-4" strokeWidth={2} />
 				<span>Empty trash</span>
@@ -325,7 +453,7 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={(e) => { e.stopPropagation(); handleBulkRestore(); }}
+				onclick={(e) => { e.stopPropagation(); restoreItems([...selected]); }}
 			>
 				<RotateCcw class="size-[15px]" strokeWidth={2} />
 				<span>Restore</span>
@@ -446,7 +574,7 @@
 										<Button
 											variant="outline"
 											size="xs"
-											onclick={() => handleRestore(item)}
+											onclick={() => restoreItems([item.id])}
 										>
 											Restore
 										</Button>
@@ -476,7 +604,7 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>Empty trash?</AlertDialog.Title>
 			<AlertDialog.Description>
-				Permanently delete all {items.length} {items.length === 1 ? "item" : "items"}? This action cannot be undone.
+				Permanently delete all {emptyConfirmCount} {emptyConfirmCount === 1 ? "item" : "items"}? This action cannot be undone.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
@@ -508,7 +636,7 @@
 <AlertDialog.Root bind:open={bulkDeleteConfirmOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Permanently delete {selected.size} {selected.size === 1 ? "item" : "items"}?</AlertDialog.Title>
+			<AlertDialog.Title>Permanently delete {bulkDeleteConfirmCount} {bulkDeleteConfirmCount === 1 ? "item" : "items"}?</AlertDialog.Title>
 			<AlertDialog.Description>This action cannot be undone.</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
@@ -519,3 +647,12 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<!-- Restore conflict resolution -->
+{#if restoreConflictOpen}
+	<ConflictDialog
+		conflicts={restoreConflictPairs}
+		kind="restore"
+		onresolve={handleRestoreConflictResolve}
+	/>
+{/if}

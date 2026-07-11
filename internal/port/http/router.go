@@ -83,6 +83,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)
 			r.Get("/count", trashHandler.Count)
+			r.Post("/check-restore-conflicts", trashHandler.CheckRestoreConflicts)
 			r.Post("/{id}/restore", trashHandler.Restore)
 			r.Delete("/{id}", trashHandler.PermanentDelete)
 			r.Delete("/", trashHandler.EmptyTrash)

@@ -29,6 +29,13 @@ type TrashRepo interface {
 	ListOldestFirst() ([]domain.TrashItem, error)
 }
 
+// ShareCleaner is the minimal share-service surface trash/file cascade
+// hooks need. Wired post-construction via SetShares to avoid a circular
+// init dependency (ShareService is built after TrashService and FileService).
+type ShareCleaner interface {
+	DeleteForPath(p string, isDir bool) (int64, error)
+}
+
 type TrashService struct {
 	repo        TrashRepo
 	settings    *SettingsService
@@ -36,6 +43,7 @@ type TrashService struct {
 	realDataDir string
 	trashDir    string
 	versions    *VersionService
+	shares      ShareCleaner
 	events      EventRecorder
 }
 
@@ -64,6 +72,24 @@ func (s *TrashService) SetVersioning(v *VersionService) {
 
 func (s *TrashService) SetEvents(r EventRecorder) {
 	s.events = r
+}
+
+// SetShares wires the share cleaner in after construction. Used so that
+// trashing a file cascades to remove any share pointing at it.
+func (s *TrashService) SetShares(c ShareCleaner) {
+	s.shares = c
+}
+
+// cascadeShareDelete drops shares for the given path. Logs failures but
+// never propagates — share cascade is best-effort cleanup, not a barrier
+// to the underlying trash/delete operation. Nil-safe when shares unwired.
+func (s *TrashService) cascadeShareDelete(p string, isDir bool) {
+	if s.shares == nil {
+		return
+	}
+	if _, err := s.shares.DeleteForPath(p, isDir); err != nil {
+		slog.Warn("trash: cascade share delete failed", "path", p, "isDir", isDir, "error", err)
+	}
 }
 
 // resolveDataSubpath performs a lexical safety check on a data-relative path
@@ -103,6 +129,21 @@ type MoveToTrashResult struct {
 	Path    string `json:"path"`
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
+}
+
+// RestoreConflict describes a trashed item whose original path is currently
+// occupied. Returned by CheckRestoreConflicts to drive the UI prompt.
+type RestoreConflict struct {
+	ID        string              `json:"id"`
+	Path      string              `json:"path"`
+	IsDir     bool                `json:"isDir"`
+	Existing  RestoreConflictMeta `json:"existing"`
+	Restoring RestoreConflictMeta `json:"restoring"`
+}
+
+type RestoreConflictMeta struct {
+	Size    int64 `json:"size"`
+	ModTime int64 `json:"modTime"`
 }
 
 func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
@@ -166,29 +207,120 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("record trash item: %s", err)}
 	}
 
+	// Cascade-clean any share pointing at the trashed path. Restore does NOT
+	// re-create shares — the user must re-share at the new location.
+	s.cascadeShareDelete(item.OriginalPath, info.IsDir())
+
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "add", ID: id})
 	return MoveToTrashResult{Path: filePath, Success: true}
 }
 
-func (s *TrashService) Restore(id string) error {
+// CheckRestoreConflicts returns the subset of trash items whose original
+// paths are currently occupied. Items already restored, purged, or with
+// non-conflicting paths are omitted from the result. Existing folder size is
+// computed via dirSize walk; restoring-side mtime is read from the trash
+// blob (os.Rename preserves mtime, so it equals the original mtime).
+func (s *TrashService) CheckRestoreConflicts(ids []string) ([]RestoreConflict, error) {
+	var conflicts []RestoreConflict
+	for _, id := range ids {
+		item, err := s.repo.GetByID(id)
+		if err != nil || item == nil {
+			continue
+		}
+		dstAbs, err := s.resolveDataSubpath(item.OriginalPath)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(dstAbs)
+		if err != nil {
+			continue
+		}
+
+		var existingSize int64
+		if info.IsDir() {
+			sz, err := dirSize(dstAbs)
+			if err != nil {
+				return nil, fmt.Errorf("walk existing dir: %w", err)
+			}
+			existingSize = sz
+		} else {
+			existingSize = info.Size()
+		}
+
+		var restoringMTime int64
+		trashAbs := filepath.Join(s.trashDir, item.TrashPath)
+		if tInfo, err := os.Lstat(trashAbs); err == nil {
+			restoringMTime = tInfo.ModTime().Unix()
+		}
+
+		conflicts = append(conflicts, RestoreConflict{
+			ID:    item.ID,
+			Path:  item.OriginalPath,
+			IsDir: item.IsDir,
+			Existing: RestoreConflictMeta{
+				Size:    existingSize,
+				ModTime: info.ModTime().Unix(),
+			},
+			Restoring: RestoreConflictMeta{
+				Size:    item.Size,
+				ModTime: restoringMTime,
+			},
+		})
+	}
+	return conflicts, nil
+}
+
+// Restore moves a trashed item back to its original path. The strategy
+// parameter resolves conflicts:
+//
+//   - "replace"   — displace the existing item to trash, then restore.
+//     Reversible: the displaced item lives in trash with the same OriginalPath.
+//   - "keepBoth"  — auto-suffix (e.g. "Foo (1)") until a free name is found.
+//   - "skip"      — no filesystem action, returns ("", nil). Trash record stays.
+//   - ""          — back-compat: error if the path is occupied.
+//
+// Returns the final restored path (empty for skip).
+func (s *TrashService) Restore(id, strategy string) (string, error) {
 	item, err := s.repo.GetByID(id)
 	if err != nil {
-		return fmt.Errorf("get trash item: %w", err)
+		return "", fmt.Errorf("get trash item: %w", err)
 	}
 	if item == nil {
-		return fmt.Errorf("trash item not found")
+		return "", fmt.Errorf("trash item not found")
 	}
 
 	// Lexical check on the stored original path before any filesystem
 	// side-effects. Rejects tampered or malformed trash records.
 	dstAbs, err := s.resolveDataSubpath(item.OriginalPath)
 	if err != nil {
-		return fmt.Errorf("invalid original path in trash record")
+		return "", fmt.Errorf("invalid original path in trash record")
 	}
 
-	// Check for conflict at original path
+	finalPath := item.OriginalPath
+
 	if _, err := os.Stat(dstAbs); err == nil {
-		return fmt.Errorf("cannot restore: a file or directory already exists at %s", item.OriginalPath)
+		switch strategy {
+		case "skip":
+			return "", nil
+		case "replace":
+			res := s.moveOne(item.OriginalPath)
+			if !res.Success {
+				return "", fmt.Errorf("displace existing for replace: %s", res.Error)
+			}
+		case "keepBoth":
+			unique, err := s.uniqueAbsPath(dstAbs)
+			if err != nil {
+				return "", err
+			}
+			dstAbs = unique
+			rel, err := filepath.Rel(s.dataDir, dstAbs)
+			if err != nil {
+				return "", fmt.Errorf("compute relative path: %w", err)
+			}
+			finalPath = "/" + filepath.ToSlash(rel)
+		default:
+			return "", fmt.Errorf("cannot restore: a file or directory already exists at %s", item.OriginalPath)
+		}
 	}
 
 	// Ensure parent directory exists. The lexical check above guarantees
@@ -196,39 +328,61 @@ func (s *TrashService) Restore(id string) error {
 	// defense-in-depth against a symlink-in-ancestor escape.
 	parentDir := filepath.Dir(dstAbs)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return fmt.Errorf("create parent directory: %w", err)
+		return "", fmt.Errorf("create parent directory: %w", err)
 	}
 	if _, err := s.verifyInsideDataDir(parentDir); err != nil {
-		return fmt.Errorf("restore destination escapes data directory")
+		return "", fmt.Errorf("restore destination escapes data directory")
 	}
 
 	srcAbs := filepath.Join(s.trashDir, item.TrashPath)
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
 		if !isCrossDevice(err) {
-			return fmt.Errorf("restore file: %w", err)
+			return "", fmt.Errorf("restore file: %w", err)
 		}
 		if err := copyTree(srcAbs, dstAbs); err != nil {
 			os.RemoveAll(dstAbs)
-			return fmt.Errorf("restore copy: %w", err)
+			return "", fmt.Errorf("restore copy: %w", err)
 		}
 		if err := os.RemoveAll(srcAbs); err != nil {
-			return fmt.Errorf("restore cleanup trash: %w", err)
+			return "", fmt.Errorf("restore cleanup trash: %w", err)
 		}
 	}
 
 	if err := s.repo.Delete(id); err != nil {
 		// Move back to trash on DB failure
 		os.Rename(dstAbs, srcAbs)
-		return fmt.Errorf("remove trash record: %w", err)
+		return "", fmt.Errorf("remove trash record: %w", err)
 	}
 
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "restore", ID: id})
 	recordIf(s.events, "file.changed", FileChangedPayload{
-		Path:       item.OriginalPath,
-		ParentPath: parentOf(item.OriginalPath),
+		Path:       finalPath,
+		ParentPath: parentOf(finalPath),
 		Kind:       "create",
 	})
-	return nil
+	return finalPath, nil
+}
+
+// uniqueAbsPath returns absPath unchanged if it doesn't exist, otherwise
+// appends " (1)", " (2)", … until a free name is found. Mirrors
+// storage.LocalStorage.UniqueName but works on absolute paths since the
+// trash dir lives outside the storage os.Root.
+func (s *TrashService) uniqueAbsPath(absPath string) (string, error) {
+	if _, err := os.Lstat(absPath); err != nil {
+		return absPath, nil
+	}
+	dir := filepath.Dir(absPath)
+	base := filepath.Base(absPath)
+	ext := filepath.Ext(base)
+	name := base[:len(base)-len(ext)]
+
+	for i := 1; i <= 999; i++ {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", name, i, ext))
+		if _, err := os.Lstat(candidate); err != nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("too many copies of %s", base)
 }
 
 func (s *TrashService) PermanentDelete(id string) error {
@@ -264,6 +418,10 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 		}
 	}
 
+	// Defensive cascade — shares were already removed at trash time, but
+	// items predating this fix may still carry share rows.
+	s.cascadeShareDelete(item.OriginalPath, item.IsDir)
+
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: kind, ID: id})
 	return nil
 }
@@ -284,6 +442,8 @@ func (s *TrashService) EmptyTrash() error {
 				slog.Warn("empty trash: cleanup versions", "path", item.OriginalPath, "error", err)
 			}
 		}
+		// Defensive cascade — see permanentDeleteWithKind.
+		s.cascadeShareDelete(item.OriginalPath, item.IsDir)
 	}
 
 	if len(items) > 0 {

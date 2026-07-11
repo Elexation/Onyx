@@ -35,7 +35,9 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ error: "request failed" }));
-		throw new Error(err.error || "request failed");
+		const e = new Error(err.error || "request failed") as Error & { status: number };
+		e.status = res.status;
+		throw e;
 	}
 
 	return res.json() as Promise<T>;

@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -24,6 +26,10 @@ type ShareRepo interface {
 	DeleteAll() (int64, error)
 	Count() (int64, error)
 	DeleteExpired(now int64) (int64, error)
+	DeleteByPath(p string) (int64, error)
+	DeleteByPathRecursive(dirPath string) (int64, error)
+	UpdatePath(oldPath, newPath string) (int64, error)
+	UpdatePathRecursive(oldDir, newDir string) (int64, error)
 }
 
 // SharePathChecker is the minimal storage interface ShareService needs to
@@ -161,6 +167,18 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 		return nil, nil, nil
 	}
 
+	// Defensive orphan check — covers OS-level deletes that bypassed the
+	// cascade hooks (file removed via SFTP, etc.). Stat is cheap; the
+	// uniform 403/404 elsewhere keeps us from being a token oracle.
+	if _, statErr := s.files.GetFileInfo(link.FilePath); statErr != nil && errors.Is(statErr, os.ErrNotExist) {
+		if delErr := s.repo.Delete(link.ID); delErr != nil {
+			slog.Warn("share validate: failed to delete orphan", "id", link.ID, "path", link.FilePath, "error", delErr)
+		} else {
+			recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "orphaned", ID: link.ID})
+		}
+		return nil, nil, nil
+	}
+
 	return link, pwHash, nil
 }
 
@@ -214,4 +232,85 @@ func (s *ShareService) StartCleanup(interval time.Duration) {
 			s.CleanExpired()
 		}
 	}()
+}
+
+// DeleteForPath removes share rows pointing at p. When isDir is true, the
+// share for the directory itself AND every share for a path inside it is
+// removed. Used as a cascade when files/dirs are trashed or permanently
+// deleted. Returns the number of share rows removed (0 is not an error).
+func (s *ShareService) DeleteForPath(p string, isDir bool) (int64, error) {
+	var (
+		n   int64
+		err error
+	)
+	if isDir {
+		n, err = s.repo.DeleteByPathRecursive(p)
+	} else {
+		n, err = s.repo.DeleteByPath(p)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "cascade"})
+	}
+	return n, nil
+}
+
+// RewritePath updates the file_path of any share matching oldPath. When
+// isDir is true, the directory itself AND every descendant share has its
+// path rewritten by replacing the oldPath prefix with newPath. Used when
+// files/dirs are renamed or moved so existing share links survive the move.
+func (s *ShareService) RewritePath(oldPath, newPath string, isDir bool) (int64, error) {
+	var (
+		n   int64
+		err error
+	)
+	if isDir {
+		n, err = s.repo.UpdatePathRecursive(oldPath, newPath)
+	} else {
+		n, err = s.repo.UpdatePath(oldPath, newPath)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "rewrite"})
+	}
+	return n, nil
+}
+
+// SweepOrphans walks every share and removes those whose target file no
+// longer exists in the data directory. Catches OS-level deletes that
+// bypassed the cascade hooks (e.g. files removed via SFTP while the server
+// was off). Returns the number of orphans removed.
+func (s *ShareService) SweepOrphans() (int, error) {
+	links, err := s.repo.List()
+	if err != nil {
+		return 0, fmt.Errorf("list shares for sweep: %w", err)
+	}
+	removed := 0
+	for _, link := range links {
+		_, err := s.files.GetFileInfo(link.FilePath)
+		if err == nil {
+			continue
+		}
+		// Only delete on confirmed non-existence. Transient errors (EACCES
+		// from a backup tool, EBUSY on Windows during AV scan, EIO on a
+		// flaky disk, an unmounted backing store at boot) must not nuke
+		// share rows — share tokens are credentials with no recovery.
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("share sweep: stat error, skipping (not deleted)", "id", link.ID, "path", link.FilePath, "error", err)
+			continue
+		}
+		if delErr := s.repo.Delete(link.ID); delErr != nil {
+			slog.Warn("share sweep: failed to delete orphan", "id", link.ID, "path", link.FilePath, "error", delErr)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "orphaned"})
+	}
+	return removed, nil
 }

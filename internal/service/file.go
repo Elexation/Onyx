@@ -22,12 +22,21 @@ type ConflictInfo struct {
 	ModTime int64  `json:"modTime"`
 }
 
+// ShareRewriter is the share-service surface FileService needs for cascade
+// hooks on rename, move, and permanent delete. Wired post-construction via
+// SetShares to break the circular init order with ShareService.
+type ShareRewriter interface {
+	DeleteForPath(p string, isDir bool) (int64, error)
+	RewritePath(oldPath, newPath string, isDir bool) (int64, error)
+}
+
 type FileService struct {
 	storage  *storage.LocalStorage
 	trash    *TrashService
 	versions *VersionService
 	settings *SettingsService
 	indexer  *Indexer
+	shares   ShareRewriter
 	events   EventRecorder
 }
 
@@ -56,6 +65,36 @@ func (s *FileService) SetIndexer(indexer *Indexer) {
 
 func (s *FileService) SetEvents(r EventRecorder) {
 	s.events = r
+}
+
+// SetShares wires the share rewriter in after construction so cascade
+// cleanup/rewrite happens on rename, move, and permanent delete.
+func (s *FileService) SetShares(c ShareRewriter) {
+	s.shares = c
+}
+
+// cascadeShareDelete drops shares pointing at p. Best-effort — failures
+// are logged but do not propagate (the underlying delete already succeeded).
+func (s *FileService) cascadeShareDelete(p string, isDir bool) {
+	if s.shares == nil {
+		return
+	}
+	if _, err := s.shares.DeleteForPath(p, isDir); err != nil {
+		slog.Warn("file: cascade share delete failed", "path", p, "isDir", isDir, "error", err)
+	}
+}
+
+// cascadeShareRewrite updates shares from oldPath to newPath on rename/move.
+// Best-effort — failures are logged but do not propagate (the underlying
+// rename already succeeded; a stale share row is preferable to a transaction
+// rollback that would leave the FS state ahead of the DB).
+func (s *FileService) cascadeShareRewrite(oldPath, newPath string, isDir bool) {
+	if s.shares == nil {
+		return
+	}
+	if _, err := s.shares.RewritePath(oldPath, newPath, isDir); err != nil {
+		slog.Warn("file: cascade share rewrite failed", "old", oldPath, "new", newPath, "isDir", isDir, "error", err)
+	}
 }
 
 // ListDirectory returns the contents of a directory, optionally filtering
@@ -165,6 +204,7 @@ func (s *FileService) Rename(filePath, newName string) error {
 			}
 		}
 	}
+	s.cascadeShareRewrite(ensureSlashPrefix(filePath), ensureSlashPrefix(targetPath), info.IsDir)
 	newFull := ensureSlashPrefix(targetPath)
 	recordIf(s.events, "file.changed", FileChangedPayload{
 		Path:       newFull,
@@ -189,10 +229,10 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 		return nil, fmt.Errorf("destination is not a directory: %s", destination)
 	}
 
-	// Pre-stat each path so we can update version/index records after a
-	// successful rename (source is gone by then).
+	// Pre-stat each path so we can update version/index/share records after
+	// a successful rename (source is gone by then).
 	isDir := make(map[string]bool, len(paths))
-	if s.versions != nil || s.indexer != nil {
+	if s.versions != nil || s.indexer != nil || s.shares != nil {
 		for _, p := range paths {
 			if pi, err := s.storage.Stat(p); err == nil {
 				isDir[p] = pi.IsDir
@@ -223,6 +263,7 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 				}
 			}
 		}
+		s.cascadeShareRewrite(oldPath, newPath, isDir[paths[i]])
 		recordIf(s.events, "file.changed", FileChangedPayload{
 			Path:       newPath,
 			ParentPath: parentOf(newPath),
@@ -282,6 +323,7 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 // is false, files are moved to the trash directory instead of being deleted.
 func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult {
 	var results []storage.OpResult
+	wentToTrash := false
 	if !permanent && s.trash != nil && s.settings != nil {
 		enabled, err := s.settings.Get(domain.SettingTrashEnabled)
 		if err != nil || domain.GetBool(enabled) {
@@ -297,6 +339,19 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 					Error:   tr.Error,
 				}
 			}
+			wentToTrash = true
+		}
+	}
+	// Pre-stat for share cascade — only needed when bypassing trash, since
+	// MoveToTrash already cascades. Source is gone by the time we cascade,
+	// so isDir must be captured before the storage delete.
+	var preStatIsDir map[string]bool
+	if !wentToTrash && s.shares != nil {
+		preStatIsDir = make(map[string]bool, len(paths))
+		for _, p := range paths {
+			if pi, err := s.storage.Stat(p); err == nil {
+				preStatIsDir[p] = pi.IsDir
+			}
 		}
 	}
 	if results == nil {
@@ -304,8 +359,13 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 	}
 	var deleted []string
 	for i, r := range results {
-		if r.Success {
-			deleted = append(deleted, ensureSlashPrefix(paths[i]))
+		if !r.Success {
+			continue
+		}
+		full := ensureSlashPrefix(paths[i])
+		deleted = append(deleted, full)
+		if !wentToTrash {
+			s.cascadeShareDelete(full, preStatIsDir[paths[i]])
 		}
 	}
 	if s.indexer != nil && len(deleted) > 0 {

@@ -17,11 +17,20 @@
 
 	let {
 		conflicts,
+		kind = "upload",
 		onresolve,
 	}: {
 		conflicts: ConflictPair[];
+		kind?: "upload" | "restore";
 		onresolve: (resolutions: Record<string, Resolution>) => void;
 	} = $props();
+
+	const incomingLabel = $derived(kind === "restore" ? "Restoring" : "Uploading");
+	const description = $derived(
+		kind === "restore"
+			? "Choose how to handle this restore."
+			: "Choose how to handle this upload.",
+	);
 
 	let index = $state(0);
 	let applyToAll = $state(false);
@@ -61,7 +70,7 @@
 				{#if hasMany}
 					Conflict {index + 1} of {total}. Choose how to resolve, or apply to all.
 				{:else}
-					Choose how to handle this upload.
+					{description}
 				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
@@ -88,7 +97,7 @@
 					<div
 						class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
 					>
-						Uploading
+						{incomingLabel}
 					</div>
 					<div class="flex items-center gap-2.5">
 						<FileIcon name={currentName} class="size-7 shrink-0" />

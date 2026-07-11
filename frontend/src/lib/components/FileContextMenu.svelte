@@ -4,6 +4,7 @@
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { getDownloadUrl } from "$lib/api/files.js";
 	import EyeIcon from "@lucide/svelte/icons/eye";
 	import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -66,7 +67,7 @@
 </script>
 
 <ContextMenu.Root>
-	<ContextMenu.Trigger>
+	<ContextMenu.Trigger disabled={viewport.isMobile}>
 		{#snippet child({ props })}
 			{@render children(props)}
 		{/snippet}

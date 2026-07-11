@@ -161,6 +161,12 @@
 									}
 								}
 							}}
+							oncontextmenucapture={(e) => {
+								if (viewport.isMobile) {
+									e.preventDefault();
+									e.stopImmediatePropagation();
+								}
+							}}
 							ondblclick={(e) => {
 								e.stopPropagation();
 								onopen(file);
@@ -212,6 +218,12 @@
 										{isCut ? 'opacity-50' : ''}"
 									{style}
 									onclick={(e) => handleRowClick(e, file)}
+									oncontextmenucapture={(e) => {
+										if (viewport.isMobile) {
+											e.preventDefault();
+											e.stopImmediatePropagation();
+										}
+									}}
 									ondblclick={(e) => {
 										e.stopPropagation();
 										onopen(file);

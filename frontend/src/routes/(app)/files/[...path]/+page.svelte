@@ -14,6 +14,7 @@
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { addFiles, startUpload } from "$lib/upload/uppy.js";
 	import { changes } from "$lib/changes";
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
@@ -64,6 +65,7 @@
 	function handleBgContextMenu(e: MouseEvent) {
 		if (e.defaultPrevented) return;
 		e.preventDefault();
+		if (viewport.isMobile) return;
 		bgMenuPos = { x: e.clientX, y: e.clientY };
 		bgMenuOpen = true;
 	}

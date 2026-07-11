@@ -11,6 +11,7 @@
 	import FileIcon from "$lib/components/FileIcon.svelte";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { Trash2, RotateCcw, Info } from "lucide-svelte";
 	import { changes } from "$lib/changes";
 
@@ -390,13 +391,19 @@
 					{@const isSelected = selected.has(item.id)}
 					{@const parent = parentDir(item.originalPath)}
 					<ContextMenu.Root>
-						<ContextMenu.Trigger>
+						<ContextMenu.Trigger disabled={viewport.isMobile}>
 							{#snippet child({ props })}
 								<div
 									{...props}
 									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 grid-cols-[1fr_auto] md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 px-[14px] py-2.5 md:py-2
 										{isSelected ? 'bg-accent-brand-dim' : ''}"
 									onclick={(e) => handleItemClick(e, item)}
+									oncontextmenucapture={(e) => {
+										if (viewport.isMobile) {
+											e.preventDefault();
+											e.stopImmediatePropagation();
+										}
+									}}
 									role="row"
 									tabindex={0}
 								>

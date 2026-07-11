@@ -97,6 +97,12 @@
 				}
 			}
 		}}
+		oncontextmenucapture={(e) => {
+			if (viewport.isMobile) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+			}
+		}}
 		ondblclick={(e) => {
 			e.stopPropagation();
 			onopen(item);
@@ -137,6 +143,12 @@
 					: 'border-border bg-card hover:border-border-2 active:bg-muted'}
 					{isCut ? 'opacity-50' : ''}"
 				onclick={handleClick}
+				oncontextmenucapture={(e) => {
+					if (viewport.isMobile) {
+						e.preventDefault();
+						e.stopImmediatePropagation();
+					}
+				}}
 				ondblclick={(e) => {
 					e.stopPropagation();
 					onopen(item);

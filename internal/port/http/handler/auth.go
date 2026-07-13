@@ -141,6 +141,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.rl.RecordSuccess(r)
 	slog.Info("security_event", "event", "password_change", "ip", h.clientIP(r))
 	h.setSessionCookie(w, r, newSession)
 	writeJSON(w, http.StatusOK, map[string]any{

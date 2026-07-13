@@ -27,6 +27,10 @@ func (h *UploadHandler) CheckConflicts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paths is required"})
 		return
 	}
+	if len(req.Paths) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
+		return
+	}
 	if req.TargetDir == "" {
 		req.TargetDir = "/"
 	}

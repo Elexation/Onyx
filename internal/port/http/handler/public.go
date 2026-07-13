@@ -203,7 +203,9 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
 	if err := h.files.WriteZip(w, []string{link.FilePath}); err != nil {
-		slog.Error("share zip stream error", "error", err)
+		if !errors.Is(err, service.ErrZipSizeExceeded) {
+			slog.Error("share zip stream error", "error", err)
+		}
 	}
 }
 

@@ -20,6 +20,8 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	rl := middleware.NewRateLimiter(trustedProxy)
 	shareRL := middleware.NewRateLimiter(trustedProxy)
 	streamRL := middleware.NewStreamRateLimiter(trustedProxy)
+	trashRL := middleware.NewStreamRateLimiter(trustedProxy)
+	uploadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -50,7 +52,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.With(rl.Middleware).Post("/login", authHandler.Login)
 		r.With(rl.Middleware).Post("/setup", authHandler.Setup)
 		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/logout", authHandler.Logout)
-		r.With(middleware.Auth(auth, tokens), middleware.CSRF).Post("/change-password", authHandler.ChangePassword)
+		r.With(middleware.Auth(auth, tokens), middleware.CSRF, rl.Middleware).Post("/change-password", authHandler.ChangePassword)
 	})
 
 	// Protected API routes
@@ -70,9 +72,10 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
 		r.Get("/preview/*", fileHandler.Preview)
-		r.Get("/thumbs/*", thumbsHandler.Get)
 		r.Group(func(r chi.Router) {
 			r.Use(streamRL.Middleware)
+			r.Get("/thumbs/*", thumbsHandler.Get)
+			r.Get("/search", searchHandler.Search)
 			r.Get("/stream/info/*", streamHandler.Info)
 			r.Get("/stream/master/*", streamHandler.Master)
 			r.Get("/stream/playlist/{v}/*", streamHandler.Playlist)
@@ -83,10 +86,10 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Route("/trash", func(r chi.Router) {
 			r.Get("/", trashHandler.List)
 			r.Get("/count", trashHandler.Count)
-			r.Post("/check-restore-conflicts", trashHandler.CheckRestoreConflicts)
-			r.Post("/{id}/restore", trashHandler.Restore)
-			r.Delete("/{id}", trashHandler.PermanentDelete)
-			r.Delete("/", trashHandler.EmptyTrash)
+			r.With(trashRL.Middleware).Post("/check-restore-conflicts", trashHandler.CheckRestoreConflicts)
+			r.With(trashRL.Middleware).Post("/{id}/restore", trashHandler.Restore)
+			r.With(trashRL.Middleware).Delete("/{id}", trashHandler.PermanentDelete)
+			r.With(trashRL.Middleware).Delete("/", trashHandler.EmptyTrash)
 		})
 
 		r.Route("/versions", func(r chi.Router) {
@@ -95,8 +98,6 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Post("/{id}/restore", versionHandler.Restore)
 			r.Delete("/{id}", versionHandler.Delete)
 		})
-
-		r.Get("/search", searchHandler.Search)
 
 		r.Route("/shares", func(r chi.Router) {
 			r.Post("/", shareHandler.Create)
@@ -120,16 +121,20 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/changes", changesHandler.Get)
 	})
 
-	// Public share API routes (no auth)
-	r.Get("/api/public/s/{token}", publicHandler.Info)
+	// Public share API routes (no auth). All read endpoints sit behind
+	// streamRL — CLAUDE.md mandates rate-limiting any public-share endpoint
+	// triggering expensive I/O (recursive zip, transcoding, file reads).
+	// /verify keeps shareRL (auth-lockout type) for password brute-force
+	// resistance with handler-side RecordSuccess rollback.
 	r.With(shareRL.Middleware).Post("/api/public/s/{token}/verify", publicHandler.Verify)
-	r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
-	r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
-	r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
-	r.Get("/api/public/s/{token}/dl", publicHandler.Download)
-	r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
 	r.Group(func(r chi.Router) {
 		r.Use(streamRL.Middleware)
+		r.Get("/api/public/s/{token}", publicHandler.Info)
+		r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
+		r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
+		r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
+		r.Get("/api/public/s/{token}/dl", publicHandler.Download)
+		r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
 		r.Get("/api/public/s/{token}/stream/info", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/info/*", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/master", publicHandler.StreamMaster)
@@ -143,14 +148,17 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	// Intercept /api/upload before Chi to avoid path mangling.
 	// OPTIONS pass through without auth (tus CORS preflight).
-	return uploadInterceptor(auth, tokens, tus, r)
+	return uploadInterceptor(auth, tokens, tus, uploadCL, r)
 }
 
 // uploadInterceptor routes /api/upload requests directly to tusd,
-// bypassing Chi's routing which modifies URL paths.
-func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, next http.Handler) http.Handler {
+// bypassing Chi's routing which modifies URL paths. uploadCL caps
+// concurrent in-flight upload requests per IP — each tus chunk holds
+// disk and goroutine resources for an extended period, so unbounded
+// concurrency is a DoS vector even behind admin auth.
+func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, uploadCL *middleware.ConcurrencyLimiter, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.Auth(auth, tokens)(middleware.CSRF(stripped))
+	authed := middleware.Auth(auth, tokens)(uploadCL.Middleware(middleware.CSRF(stripped)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/upload" && !strings.HasPrefix(r.URL.Path, "/api/upload/") {
 			next.ServeHTTP(w, r)

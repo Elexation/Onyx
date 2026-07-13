@@ -136,8 +136,40 @@ func (s *FileService) OpenFile(filePath string) (io.ReadSeekCloser, time.Time, i
 }
 
 // WriteZip streams a zip archive of the given paths to w.
+// MaxZipBytes caps the total bytes streamed by any single WriteZip response.
+// Without a cap, a single request like paths=["/large/dir"] streams the entire
+// subtree, draining bandwidth and disk I/O indefinitely. Applied to both
+// admin and public-share zip endpoints.
+const MaxZipBytes int64 = 50 << 30 // 50 GB
+
+// ErrZipSizeExceeded is returned by WriteZip when MaxZipBytes is reached
+// mid-stream. The response is necessarily already partially written; handlers
+// should suppress generic error logging for this case (the service warns).
+var ErrZipSizeExceeded = errors.New("zip size cap exceeded")
+
+type maxBytesWriter struct {
+	w   io.Writer
+	n   int64
+	max int64
+}
+
+func (cw *maxBytesWriter) Write(p []byte) (int, error) {
+	if cw.n+int64(len(p)) > cw.max {
+		return 0, ErrZipSizeExceeded
+	}
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, err
+}
+
 func (s *FileService) WriteZip(w io.Writer, paths []string) error {
-	return s.storage.WriteZip(w, paths)
+	cw := &maxBytesWriter{w: w, max: MaxZipBytes}
+	err := s.storage.WriteZip(cw, paths)
+	if errors.Is(err, ErrZipSizeExceeded) {
+		slog.Warn("zip aborted: size cap exceeded", "max_bytes", MaxZipBytes, "written", cw.n)
+		return ErrZipSizeExceeded
+	}
+	return err
 }
 
 // MakeDir creates a directory. The parent must exist and the target must not.

@@ -78,6 +78,10 @@ func (h *FileOpsHandler) Move(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paths and destination are required"})
 		return
 	}
+	if len(req.Paths) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
+		return
+	}
 
 	results, err := h.files.Move(req.Paths, req.Destination)
 	if err != nil {
@@ -101,6 +105,10 @@ func (h *FileOpsHandler) Copy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paths and destination are required"})
 		return
 	}
+	if len(req.Paths) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
+		return
+	}
 
 	results, err := h.files.Copy(req.Paths, req.Destination)
 	if err != nil {
@@ -122,6 +130,10 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Paths) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paths is required"})
+		return
+	}
+	if len(req.Paths) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
 		return
 	}
 

@@ -154,7 +154,9 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
 	if err := h.files.WriteZip(w, paths); err != nil {
-		slog.Error("zip stream error", "error", err)
+		if !errors.Is(err, service.ErrZipSizeExceeded) {
+			slog.Error("zip stream error", "error", err)
+		}
 	}
 }
 

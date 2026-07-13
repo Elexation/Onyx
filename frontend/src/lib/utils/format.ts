@@ -27,6 +27,7 @@ const RELATIVE_THRESHOLDS: [number, Intl.RelativeTimeFormatUnit, number][] = [
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const dtf = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" });
+const dtfShort = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" });
 
 export function formatDate(unixTimestamp: number): string {
 	const now = Date.now() / 1000;
@@ -40,4 +41,14 @@ export function formatDate(unixTimestamp: number): string {
 	}
 
 	return dtf.format(unixTimestamp * 1000);
+}
+
+export function formatRelativeShort(unixTimestamp: number): string {
+	const now = Date.now() / 1000;
+	const absDiff = Math.abs(unixTimestamp - now);
+	if (absDiff < 60) return "now";
+	if (absDiff < 3600) return `${Math.floor(absDiff / 60)}m`;
+	if (absDiff < 86400) return `${Math.floor(absDiff / 3600)}h`;
+	if (absDiff < 604800) return `${Math.floor(absDiff / 86400)}d`;
+	return dtfShort.format(unixTimestamp * 1000);
 }

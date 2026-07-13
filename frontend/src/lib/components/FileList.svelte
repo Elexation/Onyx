@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { FileInfo } from "$lib/types";
-	import { formatFileSize, formatDate } from "$lib/utils/format.js";
+	import { formatFileSize, formatDate, formatRelativeShort } from "$lib/utils/format.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { ArrowUp, ArrowDown, Link2, MoreVertical } from "lucide-svelte";
+	import { ArrowUp, ArrowDown, Link2, MoreVertical, Check } from "lucide-svelte";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
@@ -151,7 +151,7 @@
 					{@const file = item as FileInfo}
 					{#if file.name === ".."}
 						<div
-							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
+							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] pt-3 pb-4 md:py-[11px]"
 							{style}
 							onclick={(e) => {
 								if (viewport.isMobile) {
@@ -184,7 +184,7 @@
 							<div class="flex min-w-0 items-center gap-3 md:gap-3">
 								<FileIcon
 									isDir={true}
-									class="size-7 opacity-60 md:size-6"
+									class="size-7 text-accent-brand md:size-6"
 									strokeWidth={1.4}
 								/>
 								<span class="truncate text-[15px] md:text-base">..</span>
@@ -213,7 +213,7 @@
 							{#snippet children(triggerProps)}
 								<div
 									{...triggerProps}
-									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] pt-3 pb-4 md:py-[11px]
 										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted active:bg-muted'}
 										{isCut ? 'opacity-50' : ''}"
 									{style}
@@ -236,11 +236,17 @@
 									role="row"
 								>
 									<div class="flex min-w-0 items-center gap-3 md:gap-3">
-										{#if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
+										{#if viewport.isMobile && isSelected}
+											<div
+												class="mt-[2px] flex size-7 shrink-0 items-center justify-center self-start rounded-full bg-accent-brand text-accent-brand-foreground md:mt-0 md:size-6 md:self-auto"
+											>
+												<Check class="size-4" strokeWidth={3} />
+											</div>
+										{:else if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
 											<ThumbnailImage
 												path={file.path}
 												size="small"
-												class="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded md:size-6"
+												class="mt-[2px] flex size-7 shrink-0 items-center justify-center self-start overflow-hidden rounded md:mt-0 md:size-6 md:self-auto"
 											>
 												{#snippet children()}
 													<FileIcon
@@ -257,16 +263,18 @@
 												mimeType={file.mimeType}
 												name={file.name}
 												isDir={file.isDir}
-												class="size-7 shrink-0 md:size-6 {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+												class="mt-[2px] size-7 shrink-0 self-start md:mt-0 md:size-6 md:self-auto {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 												strokeWidth={1.4}
 											/>
 										{/if}
-										<div class="flex min-w-0 flex-1 flex-col">
+										<div class="flex min-w-0 flex-1 flex-col leading-tight">
 											<span class="truncate text-[15px] font-medium md:text-base">
 												{file.name}
 											</span>
-											<span class="truncate text-[11px] tabular-nums text-muted-foreground md:hidden">
-												{formatDate(file.modTime)}
+											<span class="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground md:hidden">
+												{file.isDir
+													? `${file.itemCount ?? 0} items`
+													: `${formatFileSize(file.size)} · ${formatRelativeShort(file.modTime)}`}
 											</span>
 										</div>
 										<div class="flex w-[13px] shrink-0 items-center justify-center">

@@ -6,7 +6,7 @@
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
-	import { Link2 } from "lucide-svelte";
+	import { Link2, Check } from "lucide-svelte";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { longpress } from "$lib/actions/longpress.js";
@@ -88,7 +88,7 @@
 
 {#if item.name === ".."}
 	<div
-		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 text-muted-foreground transition-colors select-none hover:border-border-2 active:bg-muted"
+		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 transition-colors select-none hover:border-border-2 active:bg-muted"
 		onclick={(e) => {
 			if (viewport.isMobile) {
 				e.stopPropagation();
@@ -117,10 +117,19 @@
 		tabindex={0}
 		role="gridcell"
 	>
-		<div class="mx-auto flex h-24 w-24 items-center justify-center">
-			<FileIcon isDir={true} class="size-12 opacity-50" strokeWidth={1.2} />
+		<div class="relative mx-auto w-24">
+			<div
+				class="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg"
+			>
+				<FileIcon isDir={true} class="size-12 text-accent-brand" strokeWidth={1.2} />
+			</div>
 		</div>
-		<span class="w-full truncate text-center text-sm font-medium">..</span>
+		<span class="w-full truncate text-center text-sm font-medium text-foreground">..</span>
+		<span
+			class="w-full truncate text-center text-[11px] tabular-nums text-muted-foreground"
+		>
+			back
+		</span>
 	</div>
 {:else}
 	<FileContextMenu
@@ -164,7 +173,13 @@
 					<div
 						class="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg"
 					>
-						{#if hasThumbnail}
+						{#if viewport.isMobile && isSelected}
+							<div
+								class="flex size-14 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground"
+							>
+								<Check class="size-8" strokeWidth={3} />
+							</div>
+						{:else if hasThumbnail}
 							<ThumbnailImage
 								path={item.path}
 								size="large"
@@ -190,7 +205,7 @@
 							/>
 						{/if}
 					</div>
-					{#if !hasThumbnail && ext}
+					{#if !hasThumbnail && ext && !(viewport.isMobile && isSelected)}
 						<span
 							class="absolute -right-[2px] -bottom-[2px] rounded border border-border-2 bg-background px-[5px] py-[1px] font-mono text-[9px] font-semibold tracking-wider text-muted-foreground uppercase"
 						>

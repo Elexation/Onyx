@@ -59,18 +59,27 @@
 		align="end"
 		side="top"
 		sideOffset={8}
-		class="w-auto min-w-48"
+		class="w-auto min-w-56 p-1.5"
 	>
-		<DropdownMenu.Item onclick={onnewfolder}>
-			<FolderPlusIcon class="size-4" />
+		<DropdownMenu.Item
+			class="gap-3 px-3 py-2.5 text-base"
+			onclick={onnewfolder}
+		>
+			<FolderPlusIcon class="size-5" />
 			New folder
 		</DropdownMenu.Item>
-		<DropdownMenu.Item onclick={() => fileInput?.click()}>
-			<FileUpIcon class="size-4" />
+		<DropdownMenu.Item
+			class="gap-3 px-3 py-2.5 text-base"
+			onclick={() => fileInput?.click()}
+		>
+			<FileUpIcon class="size-5" />
 			File upload
 		</DropdownMenu.Item>
-		<DropdownMenu.Item onclick={() => folderInput?.click()}>
-			<FolderUpIcon class="size-4" />
+		<DropdownMenu.Item
+			class="gap-3 px-3 py-2.5 text-base"
+			onclick={() => folderInput?.click()}
+		>
+			<FolderUpIcon class="size-5" />
 			Folder upload
 		</DropdownMenu.Item>
 	</DropdownMenu.Content>

@@ -31,9 +31,12 @@
 		KeyRound,
 		Server,
 		X,
+		ChevronLeft,
+		ChevronRight,
 	} from "lucide-svelte";
 	import type { Snippet } from "svelte";
 	import { changes } from "$lib/changes";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 
 	type IconComponent = typeof History;
 
@@ -136,11 +139,13 @@
 	let tokenToRevoke = $state<PersonalAccessToken | null>(null);
 
 	let navStripEl = $state<HTMLElement | null>(null);
+	let mobileShowIndex = $state(true);
 
 	const currentSection = $derived(sections.find((s) => s.key === section)!);
 
 	function selectSection(next: SectionKey) {
 		section = next;
+		mobileShowIndex = false;
 		if (next === "tokens" && tokens.length === 0 && !tokensLoading) loadTokens();
 	}
 
@@ -479,7 +484,7 @@
 <div class="flex h-full flex-col md:flex-row">
 	<aside
 		bind:this={navStripEl}
-		class="flex shrink-0 flex-row gap-1 overflow-x-auto border-b border-border p-2 [mask-image:linear-gradient(to_right,black_calc(100%_-_24px),transparent)] md:w-[200px] md:flex-col md:gap-0.5 md:overflow-visible md:border-b-0 md:border-r md:p-3 md:[mask-image:none]"
+		class="hidden shrink-0 flex-col gap-0.5 border-r border-border p-3 md:flex md:w-[200px]"
 	>
 		{#each sections as s (s.key)}
 			{@const active = section === s.key}
@@ -498,8 +503,53 @@
 		{/each}
 	</aside>
 
+	{#if viewport.isMobile && mobileShowIndex}
+		<div class="min-w-0 flex-1 overflow-auto">
+			<div class="mx-auto max-w-[720px] p-4">
+				<header class="px-2 pt-2 pb-4">
+					<h1 class="text-[22px] font-bold tracking-[-0.01em]">Settings</h1>
+					<p class="mt-1 text-[13px] text-muted-foreground">
+						Server configuration and account management.
+					</p>
+				</header>
+				<div class="overflow-hidden rounded-xl border border-border bg-card">
+					{#each sections as s, i (s.key)}
+						<button
+							type="button"
+							onclick={() => selectSection(s.key)}
+							class="flex w-full cursor-pointer items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted active:bg-muted {i <
+							sections.length - 1
+								? 'border-b border-border'
+								: ''}"
+						>
+							<div
+								class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-brand-dim"
+							>
+								<s.icon size={18} class="text-accent-brand" strokeWidth={1.6} />
+							</div>
+							<div class="min-w-0 flex-1 truncate text-[15px] font-medium">{s.label}</div>
+							<ChevronRight
+								class="size-4 shrink-0 text-muted-foreground"
+								strokeWidth={1.6}
+							/>
+						</button>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{:else}
 	<div class="min-w-0 flex-1 overflow-auto">
 		<div class="mx-auto max-w-[720px] p-6 md:px-8 md:py-7">
+			{#if viewport.isMobile}
+				<button
+					type="button"
+					onclick={() => (mobileShowIndex = true)}
+					class="mb-4 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-2 bg-card px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted active:bg-muted"
+				>
+					<ChevronLeft class="size-4" strokeWidth={2} />
+					Settings
+				</button>
+			{/if}
 			{#if loading}
 				<p class="text-sm text-muted-foreground">Loading settings…</p>
 			{:else}
@@ -857,6 +907,7 @@
 			{/if}
 		</div>
 	</div>
+	{/if}
 </div>
 
 <AlertDialog.Root bind:open={shareDisableConfirmOpen}>

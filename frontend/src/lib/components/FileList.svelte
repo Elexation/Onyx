@@ -100,7 +100,7 @@
 		return setupMarquee(scrollEl, {
 			getLayout: () => ({
 				mode: "list",
-				rowHeight: 48,
+				rowHeight: viewport.isMobile ? 64 : 48,
 				headerOffset: headerEl?.offsetHeight ?? 0,
 			}),
 			getItems: () => items,
@@ -146,12 +146,12 @@
 				<div></div>
 			</div>
 
-			<VirtualList {items} estimateSize={() => 48} externalScrollEl={scrollEl}>
+			<VirtualList {items} estimateSize={() => (viewport.isMobile ? 64 : 48)} externalScrollEl={scrollEl}>
 				{#snippet row({ item, style })}
 					{@const file = item as FileInfo}
 					{#if file.name === ".."}
 						<div
-							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] pt-3 pb-4 md:py-[11px]"
+							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
 							{style}
 							onclick={(e) => {
 								if (viewport.isMobile) {
@@ -169,6 +169,7 @@
 							}}
 							ondblclick={(e) => {
 								e.stopPropagation();
+								if (viewport.isMobile) return;
 								onopen(file);
 							}}
 							onkeydown={(e) => {
@@ -213,7 +214,7 @@
 							{#snippet children(triggerProps)}
 								<div
 									{...triggerProps}
-									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] pt-3 pb-4 md:py-[11px]
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
 										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted active:bg-muted'}
 										{isCut ? 'opacity-50' : ''}"
 									{style}
@@ -226,6 +227,7 @@
 									}}
 									ondblclick={(e) => {
 										e.stopPropagation();
+										if (viewport.isMobile) return;
 										onopen(file);
 									}}
 									onkeydown={(e) => handleRowKeydown(e, file)}
@@ -238,7 +240,7 @@
 									<div class="flex min-w-0 items-center gap-3 md:gap-3">
 										{#if viewport.isMobile && isSelected}
 											<div
-												class="mt-[2px] flex size-7 shrink-0 items-center justify-center self-start rounded-full bg-accent-brand text-accent-brand-foreground md:mt-0 md:size-6 md:self-auto"
+												class="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground md:size-6"
 											>
 												<Check class="size-4" strokeWidth={3} />
 											</div>
@@ -246,7 +248,7 @@
 											<ThumbnailImage
 												path={file.path}
 												size="small"
-												class="mt-[2px] flex size-7 shrink-0 items-center justify-center self-start overflow-hidden rounded md:mt-0 md:size-6 md:self-auto"
+												class="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded md:size-6"
 											>
 												{#snippet children()}
 													<FileIcon
@@ -263,7 +265,7 @@
 												mimeType={file.mimeType}
 												name={file.name}
 												isDir={file.isDir}
-												class="mt-[2px] size-7 shrink-0 self-start md:mt-0 md:size-6 md:self-auto {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
+												class="size-7 shrink-0 md:size-6 {file.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 												strokeWidth={1.4}
 											/>
 										{/if}

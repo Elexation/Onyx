@@ -105,6 +105,7 @@
 		}}
 		ondblclick={(e) => {
 			e.stopPropagation();
+			if (viewport.isMobile) return;
 			onopen(item);
 		}}
 		onkeydown={(e) => {
@@ -160,6 +161,7 @@
 				}}
 				ondblclick={(e) => {
 					e.stopPropagation();
+					if (viewport.isMobile) return;
 					onopen(item);
 				}}
 				onkeydown={handleKeydown}

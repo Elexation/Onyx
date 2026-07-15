@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Dialog from "$lib/components/ui/dialog/index.js";
+	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Input } from "$lib/components/ui/input/index.js";
 	import { rename } from "$lib/api/files.js";
@@ -20,6 +21,8 @@
 	let newName = $state("");
 	let submitting = $state(false);
 	let inputRef = $state<HTMLInputElement | null>(null);
+	let confirmExtOpen = $state(false);
+	let pendingName = $state("");
 
 	$effect(() => {
 		if (open) {
@@ -42,16 +45,16 @@
 		}
 	});
 
-	async function submit() {
-		const trimmed = newName.trim();
-		if (!trimmed || trimmed === name) {
-			open = false;
-			return;
-		}
+	function extOf(s: string): string {
+		const dot = s.lastIndexOf(".");
+		return dot > 0 ? s.slice(dot + 1).toLowerCase() : "";
+	}
+
+	async function doRename(target: string) {
 		submitting = true;
 		try {
-			await rename(path, trimmed);
-			toast.success(`Renamed to "${trimmed}"`);
+			await rename(path, target);
+			toast.success(`Renamed to "${target}"`);
 			open = false;
 			onsuccess();
 		} catch (e) {
@@ -59,6 +62,25 @@
 		} finally {
 			submitting = false;
 		}
+	}
+
+	function submit() {
+		const trimmed = newName.trim();
+		if (!trimmed || trimmed === name) {
+			open = false;
+			return;
+		}
+		if (extOf(trimmed) !== extOf(name)) {
+			pendingName = trimmed;
+			confirmExtOpen = true;
+			return;
+		}
+		doRename(trimmed);
+	}
+
+	function confirmExtChange() {
+		confirmExtOpen = false;
+		doRename(pendingName);
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -86,3 +108,21 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root bind:open={confirmExtOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Rename</AlertDialog.Title>
+			<AlertDialog.Description>
+				If you change a file name extension, the file might become unusable.
+				Are you sure you want to change it?
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={submitting}>No</AlertDialog.Cancel>
+			<AlertDialog.Action disabled={submitting} onclick={confirmExtChange}>
+				Yes
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

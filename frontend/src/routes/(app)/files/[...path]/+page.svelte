@@ -41,6 +41,8 @@
 	let listing = $state<DirectoryListing | null>(null);
 	let error = $state<string | null>(null);
 	let loading = $state(true);
+	let showLoading = $state(false);
+	let refreshing = $state(false);
 
 	// Dialog state
 	let renameOpen = $state(false);
@@ -82,29 +84,51 @@
 		if (item) handleShare(item);
 	}
 
-	async function load(dirPath: string, isCancelled?: () => boolean) {
-		loading = true;
-		error = null;
+	async function load(
+		dirPath: string,
+		opts: { isRefresh?: boolean; isCancelled?: () => boolean } = {},
+	) {
+		const { isRefresh = false, isCancelled } = opts;
+		if (!isRefresh) {
+			loading = true;
+			error = null;
+		}
 		try {
 			const result = await listDirectory(dirPath);
 			if (isCancelled?.()) return;
 			listing = result;
+			if (isRefresh) error = null;
 		} catch (e) {
 			if (isCancelled?.()) return;
-			error = e instanceof Error ? e.message : "Failed to load directory";
-			listing = null;
+			const msg = e instanceof Error ? e.message : "Failed to load directory";
+			if (isRefresh) {
+				toast.error(msg);
+			} else {
+				error = msg;
+				listing = null;
+			}
 		} finally {
-			if (!isCancelled?.()) loading = false;
+			if (!isCancelled?.() && !isRefresh) loading = false;
 		}
 	}
 
+	// Delay-gate the Loading… UI so fast loads don't flash.
 	$effect(() => {
-		let cancelled = false;
-		load(path, () => cancelled);
+		if (!loading) {
+			showLoading = false;
+			return;
+		}
+		const t = setTimeout(() => {
+			showLoading = true;
+		}, 250);
+		return () => clearTimeout(t);
+	});
+
+	let navGen = 0;
+	$effect(() => {
+		const myGen = ++navGen;
+		load(path, { isCancelled: () => myGen !== navGen });
 		if (untrack(() => sharesEnabled.enabled)) sharedPaths.refresh();
-		return () => {
-			cancelled = true;
-		};
 	});
 
 	// Clear selection on navigation
@@ -164,8 +188,17 @@
 		preferences.viewMode = mode;
 	}
 
-	function refresh() {
-		load(path);
+	async function refresh() {
+		const myGen = navGen;
+		refreshing = true;
+		try {
+			await Promise.all([
+				load(path, { isRefresh: true, isCancelled: () => myGen !== navGen }),
+				new Promise((r) => setTimeout(r, 400)),
+			]);
+		} finally {
+			refreshing = false;
+		}
 	}
 
 	// Actions
@@ -437,11 +470,12 @@
 	role="application"
 	use:shortcuts={shortcutMap}
 >
-	{#if !loading && !error}
+	{#if !showLoading && !error}
 		<div class="border-b border-border px-4 py-3">
 			<FileToolbar
 				onnewfolder={() => (newFolderOpen = true)}
 				onrefresh={refresh}
+				{refreshing}
 				ondelete={() => handleDelete([...selection.items])}
 				onpaste={handlePaste}
 				ondownload={handleDownload}
@@ -459,7 +493,7 @@
 		<Breadcrumbs {path} ondrop={handleDrop} />
 	</div>
 
-	{#if loading}
+	{#if showLoading}
 		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
 			Loading...
 		</div>

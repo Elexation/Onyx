@@ -14,6 +14,7 @@
 	let {
 		onnewfolder,
 		onrefresh,
+		refreshing = false,
 		ondelete,
 		onpaste,
 		ondownload,
@@ -23,6 +24,7 @@
 	}: {
 		onnewfolder: () => void;
 		onrefresh: () => void;
+		refreshing?: boolean;
 		ondelete: () => void;
 		onpaste: () => void;
 		ondownload: () => void;
@@ -81,7 +83,7 @@
 	{/if}
 
 	<Button variant="ghost" size="icon-sm" onclick={onrefresh} title="Refresh" aria-label="Refresh">
-		<RefreshCwIcon class="size-[15px]" strokeWidth={2} />
+		<RefreshCwIcon class="size-[15px] {refreshing ? 'animate-spin' : ''}" strokeWidth={2} />
 	</Button>
 
 	<div class="ml-auto">

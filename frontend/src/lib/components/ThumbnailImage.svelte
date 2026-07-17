@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	type CacheState = "loaded" | "failed";
-	type CacheEntry = { state: CacheState; url?: string };
+	type CacheEntry = { state: CacheState; blob?: Blob };
 	const CACHE_LIMIT = 200;
 	const cache = new Map<string, CacheEntry>();
 
@@ -8,17 +8,13 @@
 		return size + "\0" + path;
 	}
 
-	// Evicts the oldest entry when the cache exceeds CACHE_LIMIT, revoking its
-	// blob URL so the underlying Blob can be GC'd.
 	function cacheSet(key: string, entry: CacheEntry) {
 		if (cache.has(key)) cache.delete(key);
 		cache.set(key, entry);
 		while (cache.size > CACHE_LIMIT) {
 			const oldestKey = cache.keys().next().value;
 			if (oldestKey === undefined) break;
-			const oldest = cache.get(oldestKey);
 			cache.delete(oldestKey);
-			if (oldest?.url) URL.revokeObjectURL(oldest.url);
 		}
 	}
 </script>
@@ -45,20 +41,33 @@
 	let url: string | null = $state(null);
 	let el: HTMLDivElement | null = $state(null);
 	let ownedUrl: string | null = null;
+	let imgRetried = false;
 
 	const key = $derived(cacheKey(path, size));
 
-	$effect(() => {
-		const cached = cache.get(key);
-		// Revoke any previously-owned blob URL that no longer matches the current
-		// cache entry before resetting state for the new key.
-		if (ownedUrl && cached?.url !== ownedUrl) {
+	function clearOwnedUrl() {
+		if (ownedUrl) {
 			URL.revokeObjectURL(ownedUrl);
 			ownedUrl = null;
 		}
-		if (cached) {
-			loadState = cached.state;
-			url = cached.url ?? null;
+	}
+
+	$effect(() => {
+		// Re-run when key changes (path/size prop change on a live instance).
+		// Revoke the previous instance-owned URL before adopting state for the new key.
+		clearOwnedUrl();
+		imgRetried = false;
+		const cached = cache.get(key);
+		if (cached?.state === "loaded" && cached.blob) {
+			const objectUrl = URL.createObjectURL(cached.blob);
+			ownedUrl = objectUrl;
+			url = objectUrl;
+			loadState = "loaded";
+			return;
+		}
+		if (cached?.state === "failed") {
+			loadState = "failed";
+			url = null;
 			return;
 		}
 		loadState = "idle";
@@ -95,10 +104,11 @@
 				if (res.status === 200) {
 					const blob = await res.blob();
 					const objectUrl = URL.createObjectURL(blob);
+					clearOwnedUrl();
 					ownedUrl = objectUrl;
 					url = objectUrl;
 					loadState = "loaded";
-					cacheSet(key, { state: "loaded", url: objectUrl });
+					cacheSet(key, { state: "loaded", blob });
 					return;
 				}
 				if (res.status === 202 && attempt < maxAttempts) {
@@ -116,21 +126,41 @@
 	}
 
 	function fail() {
+		clearOwnedUrl();
 		loadState = "failed";
 		url = null;
 		cacheSet(key, { state: "failed" });
 	}
 
-	onDestroy(() => {
-		if (ownedUrl && cache.get(key)?.url !== ownedUrl) {
-			URL.revokeObjectURL(ownedUrl);
+	function handleImgError() {
+		// The created URL didn't resolve in the <img>. Drop the cache entry and
+		// retry once via the IntersectionObserver path; on a second failure, fall
+		// through to the children fallback (FileIcon) — never the browser default.
+		if (imgRetried) {
+			fail();
+			return;
 		}
+		imgRetried = true;
+		cache.delete(key);
+		clearOwnedUrl();
+		loadState = "idle";
+		url = null;
+	}
+
+	onDestroy(() => {
+		clearOwnedUrl();
 	});
 </script>
 
 <div bind:this={el} class={className}>
 	{#if loadState === "loaded" && url}
-		<img src={url} alt="" class="h-full w-full rounded object-cover" loading="lazy" />
+		<img
+			src={url}
+			alt=""
+			class="h-full w-full rounded object-cover"
+			loading="lazy"
+			onerror={handleImgError}
+		/>
 	{:else}
 		{@render children()}
 	{/if}

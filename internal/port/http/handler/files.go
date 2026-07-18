@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -84,28 +85,58 @@ func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		name = filePath[idx+1:]
 	}
 
-	if needsSandbox(name) {
+	ctype := resolvePreviewContentType(file, name)
+	if !isSafeInline(ctype) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
+	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
 
-// needsSandbox reports whether an inline-served file should carry a sandbox
-// CSP. Any browser-renderable scriptable type (HTML/XHTML/MHTML/XML/SVG) must
-// be sandboxed: they share the SPA origin and would otherwise execute scripts
-// against the authenticated session.
-func needsSandbox(name string) bool {
-	n := strings.ToLower(name)
-	switch {
-	case strings.HasSuffix(n, ".svg"),
-		strings.HasSuffix(n, ".html"),
-		strings.HasSuffix(n, ".htm"),
-		strings.HasSuffix(n, ".xhtml"),
-		strings.HasSuffix(n, ".xml"),
-		strings.HasSuffix(n, ".mhtml"),
-		strings.HasSuffix(n, ".mht"):
+// resolvePreviewContentType returns the Content-Type the browser will see for
+// an inline preview, mirroring http.ServeContent's resolution: extension first,
+// 512-byte sniff fallback. The resolved type drives the sandbox decision —
+// extension-only matching is bypassable via files with no extension (sniffed
+// to text/html), .xht (resolves to application/xhtml+xml), Windows-registry
+// MIME entries, or future MIME-DB additions.
+func resolvePreviewContentType(file io.ReadSeeker, name string) string {
+	if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+		return ct
+	}
+	var buf [512]byte
+	n, _ := file.Read(buf[:])
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "application/octet-stream"
+	}
+	if n == 0 {
+		return "application/octet-stream"
+	}
+	return http.DetectContentType(buf[:n])
+}
+
+// isSafeInline reports whether ct is a Content-Type the browser cannot execute
+// scripts under when served inline. Anything not in this allow-list — HTML,
+// XHTML, XML, MHTML, SVG, application/octet-stream, unknown types — must be
+// sandboxed at the CSP layer. Allow-list is strictly safer than enumerating
+// scriptable extensions: the web evolves, mime DBs differ, attacker uploads
+// can be extension-less.
+func isSafeInline(ct string) bool {
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	ct = strings.ToLower(strings.TrimSpace(ct))
+	if ct == "image/svg+xml" {
+		return false
+	}
+	if strings.HasPrefix(ct, "image/") ||
+		strings.HasPrefix(ct, "video/") ||
+		strings.HasPrefix(ct, "audio/") {
+		return true
+	}
+	switch ct {
+	case "application/pdf", "text/plain":
 		return true
 	}
 	return false
@@ -195,6 +226,7 @@ func writeFileError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	slog.Warn("file handler error", "err", err)
 	http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 }
 

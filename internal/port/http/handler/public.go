@@ -62,6 +62,7 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "Info", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -87,6 +88,7 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, pwHash, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "Verify", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -130,6 +132,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "Download", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -178,6 +181,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "DownloadZip", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -214,6 +218,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "Raw", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -249,12 +254,16 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	h.shares.RecordAccess(link.ID)
+
 	name := path.Base(filePath)
 
-	if needsSandbox(name) {
+	ctype := resolvePreviewContentType(file, name)
+	if !isSafeInline(ctype) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
+	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
@@ -266,6 +275,7 @@ func (h *PublicHandler) validateShareAccess(w http.ResponseWriter, r *http.Reque
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
 	if err != nil {
+		slog.Warn("share validate failed", "handler", "validateShareAccess", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return nil, false
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -114,13 +115,16 @@ func (ts *ThumbStore) Touch(p string) {
 	_ = os.Chtimes(p, now, now)
 }
 
-// Walk visits every regular file under the cache root. Errors on individual
-// entries are ignored.
+// Walk visits every regular file under the cache root. Walking continues past
+// per-entry errors (the cache is regenerable, so a transient FS error should
+// not abort the sweep), but non-NotExist errors are logged so operators see
+// real FS trouble — silent swallowing is the failure mode CLAUDE.md's
+// "stat-then-delete cleanup loops" rule guards against.
 func (ts *ThumbStore) Walk(fn func(path string, info fs.FileInfo)) error {
 	return filepath.WalkDir(ts.root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
+			if !errors.Is(err, fs.ErrNotExist) {
+				slog.Warn("thumb store walk", "path", p, "err", err)
 			}
 			return nil
 		}
@@ -129,6 +133,9 @@ func (ts *ThumbStore) Walk(fn func(path string, info fs.FileInfo)) error {
 		}
 		info, err := d.Info()
 		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				slog.Warn("thumb store walk info", "path", p, "err", err)
+			}
 			return nil
 		}
 		fn(p, info)

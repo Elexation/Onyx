@@ -45,6 +45,19 @@ var thumbWidths = map[ThumbSize]int{
 	ThumbLarge:  384,
 }
 
+// maxThumbInputPixels caps total source pixels (width*height). image.Decode
+// allocates the full backing buffer (Width*Height*4 for RGBA) before reading
+// IDAT/SOF data — a ~1KB crafted PNG declaring 65535x65535 would otherwise
+// allocate ~16 GB and OOM-kill the server. image.Decode is unbounded, so a
+// DecodeConfig pre-check is the only mitigation; the per-IP streamRL token
+// bucket bounds request rate but not memory per request.
+const maxThumbInputPixels = 64 * 1024 * 1024 // 64 MP ≈ 8192x8192
+
+// maxThumbInputDim caps either dimension. Some decoders (TIFF strip-based)
+// can pass a small pixel-product check on a 1×10⁹ sliver, so cap each side
+// independently before image.Decode runs.
+const maxThumbInputDim = 16384
+
 // ParseThumbSize returns the named size or false if unknown.
 func ParseThumbSize(s string) (ThumbSize, bool) {
 	switch ThumbSize(s) {
@@ -258,6 +271,21 @@ func (ts *ThumbnailService) generateImage(job thumbJob) error {
 		if _, err := reader.Seek(0, io.SeekStart); err != nil {
 			return fmt.Errorf("seek: %w", err)
 		}
+	}
+
+	cfg, _, err := image.DecodeConfig(reader)
+	if err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 ||
+		cfg.Width > maxThumbInputDim || cfg.Height > maxThumbInputDim {
+		return fmt.Errorf("image dimensions out of range: %dx%d", cfg.Width, cfg.Height)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxThumbInputPixels {
+		return fmt.Errorf("image pixel count exceeds limit: %dx%d", cfg.Width, cfg.Height)
+	}
+	if _, err := reader.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek: %w", err)
 	}
 
 	src, _, err := image.Decode(reader)

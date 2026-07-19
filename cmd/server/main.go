@@ -141,6 +141,7 @@ func main() {
 		os.Exit(1)
 	}
 	probeService.StartJanitor(10 * time.Minute)
+	defer probeService.Shutdown()
 
 	hwaccelPref := env("ONYX_HWACCEL", "auto")
 	maxHeight := 2160

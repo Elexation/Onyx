@@ -31,6 +31,20 @@ const (
 	restartDebounce      = 2 * time.Second
 	cacheExpiry          = 24 * time.Hour
 	cleanupInterval      = 1 * time.Hour
+
+	// maxSessions caps the in-memory session map. Without this, a public-share
+	// holder iterating an IsDir share over many distinct videos can register
+	// one session per file forever (sweepCache only removes inactive on-disk
+	// dirs). At the cap, registration evicts the LRU session: cancels its
+	// ffmpeg, drains, and removes its cache dir. Active streams update lastUsed
+	// on every GetSegment so eviction targets idle sessions first.
+	maxSessions = 64
+
+	// maxSourceDuration bounds source duration before transcode. ffprobe trusts
+	// the container's declared duration; a malformed source claiming 10^8 s
+	// would make writeVariantPlaylist emit ~16M segment lines per variant.
+	// 24h covers all realistic legitimate content.
+	maxSourceDuration = 24 * time.Hour
 )
 
 // ErrSessionNotFound is returned when GetSegment is called with an
@@ -65,6 +79,11 @@ type TranscodeSession struct {
 	cancel       context.CancelFunc
 	runDone      chan struct{} // closed when the current ffmpeg goroutine exits
 	startedAt    time.Time
+
+	// lastUsed is updated under TranscodeService.mu on every Ensure-hit and
+	// GetSegment call. Eviction targets the oldest lastUsed when the session
+	// cap is reached.
+	lastUsed time.Time
 }
 
 // Hash returns the content hash used as the session's cache key.
@@ -187,11 +206,17 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 	if err != nil {
 		return nil, fmt.Errorf("probe: %w", err)
 	}
-	if info.Duration <= 0 {
+	if info.Duration <= 0 || math.IsNaN(info.Duration) || math.IsInf(info.Duration, 0) {
 		return nil, fmt.Errorf("unknown duration")
+	}
+	if info.Duration > maxSourceDuration.Seconds() {
+		return nil, fmt.Errorf("source duration exceeds limit")
 	}
 	if info.Height <= 0 {
 		return nil, fmt.Errorf("unknown height")
+	}
+	if info.Width <= 0 {
+		return nil, fmt.Errorf("unknown width")
 	}
 
 	rungs := media.SelectRungs(info.Height, ts.maxHeight)
@@ -199,6 +224,7 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 
 	ts.mu.Lock()
 	if existing, ok := ts.sessions[hash]; ok {
+		existing.lastUsed = time.Now()
 		ts.mu.Unlock()
 		return existing, nil
 	}
@@ -222,6 +248,7 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 
 	ts.mu.Lock()
 	if existing, ok := ts.sessions[hash]; ok {
+		existing.lastUsed = time.Now()
 		ts.mu.Unlock()
 		entry.session = existing
 		return existing, nil
@@ -284,11 +311,63 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relP
 	}
 	session.mu.Unlock()
 
+	ts.evictIfOverCap()
+
 	ts.mu.Lock()
+	session.lastUsed = time.Now()
 	ts.sessions[hash] = session
 	ts.mu.Unlock()
 
 	return session, nil
+}
+
+// evictIfOverCap removes the LRU session when the in-memory map is at or
+// over maxSessions. The evicted session's ffmpeg is cancelled and drained,
+// then its on-disk cache directory is removed. Active streams update
+// lastUsed on every GetSegment, so eviction targets idle sessions first.
+//
+// Mutex order: ts.mu acquired and released first to pick + remove the
+// candidate, then the evicted session.mu is taken to drain ffmpeg outside
+// ts.mu. Holding ts.mu across <-runDone would block all other session
+// creation/access.
+func (ts *TranscodeService) evictIfOverCap() {
+	ts.mu.Lock()
+	if len(ts.sessions) < maxSessions {
+		ts.mu.Unlock()
+		return
+	}
+	var (
+		oldestHash string
+		oldest     *TranscodeSession
+	)
+	for h, s := range ts.sessions {
+		if oldest == nil || s.lastUsed.Before(oldest.lastUsed) {
+			oldestHash = h
+			oldest = s
+		}
+	}
+	if oldest == nil {
+		ts.mu.Unlock()
+		return
+	}
+	delete(ts.sessions, oldestHash)
+	ts.mu.Unlock()
+
+	oldest.mu.Lock()
+	cancel := oldest.cancel
+	done := oldest.runDone
+	oldest.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+	if err := os.RemoveAll(oldest.dir); err != nil {
+		slog.Warn("transcode evict: remove failed", "hash", oldestHash, "error", err)
+	} else {
+		slog.Info("transcode evict: LRU session evicted", "hash", oldestHash)
+	}
 }
 
 // SessionDir returns the absolute cache directory for the given hash,
@@ -310,6 +389,9 @@ func (ts *TranscodeService) SessionDir(hash string) string {
 func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant, segNum int) ([]byte, error) {
 	ts.mu.Lock()
 	session, ok := ts.sessions[hash]
+	if ok {
+		session.lastUsed = time.Now()
+	}
 	ts.mu.Unlock()
 	if !ok {
 		return nil, ErrSessionNotFound
@@ -478,19 +560,36 @@ func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done 
 	<-ts.sema
 	close(done)
 	if err != nil && !errors.Is(err, context.Canceled) {
+		stderr := ts.redactPaths(stderrBuf.String())
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			slog.Warn("ffmpeg exited with error",
 				"hash", s.hash,
 				"from_segment", fromSegment,
 				"exit_code", exitErr.ExitCode(),
-				"stderr", stderrBuf.String(),
+				"stderr", stderr,
 			)
 			return
 		}
-		slog.Warn("ffmpeg wait error", "hash", s.hash, "error", err, "stderr", stderrBuf.String())
+		slog.Warn("ffmpeg wait error", "hash", s.hash, "error", err, "stderr", stderr)
 		return
 	}
 	slog.Debug("ffmpeg finished", "hash", s.hash, "from_segment", fromSegment)
+}
+
+// redactPaths replaces the data-dir absolute prefix with a placeholder so
+// ffmpeg stderr strings can be logged without leaking deployment layout to
+// log readers (SIEM forwarders, host-mounted Docker log volumes, etc.).
+func (ts *TranscodeService) redactPaths(s string) string {
+	if s == "" {
+		return s
+	}
+	if ts.realRoot != "" {
+		s = strings.ReplaceAll(s, ts.realRoot, "<dataDir>")
+	}
+	if ts.dataDir != "" && ts.dataDir != ts.realRoot {
+		s = strings.ReplaceAll(s, ts.dataDir, "<dataDir>")
+	}
+	return s
 }
 
 // boundedBuffer captures at most max bytes of ffmpeg stderr for
@@ -638,6 +737,12 @@ func widthFor(info *media.ProbeInfo, targetHeight int) int {
 	w := int(float64(info.Width) * float64(targetHeight) / float64(info.Height))
 	if w%2 != 0 {
 		w--
+	}
+	// Degenerate aspect ratios (e.g. Width=1, Height=10000) round to 0 or
+	// negative after the parity adjust. Clamp to 2 so master.m3u8 never
+	// emits RESOLUTION=0xH or RESOLUTION=-1xH.
+	if w < 2 {
+		w = 2
 	}
 	return w
 }

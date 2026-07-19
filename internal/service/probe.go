@@ -45,6 +45,9 @@ type ProbeService struct {
 
 	cache    sync.Map // absPath → *probeEntry
 	inflight sync.Map // absPath → *probeInflight
+
+	stopCh chan struct{}
+	wg     sync.WaitGroup
 }
 
 // NewProbeService wires the service. ffprobe is probed here; if missing,
@@ -64,21 +67,43 @@ func NewProbeService(s *storage.LocalStorage, dataDir string) (*ProbeService, er
 		dataDir:  dataDir,
 		realRoot: realRoot,
 		sema:     make(chan struct{}, limit),
+		stopCh:   make(chan struct{}),
 	}, nil
 }
 
 // HasFFprobe reports whether ffprobe is available on PATH.
 func (ps *ProbeService) HasFFprobe() bool { return ps.ffmpeg.Available() }
 
-// StartJanitor periodically evicts expired cache entries.
+// StartJanitor periodically evicts expired cache entries. Stops cleanly
+// when Shutdown is called.
 func (ps *ProbeService) StartJanitor(interval time.Duration) {
+	ps.wg.Add(1)
 	go func() {
+		defer ps.wg.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			ps.sweep()
+		for {
+			select {
+			case <-ps.stopCh:
+				return
+			case <-ticker.C:
+				ps.sweep()
+			}
 		}
 	}()
+}
+
+// Shutdown signals the janitor goroutine to stop and waits for it to exit.
+// Mirrors TranscodeService.Shutdown so probe-side resources are released
+// alongside transcode resources at server stop.
+func (ps *ProbeService) Shutdown() {
+	select {
+	case <-ps.stopCh:
+		return
+	default:
+	}
+	close(ps.stopCh)
+	ps.wg.Wait()
 }
 
 // Probe returns video metadata for relPath. Results are cached for 1h

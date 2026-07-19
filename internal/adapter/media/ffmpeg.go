@@ -2,14 +2,44 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// boundedBuffer is an io.Writer wrapper around a bytes.Buffer that
+// stops storing data after max bytes but keeps swallowing writes so
+// the subprocess never sees a broken pipe. Caps the in-memory
+// footprint of ffmpeg/ffprobe stdout/stderr against hostile inputs.
+type boundedBuffer struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if b.over {
+		return len(p), nil
+	}
+	if b.buf.Len()+len(p) > b.max {
+		if remaining := b.max - b.buf.Len(); remaining > 0 {
+			b.buf.Write(p[:remaining])
+		}
+		b.over = true
+		return len(p), nil
+	}
+	return b.buf.Write(p)
+}
+
+func (b *boundedBuffer) Bytes() []byte    { return b.buf.Bytes() }
+func (b *boundedBuffer) String() string   { return b.buf.String() }
+func (b *boundedBuffer) Overflowed() bool { return b.over }
 
 // FFmpeg wraps the ffmpeg and ffprobe binaries. If either is missing at
 // construction time, Available returns false and ExtractPoster/Probe fail.
@@ -56,6 +86,11 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 	if f.ffprobePath == "" {
 		return nil, fmt.Errorf("ffprobe not available")
 	}
+	// Reject relative paths so a filename like "-show_data" cannot be
+	// reinterpreted as a flag by ffprobe's option parser.
+	if !filepath.IsAbs(srcPath) {
+		return nil, fmt.Errorf("srcPath must be absolute: %q", srcPath)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -66,9 +101,13 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 		"-show_format",
 		srcPath,
 	)
-	out, err := cmd.Output()
-	if err != nil {
+	out := &boundedBuffer{max: 4 * 1024 * 1024}
+	cmd.Stdout = out
+	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffprobe: %w", err)
+	}
+	if out.Overflowed() {
+		return nil, fmt.Errorf("ffprobe output exceeds limit")
 	}
 
 	var raw struct {
@@ -86,7 +125,7 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 			BitRate  string `json:"bit_rate"`
 		} `json:"format"`
 	}
-	if err := json.Unmarshal(out, &raw); err != nil {
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
 		return nil, fmt.Errorf("parse ffprobe json: %w", err)
 	}
 
@@ -146,6 +185,9 @@ func (f *FFmpeg) Probe(ctx context.Context, srcPath string) (float64, error) {
 	if f.ffprobePath == "" {
 		return 0, fmt.Errorf("ffprobe not available")
 	}
+	if !filepath.IsAbs(srcPath) {
+		return 0, fmt.Errorf("srcPath must be absolute: %q", srcPath)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -155,11 +197,15 @@ func (f *FFmpeg) Probe(ctx context.Context, srcPath string) (float64, error) {
 		"-of", "csv=p=0",
 		srcPath,
 	)
-	out, err := cmd.Output()
-	if err != nil {
+	out := &boundedBuffer{max: 64 * 1024}
+	cmd.Stdout = out
+	if err := cmd.Run(); err != nil {
 		return 0, fmt.Errorf("ffprobe: %w", err)
 	}
-	s := strings.TrimSpace(string(out))
+	if out.Overflowed() {
+		return 0, fmt.Errorf("ffprobe output exceeds limit")
+	}
+	s := strings.TrimSpace(out.String())
 	d, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse duration %q: %w", s, err)
@@ -173,6 +219,12 @@ func (f *FFmpeg) ExtractPoster(ctx context.Context, srcPath, dstPath string, wid
 	if f.ffmpegPath == "" {
 		return fmt.Errorf("ffmpeg not available")
 	}
+	if !filepath.IsAbs(srcPath) {
+		return fmt.Errorf("srcPath must be absolute: %q", srcPath)
+	}
+	if !filepath.IsAbs(dstPath) {
+		return fmt.Errorf("dstPath must be absolute: %q", dstPath)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -180,6 +232,7 @@ func (f *FFmpeg) ExtractPoster(ctx context.Context, srcPath, dstPath string, wid
 	scale := fmt.Sprintf("scale=%d:-2", width)
 
 	cmd := exec.CommandContext(ctx, f.ffmpegPath,
+		"-hide_banner", "-loglevel", "error", "-nostdin",
 		"-ss", ts,
 		"-i", srcPath,
 		"-frames:v", "1",
@@ -188,8 +241,11 @@ func (f *FFmpeg) ExtractPoster(ctx context.Context, srcPath, dstPath string, wid
 		"-y",
 		dstPath,
 	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
+	out := &boundedBuffer{max: 8 * 1024}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(out.String()))
 	}
 	return nil
 }

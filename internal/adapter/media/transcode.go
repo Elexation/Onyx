@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -88,6 +89,9 @@ type HLSOptions struct {
 func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cmd, error) {
 	if f.ffmpegPath == "" {
 		return nil, fmt.Errorf("ffmpeg not available")
+	}
+	if !filepath.IsAbs(opts.SrcPath) {
+		return nil, fmt.Errorf("SrcPath must be absolute: %q", opts.SrcPath)
 	}
 	if len(opts.Renditions) == 0 {
 		return nil, fmt.Errorf("no renditions")

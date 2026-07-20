@@ -549,8 +549,8 @@
 		onloadedmetadata={() => {
 			if (videoEl) {
 				duration = videoEl.duration;
-				if (pendingSeek !== null && pendingSeek > 0) {
-					videoEl.currentTime = pendingSeek;
+				if (pendingSeek !== null) {
+					if (pendingSeek > 0) videoEl.currentTime = pendingSeek;
 					pendingSeek = null;
 					if (!pendingPaused) {
 						videoEl.play().catch(() => { failed = true; });
@@ -563,7 +563,7 @@
 		}}
 		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; saveVolume(); } }}
 		onended={() => { playing = false; showControls = true; clearPosition(); }}
-		onerror={() => { if (playback === "native") failed = true; }}
+		onerror={() => { failed = true; }}
 	></video>
 
 	{#if failed}

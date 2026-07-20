@@ -4,7 +4,11 @@
 	import { preferences } from "$lib/stores/preferences.svelte.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
-	import { ArrowUp, ArrowDown, Link2, MoreVertical, Check } from "lucide-svelte";
+	import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
+	import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+	import Link2Icon from "@lucide/svelte/icons/link-2";
+	import MoreVerticalIcon from "@lucide/svelte/icons/more-vertical";
+	import CheckIcon from "@lucide/svelte/icons/check";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import type { SortField } from "$lib/stores/preferences.svelte.js";
@@ -13,6 +17,7 @@
 	import FileContextMenu from "./FileContextMenu.svelte";
 	import FileDropdownMenu from "./FileDropdownMenu.svelte";
 	import VirtualList from "./VirtualList.svelte";
+	import EmptyState from "./EmptyState.svelte";
 	import { longpress } from "$lib/actions/longpress.js";
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
@@ -112,9 +117,7 @@
 </script>
 
 {#if items.length === 0}
-	<div class="flex flex-col items-center justify-center py-20 text-muted-foreground">
-		<p class="text-sm">This folder is empty</p>
-	</div>
+	<EmptyState title="This folder is empty" />
 {:else}
 	<div
 		bind:this={scrollEl}
@@ -124,7 +127,7 @@
 			<!-- Header: desktop only -->
 			<div
 				bind:this={headerEl}
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-list-header text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
 			>
 				{#each columns as col}
 					<button
@@ -136,9 +139,9 @@
 						{col.label}
 						{#if preferences.sortField === col.field}
 							{#if preferences.sortDir === "asc"}
-								<ArrowUp class="size-3" />
+								<ArrowUpIcon class="size-3" />
 							{:else}
-								<ArrowDown class="size-3" />
+								<ArrowDownIcon class="size-3" />
 							{/if}
 						{/if}
 					</button>
@@ -211,7 +214,7 @@
 							onversions={() => onversions(file)}
 							onshare={() => onshare(file)}
 						>
-							{#snippet children(triggerProps)}
+							{#snippet trigger(triggerProps)}
 								<div
 									{...triggerProps}
 									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
@@ -242,7 +245,7 @@
 											<div
 												class="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground md:size-6"
 											>
-												<Check class="size-4" strokeWidth={3} />
+												<CheckIcon class="size-4" strokeWidth={3} />
 											</div>
 										{:else if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
 											<ThumbnailImage
@@ -281,7 +284,7 @@
 										</div>
 										<div class="flex w-[13px] shrink-0 items-center justify-center">
 											{#if sharedPaths.has(file.path)}
-												<Link2
+												<Link2Icon
 													class="size-[13px] text-accent-brand"
 													strokeWidth={2}
 													aria-label="Shared"
@@ -299,12 +302,12 @@
 										</div>
 									</div>
 									<div
-										class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block"
+										class="hidden text-right text-meta tabular-nums text-muted-foreground md:block"
 									>
 										{file.isDir ? "—" : formatFileSize(file.size)}
 									</div>
 									<div
-										class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block"
+										class="hidden text-right text-meta tabular-nums text-muted-foreground md:block"
 									>
 										{formatDate(file.modTime)}
 									</div>
@@ -331,7 +334,7 @@
 													class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 													aria-label="More actions"
 												>
-													<MoreVertical class="size-4" strokeWidth={2} />
+													<MoreVerticalIcon class="size-4" strokeWidth={2} />
 												</button>
 											{/snippet}
 										</FileDropdownMenu>

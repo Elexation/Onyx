@@ -4,6 +4,7 @@
 	import { toast } from "svelte-sonner";
 	import { listVersions, restoreVersion, deleteVersion } from "$lib/api/versions.js";
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
+	import LoadingState from "$lib/components/LoadingState.svelte";
 	import type { FileVersion } from "$lib/types";
 
 	let {
@@ -78,7 +79,7 @@
 		</Dialog.Header>
 
 		{#if loading}
-			<p class="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+			<LoadingState compact />
 		{:else if versions.length === 0}
 			<p class="py-6 text-center text-sm text-muted-foreground">No previous versions</p>
 		{:else}
@@ -87,7 +88,7 @@
 					{#each versions as v (v.id)}
 						<li class="flex items-center justify-between gap-3 px-3 py-2.5">
 							<div class="min-w-0 flex-1">
-								<p class="truncate text-[13px] tabular-nums text-foreground">{formatDate(v.createdAt)}</p>
+								<p class="truncate text-meta tabular-nums text-foreground">{formatDate(v.createdAt)}</p>
 								<p class="text-[11px] tabular-nums text-muted-foreground">{formatFileSize(v.size)}</p>
 							</div>
 							<div class="flex shrink-0 gap-2">
@@ -97,7 +98,7 @@
 									disabled={busy !== null}
 									onclick={() => handleRestore(v)}
 								>
-									Restore
+									{busy === v.id ? "Restoring…" : "Restore"}
 								</Button>
 								<Button
 									size="sm"
@@ -105,7 +106,7 @@
 									disabled={busy !== null}
 									onclick={() => handleDelete(v)}
 								>
-									Delete
+									{busy === v.id ? "Deleting…" : "Delete"}
 								</Button>
 							</div>
 						</li>

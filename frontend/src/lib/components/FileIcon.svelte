@@ -1,14 +1,12 @@
 <script lang="ts">
-	import {
-		Folder,
-		File,
-		FileText,
-		Image,
-		Video,
-		Music,
-		Archive,
-		FileCode,
-	} from "lucide-svelte";
+	import Folder from "@lucide/svelte/icons/folder";
+	import File from "@lucide/svelte/icons/file";
+	import FileText from "@lucide/svelte/icons/file-text";
+	import Image from "@lucide/svelte/icons/image";
+	import Video from "@lucide/svelte/icons/video";
+	import Music from "@lucide/svelte/icons/music";
+	import Archive from "@lucide/svelte/icons/archive";
+	import FileCode from "@lucide/svelte/icons/file-code";
 
 	let {
 		mimeType = "",

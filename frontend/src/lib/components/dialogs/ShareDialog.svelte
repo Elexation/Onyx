@@ -8,8 +8,12 @@
 	import { createShare, getShareByPath, deleteShare } from "$lib/api/shares.js";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { toast } from "svelte-sonner";
-	import { Check, Copy, Link, Loader2 } from "lucide-svelte";
+	import CheckIcon from "@lucide/svelte/icons/check";
+	import CopyIcon from "@lucide/svelte/icons/copy";
+	import LinkIcon from "@lucide/svelte/icons/link";
+	import LoadingState from "$lib/components/LoadingState.svelte";
 	import type { ShareLink } from "$lib/types.js";
+	import { formatAbsoluteDateTime, formatRemainingLong } from "$lib/utils/format.js";
 
 	let {
 		open = $bindable(false),
@@ -31,7 +35,6 @@
 	let existing = $state<ShareLink | null>(null);
 	let revoking = $state(false);
 	let showCreateForm = $state(false);
-	let createError = $state("");
 	let urlInputRef = $state<HTMLInputElement | null>(null);
 	let closeEnabled = $state(false);
 
@@ -57,7 +60,6 @@
 			copied = false;
 			existing = null;
 			showCreateForm = false;
-			createError = "";
 			closeEnabled = false;
 			loading = true;
 			getShareByPath(path)
@@ -97,9 +99,7 @@
 			sharedPaths.add(path);
 			toast.success("Share link created");
 		} catch (e) {
-			const msg = e instanceof Error ? e.message : "Failed to create share";
-			createError = msg;
-			toast.error(msg);
+			toast.error(e instanceof Error ? e.message : "Failed to create share");
 		} finally {
 			submitting = false;
 		}
@@ -141,25 +141,6 @@
 		}
 	}
 
-	function formatDate(unix: number): string {
-		return new Date(unix * 1000).toLocaleDateString(undefined, {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-			hour: "numeric",
-			minute: "2-digit",
-		});
-	}
-
-	function formatExpiry(link: ShareLink): string {
-		if (!link.expiresAt) return "Never";
-		const now = Date.now() / 1000;
-		const remaining = link.expiresAt - now;
-		if (remaining <= 0) return "Expired";
-		if (remaining < 3600) return `${Math.ceil(remaining / 60)}m remaining`;
-		if (remaining < 86400) return `${Math.ceil(remaining / 3600)}h remaining`;
-		return `${Math.ceil(remaining / 86400)}d remaining`;
-	}
 </script>
 
 <Dialog.Root bind:open>
@@ -172,7 +153,7 @@
 	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
-				<Link class="size-4" />
+				<LinkIcon class="size-4" />
 				Share
 			</Dialog.Title>
 			<Dialog.Description class="truncate">
@@ -181,9 +162,7 @@
 		</Dialog.Header>
 
 		{#if loading}
-			<div class="flex items-center justify-center py-6">
-				<Loader2 class="size-5 animate-spin text-muted-foreground" />
-			</div>
+			<LoadingState compact />
 		{:else if shareUrl}
 			<div class="flex flex-col gap-3">
 				<Label>Share URL</Label>
@@ -191,10 +170,10 @@
 					<Input bind:ref={urlInputRef} value={shareUrl} readonly class="font-mono text-xs" />
 					<Button variant="outline" size="icon" onclick={copyUrl} class="shrink-0" aria-label={copied ? "Copied" : "Copy link"}>
 						<span class="relative block size-4 overflow-hidden">
-							<Copy
+							<CopyIcon
 								class="absolute inset-0 size-4 transition-all duration-150 ease-out {copied ? '-translate-y-2 opacity-0' : 'translate-y-0 opacity-100'}"
 							/>
-							<Check
+							<CheckIcon
 								class="absolute inset-0 size-4 text-accent-brand transition-all duration-150 ease-out {copied ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}"
 							/>
 						</span>
@@ -215,20 +194,20 @@
 				<div class="rounded-lg border border-border bg-background p-3 space-y-2 text-sm">
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Created</span>
-						<span class="text-[13px] tabular-nums">{formatDate(existing.createdAt)}</span>
+						<span class="text-meta tabular-nums">{formatAbsoluteDateTime(existing.createdAt)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Expires</span>
-						<span class="text-[13px] tabular-nums">{formatExpiry(existing)}</span>
+						<span class="text-meta tabular-nums">{formatRemainingLong(existing.expiresAt)}</span>
 					</div>
 					<div class="flex justify-between">
 						<span class="text-muted-foreground">Downloads</span>
-						<span class="text-[13px] tabular-nums">{existing.downloadCount}</span>
+						<span class="text-meta tabular-nums">{existing.downloadCount}</span>
 					</div>
 					{#if existing.hasPassword}
 						<div class="flex justify-between">
 							<span class="text-muted-foreground">Password</span>
-							<span class="text-[13px]">Yes</span>
+							<span class="text-meta">Yes</span>
 						</div>
 					{/if}
 				</div>
@@ -244,9 +223,6 @@
 			</Dialog.Footer>
 		{:else}
 			<div class="flex flex-col gap-4">
-				{#if createError}
-					<p class="text-sm text-destructive">{createError}</p>
-				{/if}
 				<div class="flex flex-col gap-2">
 					<Label>Expiration</Label>
 					<Select.Root type="single" bind:value={expiresIn}>
@@ -277,7 +253,7 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 				<Button onclick={submit} disabled={submitting || (usePassword && !password)}>
-					Create Link
+					{submitting ? "Creating…" : "Create Link"}
 				</Button>
 			</Dialog.Footer>
 		{/if}

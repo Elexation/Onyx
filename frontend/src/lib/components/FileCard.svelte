@@ -6,7 +6,8 @@
 	import FileIcon from "./FileIcon.svelte";
 	import ThumbnailImage from "./ThumbnailImage.svelte";
 	import FileContextMenu from "./FileContextMenu.svelte";
-	import { Link2, Check } from "lucide-svelte";
+	import Link2Icon from "@lucide/svelte/icons/link-2";
+	import CheckIcon from "@lucide/svelte/icons/check";
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import { longpress } from "$lib/actions/longpress.js";
@@ -144,7 +145,7 @@
 		onversions={() => onversions(item)}
 		onshare={() => onshare(item)}
 	>
-		{#snippet children(triggerProps)}
+		{#snippet trigger(triggerProps)}
 			<div
 				{...triggerProps}
 				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
@@ -179,7 +180,7 @@
 							<div
 								class="flex size-14 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground"
 							>
-								<Check class="size-8" strokeWidth={3} />
+								<CheckIcon class="size-8" strokeWidth={3} />
 							</div>
 						{:else if hasThumbnail}
 							<ThumbnailImage
@@ -226,7 +227,7 @@
 						class="absolute top-2 right-2 flex size-5 items-center justify-center rounded-full border border-border-2 bg-background text-accent-brand"
 						aria-label="Shared"
 					>
-						<Link2 class="size-[11px]" strokeWidth={2.5} />
+						<Link2Icon class="size-[11px]" strokeWidth={2.5} />
 					</span>
 				{/if}
 			</div>

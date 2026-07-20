@@ -177,6 +177,7 @@
 						size="icon-xs"
 						onclick={(e) => { e.stopPropagation(); uploadState.clear(); }}
 						title="Dismiss"
+						aria-label="Dismiss upload panel"
 					>
 						<XIcon class="size-3.5" />
 					</Button>
@@ -186,6 +187,7 @@
 						size="icon-xs"
 						onclick={(e) => { e.stopPropagation(); cancelAll(); }}
 						title="Cancel all"
+						aria-label="Cancel all uploads"
 					>
 						<XIcon class="size-3.5" />
 					</Button>
@@ -244,6 +246,7 @@
 											size="icon-xs"
 											onclick={() => retryUpload(entry.id)}
 											title="Retry"
+											aria-label="Retry upload of {entry.name}"
 										>
 											<RotateCwIcon class="size-3" />
 										</Button>
@@ -260,7 +263,7 @@
 							<!-- Status icon -->
 							<div class="shrink-0">
 								{#if entry.status === "complete"}
-									<CheckIcon class="size-3.5 text-green-500" />
+									<CheckIcon class="size-3.5 text-accent-brand" />
 								{:else if entry.status === "error"}
 									<AlertCircleIcon class="size-3.5 text-destructive" />
 								{:else if entry.type === "directory"}
@@ -312,6 +315,7 @@
 										size="icon-xs"
 										onclick={() => retryUpload(entry.id)}
 										title="Retry"
+										aria-label="Retry upload of {entry.name}"
 									>
 										<RotateCwIcon class="size-3" />
 									</Button>
@@ -321,6 +325,7 @@
 										size="icon-xs"
 										onclick={() => handleCancel(entry)}
 										title="Cancel"
+										aria-label="Cancel upload of {entry.name}"
 									>
 										<XIcon class="size-3" />
 									</Button>

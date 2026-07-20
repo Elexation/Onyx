@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { HardDrive } from "lucide-svelte";
+	import HardDriveIcon from "@lucide/svelte/icons/hard-drive";
 	import { onMount } from "svelte";
 	import { getStorageUsage } from "$lib/api/storage.js";
 	import { formatFileSize } from "$lib/utils/format.js";
@@ -41,7 +41,7 @@
 <div class="mt-auto flex flex-col gap-1.5 border-t border-border pt-[14px]">
 	<div class="flex items-center justify-between text-xs text-muted-foreground">
 		<span class="inline-flex items-center gap-1.5">
-			<HardDrive class="size-[13px]" strokeWidth={2} />
+			<HardDriveIcon class="size-[13px]" strokeWidth={2} />
 			Storage
 		</span>
 		<span class="font-mono">

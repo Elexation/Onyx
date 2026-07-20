@@ -3,7 +3,7 @@
 	import { search, type SearchResponse } from "$lib/api/search.js";
 	import type { SearchResult } from "$lib/types";
 	import FileIcon from "./FileIcon.svelte";
-	import { Search } from "lucide-svelte";
+	import SearchIcon from "@lucide/svelte/icons/search";
 
 	let {
 		autoFocusKey = 0,
@@ -166,7 +166,7 @@
 	<div
 		class="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 transition-colors focus-within:border-ring"
 	>
-		<Search class="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
+		<SearchIcon class="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
 		<input
 			bind:this={inputEl}
 			bind:value={query}
@@ -176,7 +176,7 @@
 			}}
 			type="text"
 			placeholder="Search files, folders, contents…"
-			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-[oklch(0.45_0_0)] focus:outline-none"
+			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground-2 focus:outline-none"
 		/>
 	</div>
 

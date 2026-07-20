@@ -104,7 +104,9 @@
 		/>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-			<Button onclick={submit} disabled={submitting || !newName.trim()}>Rename</Button>
+			<Button onclick={submit} disabled={submitting || !newName.trim()}>
+				{submitting ? "Renaming…" : "Rename"}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { page } from "$app/state";
-	import { FolderOpen, Link as LinkIcon, Trash2, Settings } from "lucide-svelte";
+	import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
+	import LinkIcon from "@lucide/svelte/icons/link";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
@@ -14,10 +17,10 @@
 	let { onNavigate }: Props = $props();
 
 	const links = [
-		{ href: "/files", label: "Files", icon: FolderOpen },
+		{ href: "/files", label: "Files", icon: FolderOpenIcon },
 		{ href: "/shares", label: "Shares", icon: LinkIcon },
-		{ href: "/trash", label: "Trash", icon: Trash2 },
-		{ href: "/settings", label: "Settings", icon: Settings },
+		{ href: "/trash", label: "Trash", icon: Trash2Icon },
+		{ href: "/settings", label: "Settings", icon: SettingsIcon },
 	];
 
 	onMount(() => {
@@ -64,7 +67,7 @@
 					onclick={() => onNavigate?.()}
 					class="flex min-h-[38px] items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium transition-colors hover:bg-muted {active
 						? 'bg-muted text-foreground'
-						: 'text-[oklch(0.82_0_0)]'}"
+						: 'text-foreground-dim'}"
 				>
 					<link.icon class="size-[17px]" strokeWidth={2} />
 					<span class="flex-1">{link.label}</span>

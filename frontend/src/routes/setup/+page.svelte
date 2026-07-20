@@ -39,7 +39,7 @@
 </script>
 
 <div class="flex min-h-screen items-center justify-center px-4 py-10">
-	<Card.Root class="w-full max-w-[460px]">
+	<Card.Root class="w-full max-w-sm">
 		<Card.Header>
 			<Card.Title class="flex items-center gap-2.5 text-lg font-bold tracking-[-0.01em]">
 				<svg

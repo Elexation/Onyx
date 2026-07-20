@@ -585,7 +585,7 @@
 
 		{#if keySeekOffset !== 0}
 			<div
-				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 font-mono text-[13px] text-white backdrop-blur-sm"
+				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 font-mono text-meta text-white backdrop-blur-sm"
 				transition:fade={{ duration: 120 }}
 			>
 				{#if keySeekOffset < 0}
@@ -612,7 +612,7 @@
 				style="width: {bufferedPercent}%"
 			></div>
 			<div
-				class="absolute left-0 top-0 h-full rounded-full bg-white"
+				class="absolute left-0 top-0 h-full rounded-full bg-accent-brand"
 				style="width: {seekPercent}%"
 			></div>
 			<input
@@ -631,6 +631,7 @@
 			<button
 				class="rounded p-1 text-white/80 transition-colors hover:text-white"
 				onclick={togglePlay}
+				aria-label={playing ? "Pause" : "Play"}
 			>
 				{#if playing}
 					<PauseIcon class="size-4" />
@@ -639,7 +640,7 @@
 				{/if}
 			</button>
 
-			<span class="min-w-0 font-mono text-[13px] text-white/80 tabular-nums">
+			<span class="min-w-0 font-mono text-meta text-white/80 tabular-nums">
 				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
 			</span>
 
@@ -649,6 +650,7 @@
 				<button
 					class="rounded p-1 text-white/80 transition-colors hover:text-white"
 					onclick={toggleMute}
+					aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
 				>
 					{#if muted || volume === 0}
 						<VolumeXIcon class="size-4" />
@@ -663,6 +665,7 @@
 					step="0.05"
 					value={muted ? 0 : volume}
 					oninput={handleVolumeInput}
+					aria-label="Volume"
 					class="volume-slider h-1 w-16 cursor-pointer appearance-none rounded-full bg-white/20"
 				/>
 			</div>
@@ -673,6 +676,7 @@
 						{#snippet child({ props })}
 							<button
 								{...props}
+								aria-label="Quality settings"
 								class="flex items-center gap-1 rounded p-1 text-white/80 transition-colors hover:text-white"
 							>
 								<SettingsIcon class="size-4" />
@@ -727,6 +731,7 @@
 			<button
 				class="rounded p-1 text-white/80 transition-colors hover:text-white"
 				onclick={toggleFullscreen}
+				aria-label="Fullscreen"
 			>
 				<MaximizeIcon class="size-4" />
 			</button>

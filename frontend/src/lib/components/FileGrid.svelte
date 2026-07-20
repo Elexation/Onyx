@@ -2,6 +2,7 @@
 	import type { FileInfo } from "$lib/types";
 	import VirtualGrid from "./VirtualGrid.svelte";
 	import FileCard from "./FileCard.svelte";
+	import EmptyState from "./EmptyState.svelte";
 	import { setupMarquee } from "$lib/actions/marquee.js";
 
 	let {
@@ -62,9 +63,7 @@
 </script>
 
 {#if items.length === 0}
-	<div class="flex flex-col items-center justify-center py-20 text-muted-foreground">
-		<p class="text-sm">This folder is empty</p>
-	</div>
+	<EmptyState title="This folder is empty" />
 {:else}
 	<VirtualGrid {items} itemWidth={minItemWidth} {itemHeight} {gap} bind:scrollEl>
 		{#snippet cell({ item })}

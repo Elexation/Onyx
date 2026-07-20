@@ -65,15 +65,15 @@
 	{#if siblings.length > 1}
 		<div class="flex items-center gap-3 text-muted-foreground" data-preview-content>
 			<button
-				class="rounded-md px-2.5 py-1 text-[13px] transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="rounded-md px-2.5 py-1 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasPrev}
 				onclick={prev}
 			>
 				&larr; Prev
 			</button>
-			<span class="font-mono text-[13px]">{currentIndex + 1} / {siblings.length}</span>
+			<span class="font-mono text-meta">{currentIndex + 1} / {siblings.length}</span>
 			<button
-				class="rounded-md px-2.5 py-1 text-[13px] transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="rounded-md px-2.5 py-1 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasNext}
 				onclick={next}
 			>

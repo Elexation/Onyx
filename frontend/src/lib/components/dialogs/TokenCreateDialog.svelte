@@ -6,8 +6,11 @@
 	import { Label } from "$lib/components/ui/label/index.js";
 	import { createToken } from "$lib/api/tokens.js";
 	import { toast } from "svelte-sonner";
-	import { Check, Copy, KeyRound } from "lucide-svelte";
+	import CheckIcon from "@lucide/svelte/icons/check";
+	import CopyIcon from "@lucide/svelte/icons/copy";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import type { PersonalAccessToken, TokenScope } from "$lib/types.js";
+	import { formatAbsoluteDate } from "$lib/utils/format.js";
 
 	let {
 		open = $bindable(false),
@@ -113,11 +116,7 @@
 
 	function formatExpiryDisplay(): string {
 		if (!createdToken?.expiresAt) return "Never";
-		return new Date(createdToken.expiresAt * 1000).toLocaleDateString(undefined, {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		});
+		return formatAbsoluteDate(createdToken.expiresAt);
 	}
 </script>
 
@@ -132,7 +131,7 @@
 		{#if createdToken}
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">
-					<KeyRound class="size-4" />
+					<KeyRoundIcon class="size-4" />
 					Token Created
 				</Dialog.Title>
 				<Dialog.Description>
@@ -148,11 +147,11 @@
 						readonly
 						class="font-mono text-xs"
 					/>
-					<Button variant="outline" size="icon" onclick={copyToken} class="shrink-0">
+					<Button variant="outline" size="icon" onclick={copyToken} class="shrink-0" aria-label={copied ? "Copied" : "Copy token"}>
 						{#if copied}
-							<Check class="size-4" />
+							<CheckIcon class="size-4" />
 						{:else}
-							<Copy class="size-4" />
+							<CopyIcon class="size-4" />
 						{/if}
 					</Button>
 				</div>
@@ -164,11 +163,11 @@
 					</div>
 					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Scope</span>
-						<span class="font-mono text-[13px]">{scopeLabel(createdToken.scope)}</span>
+						<span class="font-mono text-meta">{scopeLabel(createdToken.scope)}</span>
 					</div>
 					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Expires</span>
-						<span class="font-mono text-[13px]">{formatExpiryDisplay()}</span>
+						<span class="font-mono text-meta">{formatExpiryDisplay()}</span>
 					</div>
 				</div>
 			</div>
@@ -181,7 +180,7 @@
 		{:else}
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2">
-					<KeyRound class="size-4" />
+					<KeyRoundIcon class="size-4" />
 					Create Personal Access Token
 				</Dialog.Title>
 				<Dialog.Description>

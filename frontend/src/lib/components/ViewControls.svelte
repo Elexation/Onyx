@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { List, LayoutGrid } from "lucide-svelte";
+	import ListIcon from "@lucide/svelte/icons/list";
+	import LayoutGridIcon from "@lucide/svelte/icons/layout-grid";
 	import type { ViewMode } from "$lib/stores/preferences.svelte.js";
 
 	let {
@@ -21,9 +22,10 @@
 				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => onviewchange("grid")}
 			title="Grid view"
+			aria-label="Grid view"
 			aria-pressed={viewMode === "grid"}
 		>
-			<LayoutGrid class="size-[15px]" strokeWidth={2} />
+			<LayoutGridIcon class="size-[15px]" strokeWidth={2} />
 		</button>
 		<button
 			type="button"
@@ -33,9 +35,10 @@
 				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => onviewchange("list")}
 			title="List view"
+			aria-label="List view"
 			aria-pressed={viewMode === "list"}
 		>
-			<List class="size-[15px]" strokeWidth={2} />
+			<ListIcon class="size-[15px]" strokeWidth={2} />
 		</button>
 	</div>
 </div>

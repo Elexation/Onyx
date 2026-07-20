@@ -290,6 +290,8 @@
 				class:text-muted-foreground={!fitToWidth}
 				onclick={toggleFitToWidth}
 				title="Fit to width"
+				aria-label="Fit to width"
+				aria-pressed={fitToWidth}
 			>
 				<MaximizeIcon class="size-4" />
 			</button>

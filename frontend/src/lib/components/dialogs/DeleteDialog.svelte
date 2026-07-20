@@ -16,14 +16,15 @@
 		onsuccess: () => void;
 	} = $props();
 
-	let submitting = $state(false);
+	let submittingAction = $state<"trash" | "permanent" | null>(null);
+	const submitting = $derived(submittingAction !== null);
 
 	const itemName = $derived(
 		paths.length === 1 ? `"${paths[0].split("/").pop()}"` : `${paths.length} items`
 	);
 
 	async function doDelete(permanent: boolean) {
-		submitting = true;
+		submittingAction = permanent ? "permanent" : "trash";
 		try {
 			const res = await deleteFiles(paths, permanent);
 			const failed = res.results.filter((r) => !r.success);
@@ -40,7 +41,7 @@
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Delete failed");
 		} finally {
-			submitting = false;
+			submittingAction = null;
 		}
 	}
 </script>
@@ -60,14 +61,14 @@
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
 			{#if trashEnabled}
 				<Button variant="destructive" disabled={submitting} onclick={() => doDelete(true)}>
-					Delete Permanently
+					{submittingAction === "permanent" ? "Deleting…" : "Delete Permanently"}
 				</Button>
 				<AlertDialog.Action disabled={submitting} onclick={() => doDelete(false)}>
-					Move to Trash
+					{submittingAction === "trash" ? "Moving…" : "Move to Trash"}
 				</AlertDialog.Action>
 			{:else}
 				<AlertDialog.Action disabled={submitting} onclick={() => doDelete(true)}>
-					Delete
+					{submittingAction === "permanent" ? "Deleting…" : "Delete"}
 				</AlertDialog.Action>
 			{/if}
 		</AlertDialog.Footer>

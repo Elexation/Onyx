@@ -63,6 +63,7 @@
 				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={handleDownload}
 				title="Download"
+				aria-label="Download"
 			>
 				<DownloadIcon class="size-4" />
 			</button>
@@ -70,6 +71,7 @@
 				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={onclose}
 				title="Close"
+				aria-label="Close preview"
 			>
 				<XIcon class="size-4" />
 			</button>
@@ -79,7 +81,7 @@
 	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video"}>
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-				<p class="text-[15px]">File too large to preview (<span class="font-mono text-[13px]">{formatFileSize(file.size)}</span>)</p>
+				<p class="text-[15px]">File too large to preview (<span class="font-mono text-meta">{formatFileSize(file.size)}</span>)</p>
 				<Button onclick={handleDownload}>
 					<DownloadIcon class="mr-2 size-4" />
 					Download

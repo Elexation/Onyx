@@ -86,7 +86,7 @@
 					<div class="flex items-center gap-2.5">
 						<FileIcon name={currentName} class="size-7 shrink-0" />
 						<div class="min-w-0">
-							<div class="truncate text-[13px] font-medium">{currentName}</div>
+							<div class="truncate text-meta font-medium">{currentName}</div>
 							<div class="font-mono text-[11px] text-muted-foreground">
 								{formatFileSize(current.existing.size)} · {formatDate(current.existing.modTime)}
 							</div>
@@ -102,7 +102,7 @@
 					<div class="flex items-center gap-2.5">
 						<FileIcon name={currentName} class="size-7 shrink-0" />
 						<div class="min-w-0">
-							<div class="truncate text-[13px] font-medium">{currentName}</div>
+							<div class="truncate text-meta font-medium">{currentName}</div>
 							<div class="font-mono text-[11px] text-muted-foreground">
 								{formatFileSize(current.incoming.size)} · {formatDate(current.incoming.modTime)}
 							</div>
@@ -114,7 +114,7 @@
 
 		{#if hasMany}
 			<label
-				class="mt-3 flex cursor-pointer items-center gap-2 text-[13px] text-muted-foreground"
+				class="mt-3 flex cursor-pointer items-center gap-2 text-meta text-muted-foreground"
 			>
 				<Checkbox bind:checked={applyToAll} />
 				Apply to all {remaining} conflicts

@@ -125,7 +125,7 @@
 							class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
 						/>
 					</div>
-					<div class="flex justify-between font-mono text-[13px] text-muted-foreground">
+					<div class="flex justify-between font-mono text-meta text-muted-foreground">
 						<span>{formatMediaTime(currentTime)}</span>
 						<span>{formatMediaTime(duration)}</span>
 					</div>

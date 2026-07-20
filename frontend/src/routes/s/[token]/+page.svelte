@@ -7,12 +7,16 @@
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
 	import FileIcon from "$lib/components/FileIcon.svelte";
 	import ShareHeader from "$lib/components/share/ShareHeader.svelte";
-	import { Download, Lock, Eye, Folder } from "lucide-svelte";
+	import DownloadIcon from "@lucide/svelte/icons/download";
+	import LockIcon from "@lucide/svelte/icons/lock";
+	import EyeIcon from "@lucide/svelte/icons/eye";
+	import FolderIcon from "@lucide/svelte/icons/folder";
 	import type { FileInfo } from "$lib/types.js";
 	import { canPreview } from "$lib/preview.js";
 	import { encodeFilePath } from "$lib/utils";
 	import { formatFileSize } from "$lib/utils/format.js";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
+	import EmptyState from "$lib/components/EmptyState.svelte";
 
 	const token = $derived(page.params.token);
 	const safeToken = $derived(encodeURIComponent(token ?? ""));
@@ -175,7 +179,7 @@
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em]">
 						<span class="grid size-7 place-items-center rounded-lg bg-muted text-accent-brand">
-							<Lock class="size-3.5" />
+							<LockIcon class="size-3.5" />
 						</span>
 						Password Required
 					</Card.Title>
@@ -211,25 +215,25 @@
 			<div class="flex w-full max-w-3xl flex-col gap-4">
 				<div class="flex flex-col gap-3 rounded-xl border border-border bg-card p-[14px] md:flex-row md:items-center md:justify-between">
 					<div class="flex min-w-0 items-center gap-3">
-						<Folder class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
+						<FolderIcon class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
 						<div class="min-w-0">
 							<div class="truncate text-[15px] font-medium">{fileName}</div>
-							<div class="text-[13px] tabular-nums text-muted-foreground">
+							<div class="text-meta tabular-nums text-muted-foreground">
 								{items.length} item{items.length !== 1 ? "s" : ""} · {formatFileSize(totalSize)}
 							</div>
 						</div>
 					</div>
 					<a href={`/api/public/s/${safeToken}/zip`} download class="shrink-0">
 						<Button class="w-full md:w-auto">
-							<Download class="mr-2 size-4" />
+							<DownloadIcon class="mr-2 size-4" />
 							Download All
 						</Button>
 					</a>
 				</div>
 
 				{#if items.length === 0}
-					<div class="flex items-center justify-center rounded-xl border border-border bg-card py-20 text-[15px] text-muted-foreground">
-						This folder is empty.
+					<div class="rounded-xl border border-border bg-card">
+						<EmptyState title="This folder is empty" />
 					</div>
 				{:else}
 					<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
@@ -251,7 +255,7 @@
 										/>
 										<span class="truncate text-[15px]">{item.name}</span>
 									</div>
-									<div class="hidden text-right text-[13px] tabular-nums md:block">—</div>
+									<div class="hidden text-right text-meta tabular-nums md:block">—</div>
 									<div class="hidden md:block"></div>
 								</div>
 							{:else}
@@ -273,7 +277,7 @@
 											</span>
 										{/if}
 									</div>
-									<div class="hidden text-right text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-right text-meta tabular-nums text-muted-foreground md:block">
 										{formatFileSize(item.size)}
 									</div>
 									<div class="hidden items-center justify-end md:flex">
@@ -286,7 +290,7 @@
 											onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); downloadItem(item); } }}
 											class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
 										>
-											<Download class="size-4" />
+											<DownloadIcon class="size-4" />
 										</span>
 									</div>
 								</button>
@@ -318,7 +322,7 @@
 					<Card.Root>
 						<Card.Content class="flex flex-col items-center gap-2 py-10 text-center">
 							<h1 class="text-lg font-bold tracking-[-0.01em]">Share unavailable</h1>
-							<p class="text-[13px] text-muted-foreground">
+							<p class="text-meta text-muted-foreground">
 								The share link may have expired or been revoked.
 							</p>
 						</Card.Content>
@@ -332,7 +336,7 @@
 								</div>
 								<div class="flex min-w-0 flex-col items-center gap-1">
 									<div class="w-full truncate text-[15px] font-medium">{fileName}</div>
-									<div class="flex items-center gap-2 text-[13px] tabular-nums text-muted-foreground">
+									<div class="flex items-center gap-2 text-meta tabular-nums text-muted-foreground">
 										{#if ext}
 											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em]">
 												{ext}
@@ -345,13 +349,13 @@
 							<div class="flex flex-col gap-2">
 								{#if previewable}
 									<Button size="lg" class="w-full" onclick={() => showPreview = true}>
-										<Eye class="mr-2 size-4" />
+										<EyeIcon class="mr-2 size-4" />
 										Preview
 									</Button>
 								{/if}
 								<a href={downloadUrl()} download class="block">
 									<Button variant={previewable ? "outline" : "default"} size="lg" class="w-full">
-										<Download class="mr-2 size-4" />
+										<DownloadIcon class="mr-2 size-4" />
 										Download
 									</Button>
 								</a>

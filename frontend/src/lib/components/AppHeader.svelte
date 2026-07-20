@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { Menu, Search as SearchIcon, X } from "lucide-svelte";
+	import MenuIcon from "@lucide/svelte/icons/menu";
+	import SearchIcon from "@lucide/svelte/icons/search";
+	import XIcon from "@lucide/svelte/icons/x";
 	import SearchBar from "./SearchBar.svelte";
 	import BrandMark from "./BrandMark.svelte";
 	import UserChip from "./UserChip.svelte";
@@ -33,7 +35,7 @@
 			aria-label="Close search"
 			onclick={closeMobileSearch}
 		>
-			<X class="size-5" strokeWidth={2} />
+			<XIcon class="size-5" strokeWidth={2} />
 		</button>
 		<div class="flex-1 md:hidden">
 			<SearchBar autoFocusKey={searchFocusKey} onescape={closeMobileSearch} />
@@ -46,7 +48,7 @@
 			aria-expanded={drawerOpen}
 			onclick={() => (drawerOpen = !drawerOpen)}
 		>
-			<Menu class="size-5" strokeWidth={2} />
+			<MenuIcon class="size-5" strokeWidth={2} />
 		</button>
 
 		<BrandMark />

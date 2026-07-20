@@ -29,7 +29,7 @@
 		onpaste,
 		onversions,
 		onshare,
-		children,
+		trigger,
 	}: {
 		item: { name: string; path: string; isDir: boolean } | null;
 		onopen: () => void;
@@ -40,7 +40,7 @@
 		onpaste: () => void;
 		onversions: () => void;
 		onshare: () => void;
-		children: Snippet<[Record<string, any>]>;
+		trigger: Snippet<[Record<string, any>]>;
 	} = $props();
 
 	function handleCopy() {
@@ -69,7 +69,7 @@
 <ContextMenu.Root>
 	<ContextMenu.Trigger disabled={viewport.isMobile}>
 		{#snippet child({ props })}
-			{@render children(props)}
+			{@render trigger(props)}
 		{/snippet}
 	</ContextMenu.Trigger>
 	<ContextMenu.Content class="w-52">

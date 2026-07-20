@@ -6,10 +6,18 @@
 	import { sharedPaths } from "$lib/stores/sharedPaths.svelte.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-	import { Link, Link2Off, X, Lock } from "lucide-svelte";
+	import LinkIcon from "@lucide/svelte/icons/link";
+	import Link2OffIcon from "@lucide/svelte/icons/link-2-off";
+	import XIcon from "@lucide/svelte/icons/x";
+	import LockIcon from "@lucide/svelte/icons/lock";
 	import FileIcon from "$lib/components/FileIcon.svelte";
 	import type { ShareLink } from "$lib/types.js";
 	import { changes } from "$lib/changes";
+	import LoadingState from "$lib/components/LoadingState.svelte";
+	import EmptyState from "$lib/components/EmptyState.svelte";
+	import PageHeader from "$lib/components/PageHeader.svelte";
+	import { basename, dirname } from "$lib/utils.js";
+	import { formatRemainingShort } from "$lib/utils/format.js";
 
 	let shares = $state<ShareLink[]>([]);
 	let loading = $state(true);
@@ -61,58 +69,33 @@
 		}
 	}
 
-	function formatExpiry(share: ShareLink): string {
-		if (!share.expiresAt) return "Never";
-		const now = Date.now() / 1000;
-		const remaining = share.expiresAt - now;
-		if (remaining <= 0) return "Expired";
-		if (remaining < 3600) return `${Math.ceil(remaining / 60)}m`;
-		if (remaining < 86400) return `${Math.ceil(remaining / 3600)}h`;
-		return `${Math.ceil(remaining / 86400)}d`;
-	}
-
 	function isExpired(share: ShareLink): boolean {
 		return !!share.expiresAt && share.expiresAt <= Date.now() / 1000;
-	}
-
-	function fileName(path: string): string {
-		return path.split("/").pop() ?? path;
-	}
-
-	function parentDir(path: string): string {
-		const i = path.lastIndexOf("/");
-		return i <= 0 ? "/" : path.substring(0, i);
 	}
 </script>
 
 <div class="flex flex-col gap-4 p-4">
 	<!-- Header -->
-	<div class="flex items-center gap-2">
-		<Link class="size-5 text-muted-foreground" strokeWidth={2} />
-		<h1 class="text-lg font-bold tracking-[-0.01em]">Shares</h1>
-		{#if shares.length > 0}
-			<span class="text-[13px] tabular-nums text-muted-foreground">
-				{shares.length} {shares.length === 1 ? "link" : "links"}
-			</span>
-		{/if}
-	</div>
+	<PageHeader
+		icon={LinkIcon}
+		title="Shares"
+		meta={shares.length > 0 ? `${shares.length} ${shares.length === 1 ? "link" : "links"}` : undefined}
+	/>
 
 	<!-- Content -->
 	{#if !sharesEnabled.enabled}
-		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-			<Link2Off class="size-12 opacity-30" strokeWidth={1.5} />
-			<p class="text-[15px]">Sharing is disabled</p>
-			<p class="text-[13px]">Enable it in Settings to create share links.</p>
-		</div>
+		<EmptyState
+			icon={Link2OffIcon}
+			title="Sharing is disabled"
+			description="Enable it in Settings to create share links."
+		/>
 	{:else if loading}
-		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
-			Loading…
-		</div>
+		<LoadingState />
 	{:else}
 		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
 			<!-- Table header (desktop) -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_60px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-list-header text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_60px] md:gap-3 md:px-[14px] md:py-2.5"
 			>
 				<div>File</div>
 				<div class="text-center">Access</div>
@@ -121,7 +104,7 @@
 			</div>
 
 			{#if shares.length === 0}
-				<div class="px-[14px] py-12 text-center text-[13px] text-muted-foreground">
+				<div class="px-[14px] py-12 text-center text-meta text-muted-foreground">
 					No active shares. Create one from a file's context menu.
 				</div>
 			{:else}
@@ -134,23 +117,23 @@
 						<div class="flex min-w-0 items-center gap-3">
 							<FileIcon
 								isDir={share.isDir}
-								name={fileName(share.filePath)}
+								name={basename(share.filePath)}
 								class="size-6 shrink-0 {share.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 								strokeWidth={1.4}
 							/>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-[15px] font-medium md:text-base">
-									{fileName(share.filePath)}
+									{basename(share.filePath)}
 								</p>
-								<p class="truncate font-mono text-[13px] text-muted-foreground">
-									{parentDir(share.filePath)}
+								<p class="truncate font-mono text-meta text-muted-foreground">
+									{dirname(share.filePath)}
 								</p>
 							</div>
 						</div>
 						<div class="hidden text-center md:block">
 							{#if share.hasPassword}
 								<span class="inline-flex items-center gap-1 rounded-md border border-border-2 bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-									<Lock class="size-2.5" strokeWidth={2.5} />
+									<LockIcon class="size-2.5" strokeWidth={2.5} />
 									password
 								</span>
 							{:else}
@@ -159,15 +142,16 @@
 								</span>
 							{/if}
 						</div>
-						<div class="flex shrink-0 items-center justify-end text-[13px] tabular-nums text-muted-foreground md:hidden">
+						<div class="flex shrink-0 items-center justify-end text-meta tabular-nums text-muted-foreground md:hidden">
 							<Button
 								variant="ghost"
 								size="icon-xs"
 								class="cursor-pointer"
 								onclick={() => confirmDelete(share)}
 								title="Revoke link"
+								aria-label="Revoke share link"
 							>
-								<X class="size-3.5" strokeWidth={2} />
+								<XIcon class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
 						<div class="hidden text-center md:block">
@@ -176,8 +160,8 @@
 									Expired
 								</span>
 							{:else}
-								<span class="text-[13px] tabular-nums text-muted-foreground">
-									{formatExpiry(share)}
+								<span class="text-meta tabular-nums text-muted-foreground">
+									{formatRemainingShort(share.expiresAt)}
 								</span>
 							{/if}
 						</div>
@@ -188,8 +172,9 @@
 								class="cursor-pointer"
 								onclick={() => confirmDelete(share)}
 								title="Revoke link"
+								aria-label="Revoke share link"
 							>
-								<X class="size-3.5" strokeWidth={2} />
+								<XIcon class="size-3.5" strokeWidth={2} />
 							</Button>
 						</div>
 					</div>

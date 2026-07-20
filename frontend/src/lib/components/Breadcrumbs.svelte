@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Home, ChevronRight } from "lucide-svelte";
+	import HomeIcon from "@lucide/svelte/icons/home";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import { droppable } from "$lib/actions/droppable.js";
 
 	let {
@@ -35,12 +36,12 @@
 		title="Files root"
 		use:droppable={{ path: "", ondrop: ondrop ?? noop }}
 	>
-		<Home class="size-[15px]" strokeWidth={2} />
+		<HomeIcon class="size-[15px]" strokeWidth={2} />
 		<span>Home</span>
 	</a>
 	{#each segments as segment}
-		<span class="inline-flex text-[oklch(0.45_0_0)]">
-			<ChevronRight class="size-3.5" strokeWidth={2} />
+		<span class="inline-flex text-muted-foreground-2">
+			<ChevronRightIcon class="size-3.5" strokeWidth={2} />
 		</span>
 		{#if segment.isLast}
 			<span

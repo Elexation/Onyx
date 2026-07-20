@@ -38,7 +38,7 @@
 	{#if selection.isActive}
 		<!-- Selection-active: primary toolbar is replaced. Mobile shows icons only. -->
 		<span
-			class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-[13px] font-medium tabular-nums text-accent-brand"
+			class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-meta font-medium tabular-nums text-accent-brand"
 		>
 			{selection.count} selected
 		</span>

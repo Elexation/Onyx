@@ -33,6 +33,9 @@
 	--border-2: oklch(0.32 0 0);
 	--input: oklch(0.264 0 0);
 	--ring: oklch(0.556 0 0);
+	--muted-foreground-2: oklch(0.45 0 0);
+	--list-header: oklch(0 0 0 / 0.2);
+	--foreground-dim: oklch(0.82 0 0);
 
 	--font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -65,8 +68,12 @@
 	--color-border-2: var(--border-2);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
+	--color-muted-foreground-2: var(--muted-foreground-2);
+	--color-list-header: var(--list-header);
+	--color-foreground-dim: var(--foreground-dim);
 	--font-sans: var(--font-sans);
 	--font-mono: var(--font-mono);
+	--text-meta: 13px;
 }
 
 @layer base {

@@ -12,6 +12,7 @@
 	} from "$lib/api/trash.js";
 	import { getSettings } from "$lib/api/settings.js";
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
+	import { basename, dirname } from "$lib/utils.js";
 	import type { TrashItem } from "$lib/types";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
@@ -21,8 +22,13 @@
 	import { trashCount } from "$lib/stores/trashCount.svelte.js";
 	import { trashEnabled } from "$lib/stores/trashEnabled.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
-	import { Trash2, RotateCcw, Info } from "lucide-svelte";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
+	import InfoIcon from "@lucide/svelte/icons/info";
 	import { changes } from "$lib/changes";
+	import LoadingState from "$lib/components/LoadingState.svelte";
+	import EmptyState from "$lib/components/EmptyState.svelte";
+	import PageHeader from "$lib/components/PageHeader.svelte";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -131,15 +137,6 @@
 
 	function getContextIds(item: TrashItem): string[] {
 		return selected.has(item.id) && selected.size > 1 ? [...selected] : [item.id];
-	}
-
-	function itemName(item: TrashItem): string {
-		return item.originalPath.split("/").pop() ?? "";
-	}
-
-	function parentDir(path: string): string {
-		const i = path.lastIndexOf("/");
-		return i <= 0 ? "/" : path.substring(0, i);
 	}
 
 	async function load() {
@@ -270,7 +267,7 @@
 		// Capture single-item name before mutating items.
 		const singleItemName =
 			ids.length === 1
-				? (items.find((i) => i.id === ids[0])?.originalPath.split("/").pop() ?? "")
+				? basename(items.find((i) => i.id === ids[0])?.originalPath ?? "")
 				: "";
 
 		let plain = 0;
@@ -340,7 +337,7 @@
 		submitting = true;
 		try {
 			await permanentDeleteTrashItem(deleteTarget.id);
-			toast.success(`Permanently deleted "${itemName(deleteTarget)}"`);
+			toast.success(`Permanently deleted "${basename(deleteTarget.originalPath)}"`);
 			items = items.filter((i) => i.id !== deleteTarget!.id);
 			selected.delete(deleteTarget!.id);
 			selected = new Set(selected);
@@ -414,39 +411,31 @@
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="flex min-h-full flex-col gap-4 p-4" onclick={clearSelection}>
 	<!-- Header (always visible) -->
-	<div class="flex items-center gap-3">
-		<div class="flex flex-1 flex-col">
-			<div class="flex items-center gap-2">
-				<Trash2 class="size-5 text-muted-foreground" strokeWidth={2} />
-				<h1 class="text-lg font-bold tracking-[-0.01em]">Trash</h1>
-				{#if items.length > 0}
-					<span class="text-[13px] tabular-nums text-muted-foreground">
-						{items.length} {items.length === 1 ? "item" : "items"}
-					</span>
-				{/if}
-			</div>
-			{#if purgeSubtitle}
-				<p class="mt-1 text-[13px] text-muted-foreground">{purgeSubtitle}</p>
+	<PageHeader
+		icon={Trash2Icon}
+		title="Trash"
+		meta={items.length > 0 ? `${items.length} ${items.length === 1 ? "item" : "items"}` : undefined}
+		subtitle={purgeSubtitle ?? undefined}
+	>
+		{#snippet action()}
+			{#if items.length > 0}
+				<Button
+					variant="destructive"
+					size="default"
+					onclick={(e) => { e.stopPropagation(); emptyConfirmCount = items.length; emptyConfirmOpen = true; }}
+				>
+					<Trash2Icon class="size-4" strokeWidth={2} />
+					<span>Empty trash</span>
+				</Button>
 			{/if}
-		</div>
-
-		{#if items.length > 0}
-			<Button
-				variant="destructive"
-				size="default"
-				onclick={(e) => { e.stopPropagation(); emptyConfirmCount = items.length; emptyConfirmOpen = true; }}
-			>
-				<Trash2 class="size-4" strokeWidth={2} />
-				<span>Empty trash</span>
-			</Button>
-		{/if}
-	</div>
+		{/snippet}
+	</PageHeader>
 
 	<!-- Selection toolbar (only when active) -->
 	{#if selected.size > 0}
 		<div class="flex items-center gap-2">
 			<span
-				class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-[13px] font-medium tabular-nums text-accent-brand"
+				class="inline-flex min-w-[5.5rem] items-center justify-center rounded-md bg-accent-brand-dim px-2.5 py-1 text-meta font-medium tabular-nums text-accent-brand"
 			>
 				{selected.size} selected
 			</span>
@@ -455,7 +444,7 @@
 				size="sm"
 				onclick={(e) => { e.stopPropagation(); restoreItems([...selected]); }}
 			>
-				<RotateCcw class="size-[15px]" strokeWidth={2} />
+				<RotateCcwIcon class="size-[15px]" strokeWidth={2} />
 				<span>Restore</span>
 			</Button>
 			<Button
@@ -464,7 +453,7 @@
 				class="text-destructive hover:bg-destructive/10 hover:text-destructive"
 				onclick={(e) => { e.stopPropagation(); confirmBulkDelete(); }}
 			>
-				<Trash2 class="size-[15px]" strokeWidth={2} />
+				<Trash2Icon class="size-[15px]" strokeWidth={2} />
 				<span>Delete permanently</span>
 			</Button>
 		</div>
@@ -472,8 +461,8 @@
 
 	<!-- Disabled banner (items still present after disable) -->
 	{#if !trashEnabled.enabled && items.length > 0 && !loading}
-		<div class="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-[13px] text-muted-foreground">
-			<Info class="mt-px size-4 shrink-0" strokeWidth={2} />
+		<div class="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-meta text-muted-foreground">
+			<InfoIcon class="mt-px size-4 shrink-0" strokeWidth={2} />
 			<span>
 				Trash is disabled — new deletions are permanent. Existing items can still be restored or purged.
 			</span>
@@ -482,28 +471,26 @@
 
 	<!-- Content -->
 	{#if loading}
-		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
-			Loading…
-		</div>
+		<LoadingState />
 	{:else if !trashEnabled.enabled && items.length === 0}
-		<div class="flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-			<Trash2 class="size-12 opacity-30" strokeWidth={1.5} />
-			<p class="text-[15px]">Trash is disabled</p>
-			<p class="text-[13px]">Enable it in Settings to keep deleted files recoverable.</p>
-		</div>
+		<EmptyState
+			icon={Trash2Icon}
+			title="Trash is disabled"
+			description="Enable it in Settings to keep deleted files recoverable."
+		/>
 	{:else if items.length === 0}
-		<div class="rounded-xl border border-border bg-card p-12 text-center">
-			<Trash2 class="mx-auto size-8 text-muted-foreground" strokeWidth={1.5} />
-			<div class="mt-3 text-sm font-medium">Trash is empty</div>
-			<div class="mt-1 text-[13px] text-muted-foreground">Deleted items will appear here.</div>
-		</div>
+		<EmptyState
+			icon={Trash2Icon}
+			title="Trash is empty"
+			description="Deleted items will appear here."
+		/>
 	{:else}
 		<!-- List -->
 		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
 			<!-- Table header (desktop) -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="hidden border-b border-border bg-[oklch(0_0_0/0.2)] text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 md:px-[14px] md:py-2.5"
+				class="hidden border-b border-border bg-list-header text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 md:px-[14px] md:py-2.5"
 				onclick={(e) => e.stopPropagation()}
 			>
 				<div>Name</div>
@@ -517,7 +504,7 @@
 			<div class="flex flex-col">
 				{#each items as item (item.id)}
 					{@const isSelected = selected.has(item.id)}
-					{@const parent = parentDir(item.originalPath)}
+					{@const parent = dirname(item.originalPath)}
 					<ContextMenu.Root>
 						<ContextMenu.Trigger disabled={viewport.isMobile}>
 							{#snippet child({ props })}
@@ -538,13 +525,13 @@
 									<div class="flex min-w-0 items-center gap-3">
 										<FileIcon
 											isDir={item.isDir}
-											name={itemName(item)}
+											name={basename(item.originalPath)}
 											class="size-8 shrink-0 {item.isDir ? 'text-accent-brand' : 'text-muted-foreground'}"
 											strokeWidth={1.4}
 										/>
 										<div class="flex min-w-0 flex-1 flex-col">
 											<span class="truncate text-[15px] font-medium md:text-[15px]">
-												{itemName(item)}
+												{basename(item.originalPath)}
 											</span>
 											<span
 												class="truncate font-mono text-[11px] text-muted-foreground"
@@ -557,13 +544,13 @@
 									<div class="flex shrink-0 items-center text-xs tabular-nums text-muted-foreground md:hidden">
 										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
-									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
 										{formatDate(item.deletedAt)}
 									</div>
-									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
 										{item.isDir ? "—" : formatFileSize(item.size)}
 									</div>
-									<div class="hidden text-center text-[13px] tabular-nums text-muted-foreground md:block">
+									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
 										{purgesIn(item.deletedAt)}
 									</div>
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -620,7 +607,7 @@
 <AlertDialog.Root bind:open={deleteConfirmOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Permanently delete "{deleteTarget?.originalPath.split("/").pop()}"?</AlertDialog.Title>
+			<AlertDialog.Title>Permanently delete "{deleteTarget ? basename(deleteTarget.originalPath) : ''}"?</AlertDialog.Title>
 			<AlertDialog.Description>This action cannot be undone.</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>

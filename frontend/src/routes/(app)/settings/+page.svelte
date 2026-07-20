@@ -21,26 +21,27 @@
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import TokenCreateDialog from "$lib/components/dialogs/TokenCreateDialog.svelte";
 	import type { PersonalAccessToken, TokenScope } from "$lib/types.js";
-	import {
-		History,
-		Trash2,
-		Link2,
-		Upload,
-		Play,
-		Shield,
-		KeyRound,
-		Server,
-		X,
-		ChevronLeft,
-		ChevronRight,
-	} from "lucide-svelte";
+	import HistoryIcon from "@lucide/svelte/icons/history";
+	import Trash2Icon from "@lucide/svelte/icons/trash-2";
+	import Link2Icon from "@lucide/svelte/icons/link-2";
+	import UploadIcon from "@lucide/svelte/icons/upload";
+	import PlayIcon from "@lucide/svelte/icons/play";
+	import ShieldIcon from "@lucide/svelte/icons/shield";
+	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
+	import ServerIcon from "@lucide/svelte/icons/server";
+	import XIcon from "@lucide/svelte/icons/x";
+	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
+	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import type { Snippet } from "svelte";
 	import { changes } from "$lib/changes";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
+	import LoadingState from "$lib/components/LoadingState.svelte";
+	import { formatAbsoluteDate } from "$lib/utils/format.js";
 
-	type IconComponent = typeof History;
+	type IconComponent = typeof HistoryIcon;
 
 	const MIN_PASSWORD_LENGTH = 8;
+	const numInputClass = "w-[110px] tabular-nums";
 
 	type SectionKey =
 		| "versioning"
@@ -56,49 +57,49 @@
 		{
 			key: "versioning",
 			label: "Versioning",
-			icon: History,
+			icon: HistoryIcon,
 			desc: "Keep previous versions of files on save.",
 		},
 		{
 			key: "trash",
 			label: "Trash",
-			icon: Trash2,
+			icon: Trash2Icon,
 			desc: "Hold deleted files for recovery before permanent removal.",
 		},
 		{
 			key: "sharing",
 			label: "Sharing",
-			icon: Link2,
+			icon: Link2Icon,
 			desc: "Allow creating public share links for files.",
 		},
 		{
 			key: "uploads",
 			label: "Uploads",
-			icon: Upload,
+			icon: UploadIcon,
 			desc: "Limits applied to incoming file uploads.",
 		},
 		{
 			key: "playback",
 			label: "Playback",
-			icon: Play,
+			icon: PlayIcon,
 			desc: "Defaults for in-browser video playback.",
 		},
 		{
 			key: "security",
 			label: "Security",
-			icon: Shield,
+			icon: ShieldIcon,
 			desc: "Session lifetime and admin password.",
 		},
 		{
 			key: "tokens",
 			label: "Tokens",
-			icon: KeyRound,
+			icon: KeyRoundIcon,
 			desc: "Personal access tokens for scripts and automation.",
 		},
 		{
 			key: "advanced",
 			label: "Advanced",
-			icon: Server,
+			icon: ServerIcon,
 			desc: "Server configuration that takes effect on restart.",
 		},
 	];
@@ -221,7 +222,7 @@
 				} else if (key === "server.listen_port") {
 					toast.success("Saved — restart server to apply");
 				} else {
-					toast.success("Setting saved");
+					toast.success("Saved");
 				}
 			} catch {
 				toast.error("Failed to save setting");
@@ -419,12 +420,7 @@
 	}
 
 	function formatTokenDate(unix: number | undefined): string {
-		if (!unix) return "Never";
-		return new Date(unix * 1000).toLocaleDateString(undefined, {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		});
+		return unix ? formatAbsoluteDate(unix) : "Never";
 	}
 
 	function formatLastUsed(unix: number | undefined): string {
@@ -434,7 +430,7 @@
 		if (diff < 60) return "Just now";
 		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
 		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-		return formatTokenDate(unix);
+		return formatAbsoluteDate(unix);
 	}
 
 	async function handleChangePassword() {
@@ -492,7 +488,7 @@
 				type="button"
 				data-section={s.key}
 				onclick={() => selectSection(s.key)}
-				class="flex shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors
+				class="flex shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-meta font-medium transition-colors
 					{active
 					? 'bg-muted text-foreground'
 					: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
@@ -508,7 +504,7 @@
 			<div class="mx-auto max-w-[720px] p-4">
 				<header class="px-2 pt-2 pb-4">
 					<h1 class="text-[22px] font-bold tracking-[-0.01em]">Settings</h1>
-					<p class="mt-1 text-[13px] text-muted-foreground">
+					<p class="mt-1 text-meta text-muted-foreground">
 						Server configuration and account management.
 					</p>
 				</header>
@@ -528,7 +524,7 @@
 								<s.icon size={18} class="text-accent-brand" strokeWidth={1.6} />
 							</div>
 							<div class="min-w-0 flex-1 truncate text-[15px] font-medium">{s.label}</div>
-							<ChevronRight
+							<ChevronRightIcon
 								class="size-4 shrink-0 text-muted-foreground"
 								strokeWidth={1.6}
 							/>
@@ -544,19 +540,19 @@
 				<button
 					type="button"
 					onclick={() => (mobileShowIndex = true)}
-					class="mb-4 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-2 bg-card px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted active:bg-muted"
+					class="mb-4 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border-2 bg-card px-3 py-1.5 text-meta font-medium text-foreground transition-colors hover:bg-muted active:bg-muted"
 				>
-					<ChevronLeft class="size-4" strokeWidth={2} />
+					<ChevronLeftIcon class="size-4" strokeWidth={2} />
 					Settings
 				</button>
 			{/if}
 			{#if loading}
-				<p class="text-sm text-muted-foreground">Loading settings…</p>
+				<LoadingState text="Loading settings…" />
 			{:else}
 				<header class="mb-5 flex items-center justify-between gap-4">
 					<div class="min-w-0">
 						<h1 class="text-[22px] font-bold tracking-[-0.01em]">{currentSection.label}</h1>
-						<p class="mt-1 text-[13px] text-muted-foreground">{currentSection.desc}</p>
+						<p class="mt-1 text-meta text-muted-foreground">{currentSection.desc}</p>
 					</div>
 					{#if section === "tokens"}
 						<Button
@@ -589,7 +585,7 @@
 							step="1"
 							value={settings["versions.max_count"] ?? "10"}
 							onchange={(e) => validateAndSaveInt("versions.max_count", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -606,7 +602,7 @@
 							step="1"
 							value={durationToHours(settings["versions.max_age"] ?? "2160h")}
 							onchange={(e) => validateAndSaveDuration("versions.max_age", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -623,7 +619,7 @@
 							step="1"
 							value={bytesToMB(settings["versions.max_file_size"] ?? "1073741824")}
 							onchange={(e) => validateAndSaveMB("versions.max_file_size", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -640,7 +636,7 @@
 							step="1"
 							value={bytesToMB(settings["versions.max_storage"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("versions.max_storage", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -671,7 +667,7 @@
 							step="1"
 							value={durationToHours(settings["trash.purge_age"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("trash.purge_age", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -688,7 +684,7 @@
 							step="1"
 							value={bytesToMB(settings["trash.max_size"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("trash.max_size", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -721,7 +717,7 @@
 							step="1"
 							value={bytesToMB(settings["upload.max_size"] ?? "0")}
 							onchange={(e) => validateAndSaveMB("upload.max_size", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -764,7 +760,7 @@
 							step="1"
 							value={durationToHours(settings["session.lifetime"] ?? "720h")}
 							onchange={(e) => validateAndSaveDuration("session.lifetime", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
@@ -838,7 +834,7 @@
 														{scopeBadgeLabel(tok.scope)}
 													</span>
 												</div>
-												<p class="truncate font-mono text-[13px] text-muted-foreground">
+												<p class="truncate font-mono text-meta text-muted-foreground">
 													onyx_…{tok.tokenLast8}
 												</p>
 												<div class="grid grid-cols-1 gap-x-3 gap-y-0.5 font-mono text-[11px] text-muted-foreground md:grid-cols-3">
@@ -853,8 +849,9 @@
 												class="shrink-0 cursor-pointer"
 												onclick={() => askRevokeToken(tok)}
 												title="Revoke token"
+												aria-label="Revoke token {tok.name}"
 											>
-												<X class="size-3.5" strokeWidth={2} />
+												<XIcon class="size-3.5" strokeWidth={2} />
 											</Button>
 										</div>
 									</div>
@@ -872,7 +869,7 @@
 					{@const restartPending = !isLocked && configuredPort !== activePort}
 
 					{#if restartPending}
-						<div class="mb-5 rounded-lg border border-border-2 bg-muted/30 px-4 py-3 text-[13px]">
+						<div class="mb-5 rounded-lg border border-border-2 bg-muted/30 px-4 py-3 text-meta">
 							<span class="font-medium text-foreground">Restart pending</span>
 							<span class="text-muted-foreground">
 								— currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
@@ -891,7 +888,7 @@
 							value={isLocked ? activePort : configuredPort}
 							disabled={isLocked}
 							onchange={(e) => validateAndSaveInt("server.listen_port", e.currentTarget.value)}
-							class="w-[110px] tabular-nums"
+							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(

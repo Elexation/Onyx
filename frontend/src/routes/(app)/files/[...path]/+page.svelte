@@ -20,6 +20,7 @@
 	import { shortcuts, type ShortcutMap } from "$lib/actions/keyboard.js";
 	import { toast } from "svelte-sonner";
 	import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
+	import LoadingState from "$lib/components/LoadingState.svelte";
 	import FileList from "$lib/components/FileList.svelte";
 	import FileGrid from "$lib/components/FileGrid.svelte";
 	import FileToolbar from "$lib/components/FileToolbar.svelte";
@@ -63,6 +64,7 @@
 	// Background context menu state
 	let bgMenuOpen = $state(false);
 	let bgMenuPos = $state({ x: 0, y: 0 });
+	let bgMenuEl = $state<HTMLDivElement | null>(null);
 
 	function handleBgContextMenu(e: MouseEvent) {
 		if (e.defaultPrevented) return;
@@ -71,6 +73,14 @@
 		bgMenuPos = { x: e.clientX, y: e.clientY };
 		bgMenuOpen = true;
 	}
+
+	$effect(() => {
+		if (bgMenuOpen && bgMenuEl) {
+			requestAnimationFrame(() => {
+				bgMenuEl?.querySelector<HTMLButtonElement>("button")?.focus();
+			});
+		}
+	});
 
 	// Upload state
 	let conflictOpen = $state(false);
@@ -494,9 +504,7 @@
 	</div>
 
 	{#if showLoading}
-		<div class="flex items-center justify-center py-20 text-sm text-muted-foreground">
-			Loading...
-		</div>
+		<LoadingState />
 	{:else if error}
 		<div class="flex items-center justify-center py-20 text-sm text-destructive">
 			{error}
@@ -546,28 +554,30 @@
 </div>
 
 {#if bgMenuOpen}
+	<!-- Backdrop: click-to-close. Keyboard equivalent is Escape (handled at page level). -->
 	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 	<div class="fixed inset-0 z-50" onclick={() => (bgMenuOpen = false)} oncontextmenu={(e) => { e.preventDefault(); bgMenuOpen = false; }}></div>
 	<div
+		bind:this={bgMenuEl}
 		class="fixed z-50 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground ring-1 ring-foreground/10"
 		style="left: {bgMenuPos.x}px; top: {bgMenuPos.y}px"
 	>
-		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-		<div
-			class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground"
+		<button
+			type="button"
+			class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
 			onclick={() => { bgMenuOpen = false; newFolderOpen = true; }}
 		>
 			New Folder
-		</div>
+		</button>
 		{#if clipboard.hasItems}
 			<div class="my-1 h-px bg-border"></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-			<div
-				class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground"
+			<button
+				type="button"
+				class="flex w-full cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
 				onclick={() => { bgMenuOpen = false; handlePaste(); }}
 			>
 				Paste
-			</div>
+			</button>
 		{/if}
 	</div>
 {/if}

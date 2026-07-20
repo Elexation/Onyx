@@ -115,32 +115,51 @@
 {#snippet treeNodes(nodes: TreeNode[], depth: number)}
 	{#each nodes as node}
 		{@const isSource = paths.includes(node.path)}
+		{@const hasDisclosure = node.children.length > 0 || !node.loaded}
 		<div role="none">
-			<button
+			<div
 				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
 					{destination === node.path ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}
-					{isSource ? 'opacity-40 pointer-events-none' : ''}"
+					{isSource ? 'pointer-events-none opacity-40' : 'cursor-pointer'}"
 				style="padding-left: {depth * 20 + 8}px"
-				onclick={() => selectNode(node.path)}
-				disabled={isSource}
-				type="button"
+				role="treeitem"
+				aria-selected={destination === node.path}
+				aria-expanded={node.expanded}
+				aria-disabled={isSource}
+				tabindex={isSource ? -1 : 0}
+				onclick={() => { if (!isSource) selectNode(node.path); }}
+				onkeydown={(e) => {
+					if (isSource) return;
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						selectNode(node.path);
+					} else if (e.key === "ArrowRight") {
+						e.preventDefault();
+						if (!node.expanded) toggleNode(node);
+					} else if (e.key === "ArrowLeft") {
+						e.preventDefault();
+						if (node.expanded) toggleNode(node);
+					}
+				}}
 			>
-				<span
-					class="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-muted"
+				<button
+					type="button"
+					class="flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
+					aria-label={node.expanded ? "Collapse" : "Expand"}
+					tabindex={-1}
 					onclick={(e) => { e.stopPropagation(); toggleNode(node); }}
-					role="none"
 				>
-					{#if node.children.length > 0 || !node.loaded}
+					{#if hasDisclosure}
 						<ChevronRightIcon class="size-3 transition-transform {node.expanded ? 'rotate-90' : ''}" />
 					{/if}
-				</span>
+				</button>
 				{#if node.expanded}
 					<FolderOpenIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				{:else}
 					<FolderIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				{/if}
 				<span class="truncate">{node.name}</span>
-			</button>
+			</div>
 			{#if node.expanded && node.children.length > 0}
 				{@render treeNodes(node.children, depth + 1)}
 			{/if}
@@ -167,7 +186,11 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 			<Button onclick={submit} disabled={submitting}>
-				{mode === "move" ? "Move" : "Copy"} here
+				{#if submitting}
+					{mode === "move" ? "Moving…" : "Copying…"}
+				{:else}
+					{mode === "move" ? "Move" : "Copy"} here
+				{/if}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

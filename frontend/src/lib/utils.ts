@@ -17,3 +17,12 @@ export type WithoutChildrenOrChild<T> = WithoutChildren<WithoutChild<T>>;
 export function encodeFilePath(path: string): string {
 	return path.split("/").map(encodeURIComponent).join("/");
 }
+
+export function basename(path: string): string {
+	return path.split("/").pop() ?? "";
+}
+
+export function dirname(path: string): string {
+	const i = path.lastIndexOf("/");
+	return i <= 0 ? "/" : path.substring(0, i);
+}

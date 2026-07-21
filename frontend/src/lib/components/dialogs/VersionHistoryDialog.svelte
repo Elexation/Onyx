@@ -19,7 +19,7 @@
 
 	let versions = $state<FileVersion[]>([]);
 	let loading = $state(false);
-	let busy = $state<number | null>(null);
+	let busy = $state<{ id: number; action: "restore" | "delete" } | null>(null);
 
 	async function load() {
 		if (!path) return;
@@ -42,7 +42,7 @@
 	});
 
 	async function handleRestore(v: FileVersion) {
-		busy = v.id;
+		busy = { id: v.id, action: "restore" };
 		try {
 			await restoreVersion(v.id);
 			toast.success("Version restored");
@@ -56,7 +56,7 @@
 	}
 
 	async function handleDelete(v: FileVersion) {
-		busy = v.id;
+		busy = { id: v.id, action: "delete" };
 		try {
 			await deleteVersion(v.id);
 			versions = versions.filter((x) => x.id !== v.id);
@@ -96,17 +96,19 @@
 									size="sm"
 									variant="outline"
 									disabled={busy !== null}
+									loading={busy?.id === v.id && busy?.action === "restore"}
 									onclick={() => handleRestore(v)}
 								>
-									{busy === v.id ? "Restoring…" : "Restore"}
+									Restore
 								</Button>
 								<Button
 									size="sm"
 									variant="destructive"
 									disabled={busy !== null}
+									loading={busy?.id === v.id && busy?.action === "delete"}
 									onclick={() => handleDelete(v)}
 								>
-									{busy === v.id ? "Deleting…" : "Delete"}
+									Delete
 								</Button>
 							</div>
 						</li>

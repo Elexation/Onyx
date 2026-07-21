@@ -14,10 +14,10 @@
 
 	let {
 		open = $bindable(false),
-		onCreated,
+		oncreated,
 	}: {
 		open: boolean;
-		onCreated?: (token: PersonalAccessToken) => void;
+		oncreated?: (token: PersonalAccessToken) => void;
 	} = $props();
 
 	let name = $state("");
@@ -94,7 +94,7 @@
 		try {
 			const tok = await createToken({ name: trimmed, scope: scope as TokenScope, expiresAt });
 			createdToken = tok;
-			onCreated?.(tok);
+			oncreated?.(tok);
 			toast.success("Token created");
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Failed to create token");

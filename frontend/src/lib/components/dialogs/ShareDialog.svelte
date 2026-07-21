@@ -161,6 +161,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
+		<div class="min-h-[200px]">
 		{#if loading}
 			<LoadingState compact />
 		{:else if shareUrl}
@@ -183,9 +184,6 @@
 					This link will only be shown once. Copy it now.
 				</p>
 			</div>
-			<Dialog.Footer>
-				<Button onclick={() => (open = false)} disabled={!closeEnabled}>Done</Button>
-			</Dialog.Footer>
 		{:else if existing && !showCreateForm}
 			<div class="flex flex-col gap-4">
 				<p class="text-sm text-muted-foreground">
@@ -215,12 +213,6 @@
 					Lost the link? Revoke it and create a new one.
 				</p>
 			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (open = false)}>Close</Button>
-				<Button variant="destructive" onclick={revoke} disabled={revoking}>
-					{revoking ? "Revoking…" : "Revoke & Create New"}
-				</Button>
-			</Dialog.Footer>
 		{:else}
 			<div class="flex flex-col gap-4">
 				<div class="flex flex-col gap-2">
@@ -250,6 +242,21 @@
 					/>
 				{/if}
 			</div>
+		{/if}
+		</div>
+
+		{#if shareUrl}
+			<Dialog.Footer>
+				<Button onclick={() => (open = false)} disabled={!closeEnabled}>Done</Button>
+			</Dialog.Footer>
+		{:else if existing && !showCreateForm}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (open = false)}>Close</Button>
+				<Button variant="destructive" onclick={revoke} disabled={revoking}>
+					{revoking ? "Revoking…" : "Revoke & Create New"}
+				</Button>
+			</Dialog.Footer>
+		{:else if !loading}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 				<Button onclick={submit} loading={submitting} disabled={usePassword && !password}>

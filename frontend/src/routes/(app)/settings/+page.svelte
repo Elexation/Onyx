@@ -64,7 +64,7 @@
 			key: "trash",
 			label: "Trash",
 			icon: Trash2Icon,
-			desc: "Hold deleted files for recovery before permanent removal.",
+			desc: "Hold deleted files for recovery before permanent deletion.",
 		},
 		{
 			key: "sharing",
@@ -600,7 +600,7 @@
 					{/snippet}
 					{@render row(
 						"Enable file versioning",
-						"Keep previous versions of files on save.",
+						"",
 						versioningSwitch,
 					)}
 
@@ -730,7 +730,7 @@
 					{/snippet}
 					{@render row(
 						"Enable sharing",
-						"Allow creating public share links for files.",
+						"",
 						sharingSwitch,
 					)}
 				{/if}
@@ -987,4 +987,4 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-<TokenCreateDialog bind:open={tokenCreateOpen} onCreated={handleTokenCreated} />
+<TokenCreateDialog bind:open={tokenCreateOpen} oncreated={handleTokenCreated} />

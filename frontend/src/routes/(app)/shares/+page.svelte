@@ -59,7 +59,7 @@
 			await deleteShare(deleteTarget.id);
 			sharedPaths.remove(deleteTarget.filePath);
 			shares = shares.filter((s) => s.id !== deleteTarget!.id);
-			toast.success("Share link deleted");
+			toast.success("Share link revoked");
 			deleteConfirmOpen = false;
 			deleteTarget = null;
 		} catch (e) {
@@ -88,7 +88,9 @@
 			icon={Link2OffIcon}
 			title="Sharing is disabled"
 			description="Enable it in Settings to create share links."
-		/>
+		>
+			<Button href="/settings" variant="outline" size="sm">Open Settings</Button>
+		</EmptyState>
 	{:else if loading}
 		<LoadingState />
 	{:else}
@@ -122,11 +124,14 @@
 								strokeWidth={1.4}
 							/>
 							<div class="min-w-0 flex-1">
-								<p class="truncate text-[15px] font-medium md:text-base">
-									{basename(share.filePath)}
+								<p class="flex items-center gap-1.5 truncate text-[15px] font-medium md:text-base">
+									<span class="truncate">{basename(share.filePath)}</span>
+									{#if share.hasPassword}
+										<LockIcon class="size-3 shrink-0 text-muted-foreground md:hidden" strokeWidth={2.5} />
+									{/if}
 								</p>
 								<p class="truncate font-mono text-meta text-muted-foreground">
-									{dirname(share.filePath)}
+									{dirname(share.filePath)}<span class="md:hidden"> · {#if isExpired(share)}<span class="text-destructive">Expired</span>{:else}{formatRemainingShort(share.expiresAt)}{/if}</span>
 								</p>
 							</div>
 						</div>
@@ -142,16 +147,16 @@
 								</span>
 							{/if}
 						</div>
-						<div class="flex shrink-0 items-center justify-end text-meta tabular-nums text-muted-foreground md:hidden">
+						<div class="flex shrink-0 items-center justify-end md:hidden">
 							<Button
 								variant="ghost"
-								size="icon-xs"
+								size="icon"
 								class="cursor-pointer"
 								onclick={() => confirmDelete(share)}
 								title="Revoke link"
 								aria-label="Revoke share link"
 							>
-								<XIcon class="size-3.5" strokeWidth={2} />
+								<XIcon class="size-4" strokeWidth={2} />
 							</Button>
 						</div>
 						<div class="hidden text-center md:block">
@@ -189,15 +194,15 @@
 <AlertDialog.Root bind:open={deleteConfirmOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Delete share link?</AlertDialog.Title>
+			<AlertDialog.Title>Revoke share link?</AlertDialog.Title>
 			<AlertDialog.Description>
-				This will revoke the share link for "{deleteTarget?.filePath}". Anyone with the link will no longer be able to access the file.
+				Anyone with this link will lose access to "{deleteTarget?.filePath}". The file itself is not affected.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handleDelete} disabled={submitting}>
-				{submitting ? "Deleting..." : "Delete"}
+			<AlertDialog.Action variant="destructive" onclick={handleDelete} disabled={submitting}>
+				{submitting ? "Revoking…" : "Revoke"}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

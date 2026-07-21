@@ -1,15 +1,18 @@
 <script lang="ts">
 	import PackageIcon from "@lucide/svelte/icons/package";
+	import type { Snippet } from "svelte";
 	type IconComponent = typeof PackageIcon;
 
 	let {
 		icon,
 		title,
 		description,
+		children,
 	}: {
 		icon?: IconComponent;
 		title: string;
 		description?: string;
+		children?: Snippet;
 	} = $props();
 </script>
 
@@ -21,5 +24,8 @@
 	<p class="text-[15px] text-foreground">{title}</p>
 	{#if description}
 		<p class="text-meta text-muted-foreground">{description}</p>
+	{/if}
+	{#if children}
+		{@render children()}
 	{/if}
 </div>

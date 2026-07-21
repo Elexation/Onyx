@@ -482,7 +482,9 @@
 			icon={Trash2Icon}
 			title="Trash is disabled"
 			description="Enable it in Settings to keep deleted files recoverable."
-		/>
+		>
+			<Button href="/settings" variant="outline" size="sm">Open Settings</Button>
+		</EmptyState>
 	{:else if items.length === 0}
 		<EmptyState
 			icon={Trash2Icon}
@@ -601,7 +603,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handleEmptyTrash} disabled={submitting}>
+			<AlertDialog.Action variant="destructive" onclick={handleEmptyTrash} disabled={submitting}>
 				{submitting ? "Deleting..." : "Empty Trash"}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
@@ -617,7 +619,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handlePermanentDelete} disabled={submitting}>
+			<AlertDialog.Action variant="destructive" onclick={handlePermanentDelete} disabled={submitting}>
 				{submitting ? "Deleting..." : "Delete"}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
@@ -633,7 +635,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handleBulkPermanentDelete} disabled={submitting}>
+			<AlertDialog.Action variant="destructive" onclick={handleBulkPermanentDelete} disabled={submitting}>
 				{submitting ? "Deleting..." : "Delete"}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>

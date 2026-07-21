@@ -125,6 +125,30 @@ func (s *FileService) ListDirectory(dirPath string, showHidden bool) ([]domain.F
 	return items, nil
 }
 
+// ListDirectoriesOnly returns only directories, skipping files and MIME detection.
+func (s *FileService) ListDirectoriesOnly(dirPath string, showHidden bool) ([]domain.FileInfo, error) {
+	items, err := s.storage.ListDirs(dirPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if !showHidden {
+		filtered := items[:0]
+		for _, item := range items {
+			if !strings.HasPrefix(item.Name, ".") {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+
+	return items, nil
+}
+
 // GetFileInfo returns metadata for a single path.
 func (s *FileService) GetFileInfo(filePath string) (*domain.FileInfo, error) {
 	return s.storage.Stat(filePath)

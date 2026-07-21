@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -33,7 +34,14 @@ func (h *FileHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if info.IsDir {
-		items, err := h.files.ListDirectory(filePath, showHidden)
+		dirsOnly := r.URL.Query().Get("dirsOnly") == "true"
+		var items []domain.FileInfo
+		var err error
+		if dirsOnly {
+			items, err = h.files.ListDirectoriesOnly(filePath, showHidden)
+		} else {
+			items, err = h.files.ListDirectory(filePath, showHidden)
+		}
 		if err != nil {
 			writeFileError(w, err)
 			return

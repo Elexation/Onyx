@@ -26,6 +26,7 @@
 	interface TreeNode {
 		name: string;
 		path: string;
+		hasSubDirs: boolean;
 		expanded: boolean;
 		loaded: boolean;
 		children: TreeNode[];
@@ -43,12 +44,13 @@
 
 	async function loadChildren(parentPath: string) {
 		try {
-			const listing = await listDirectory(parentPath);
+			const listing = await listDirectory(parentPath, { dirsOnly: true });
 			const dirs = listing.items
 				.filter((f) => f.isDir)
 				.map((f): TreeNode => ({
 					name: f.name,
 					path: f.path,
+					hasSubDirs: f.hasSubDirs ?? false,
 					expanded: false,
 					loaded: false,
 					children: [],
@@ -69,6 +71,7 @@
 			if (node.path === targetPath) {
 				node.children = children;
 				node.loaded = true;
+				if (children.length === 0) node.expanded = false;
 				return;
 			}
 			if (targetPath.startsWith(node.path + "/")) {
@@ -115,7 +118,7 @@
 {#snippet treeNodes(nodes: TreeNode[], depth: number)}
 	{#each nodes as node}
 		{@const isSource = paths.includes(node.path)}
-		{@const hasDisclosure = node.children.length > 0 || !node.loaded}
+		{@const hasDisclosure = node.loaded ? node.children.length > 0 : node.hasSubDirs}
 		<div role="none">
 			<div
 				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
@@ -127,32 +130,27 @@
 				aria-expanded={node.expanded}
 				aria-disabled={isSource}
 				tabindex={isSource ? -1 : 0}
-				onclick={() => { if (!isSource) selectNode(node.path); }}
+				onclick={() => { if (!isSource) { selectNode(node.path); if (hasDisclosure) toggleNode(node); } }}
 				onkeydown={(e) => {
 					if (isSource) return;
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault();
 						selectNode(node.path);
+						if (hasDisclosure) toggleNode(node);
 					} else if (e.key === "ArrowRight") {
 						e.preventDefault();
-						if (!node.expanded) toggleNode(node);
+						if (hasDisclosure && !node.expanded) toggleNode(node);
 					} else if (e.key === "ArrowLeft") {
 						e.preventDefault();
-						if (node.expanded) toggleNode(node);
+						if (hasDisclosure && node.expanded) toggleNode(node);
 					}
 				}}
 			>
-				<button
-					type="button"
-					class="flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
-					aria-label={node.expanded ? "Collapse" : "Expand"}
-					tabindex={-1}
-					onclick={(e) => { e.stopPropagation(); toggleNode(node); }}
-				>
+				<span class="flex size-4 shrink-0 items-center justify-center">
 					{#if hasDisclosure}
 						<ChevronRightIcon class="size-3 transition-transform {node.expanded ? 'rotate-90' : ''}" />
 					{/if}
-				</button>
+				</span>
 				{#if node.expanded}
 					<FolderOpenIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
 				{:else}
@@ -172,7 +170,7 @@
 		<Dialog.Header>
 			<Dialog.Title>{mode === "move" ? "Move" : "Copy"} to…</Dialog.Title>
 		</Dialog.Header>
-		<div class="max-h-64 overflow-y-auto rounded-lg border border-border bg-background p-1.5">
+		<div class="min-h-[200px] max-h-64 overflow-y-auto rounded-lg border border-border bg-background p-1.5">
 			<button
 				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
 					{destination === '' ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}"

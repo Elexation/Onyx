@@ -81,11 +81,72 @@ func (s *LocalStorage) ListDir(dirPath string) ([]domain.FileInfo, error) {
 			if sub, err := s.root.Open(itemPath); err == nil {
 				if subEntries, err := sub.ReadDir(-1); err == nil {
 					fi.ItemCount = int64(len(subEntries))
+					for _, se := range subEntries {
+						if se.IsDir() {
+							fi.HasSubDirs = true
+							break
+						}
+					}
 				}
 				sub.Close()
 			}
 		} else {
 			fi.MIMEType = s.detectFileMIME(itemPath, entry.Name())
+		}
+
+		items = append(items, fi)
+	}
+
+	return items, nil
+}
+
+// ListDirs returns only directory entries, skipping files and MIME detection.
+// For each directory it checks whether it contains subdirectories (HasSubDirs)
+// but does not compute ItemCount.
+func (s *LocalStorage) ListDirs(dirPath string) ([]domain.FileInfo, error) {
+	dirPath = cleanPath(dirPath)
+
+	f, err := s.root.Open(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]domain.FileInfo, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		itemPath := path.Join(dirPath, entry.Name())
+		fi := domain.FileInfo{
+			Name:    entry.Name(),
+			Path:    "/" + itemPath,
+			IsDir:   true,
+			Size:    info.Size(),
+			ModTime: info.ModTime().Unix(),
+		}
+
+		if sub, err := s.root.Open(itemPath); err == nil {
+			if subEntries, err := sub.ReadDir(-1); err == nil {
+				for _, se := range subEntries {
+					if se.IsDir() {
+						fi.HasSubDirs = true
+						break
+					}
+				}
+			}
+			sub.Close()
 		}
 
 		items = append(items, fi)

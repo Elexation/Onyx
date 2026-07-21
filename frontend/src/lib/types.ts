@@ -16,6 +16,7 @@ export interface FileInfo {
 	modTime: number;
 	mimeType?: string;
 	itemCount?: number;
+	hasSubDirs?: boolean;
 }
 
 export interface DirectoryListing {

@@ -7,6 +7,7 @@
 
 	let {
 		items,
+		highlightName = null,
 		onopen,
 		onrename,
 		ondelete,
@@ -18,6 +19,7 @@
 		ondrop,
 	}: {
 		items: FileInfo[];
+		highlightName?: string | null;
 		onopen: (item: FileInfo) => void;
 		onrename: (item: FileInfo) => void;
 		ondelete: (paths: string[]) => void;
@@ -59,6 +61,51 @@
 			},
 			getItems: () => items,
 		});
+	});
+
+	$effect(() => {
+		if (!highlightName || items.length === 0 || !scrollEl) return;
+		const idx = items.findIndex((i) => i.name === highlightName);
+		if (idx === -1) return;
+
+		const el = scrollEl;
+		const name = highlightName;
+		let rafId1: number, rafId2: number;
+		let t1: ReturnType<typeof setTimeout>, t2: ReturnType<typeof setTimeout>, t3: ReturnType<typeof setTimeout>;
+
+		rafId1 = requestAnimationFrame(() => {
+			const containerWidth = el.clientWidth;
+			const cols = Math.max(1, Math.floor((containerWidth + gap) / (minItemWidth + gap)));
+			const row = Math.floor(idx / cols);
+			const targetTop = row * (itemHeight + gap);
+			const centerOffset = el.clientHeight / 2 - itemHeight / 2;
+			el.scrollTo({ top: Math.max(0, targetTop - centerOffset), behavior: "instant" });
+
+			t1 = setTimeout(() => {
+				const card = el.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(name)}"]`);
+				if (card) {
+					card.style.transition = "none";
+					card.style.backgroundColor = "oklch(0.74 0.13 245 / 0.3)";
+					t2 = setTimeout(() => {
+						card.style.transition = "background-color 1.5s ease-out";
+						rafId2 = requestAnimationFrame(() => {
+							card.style.backgroundColor = "";
+						});
+						t3 = setTimeout(() => {
+							card.style.transition = "";
+						}, 1600);
+					}, 600);
+				}
+			}, 50);
+		});
+
+		return () => {
+			cancelAnimationFrame(rafId1);
+			cancelAnimationFrame(rafId2);
+			clearTimeout(t1);
+			clearTimeout(t2);
+			clearTimeout(t3);
+		};
 	});
 </script>
 

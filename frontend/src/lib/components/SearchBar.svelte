@@ -28,7 +28,7 @@
 		const q = query.trim();
 		clearTimeout(debounceTimer);
 
-		if (q.length < 2) {
+		if (q.length < 1) {
 			searchSeq++;
 			results = [];
 			total = 0;
@@ -81,7 +81,7 @@
 		} else {
 			const lastSlash = result.path.lastIndexOf("/");
 			const parentDir = lastSlash > 0 ? result.path.substring(0, lastSlash) : "";
-			goto(`/files${parentDir}`);
+			goto(`/files${parentDir}`, { state: { highlight: result.name } });
 		}
 	}
 
@@ -172,7 +172,7 @@
 			bind:value={query}
 			{onkeydown}
 			onfocus={() => {
-				if (results.length > 0 && query.trim().length >= 2) open = true;
+				if (results.length > 0 && query.trim().length >= 1) open = true;
 			}}
 			type="text"
 			placeholder="Search files, folders, contents…"
@@ -223,7 +223,7 @@
 				</div>
 			{/if}
 		</div>
-	{:else if open && query.trim().length >= 2 && !loading && results.length === 0}
+	{:else if open && query.trim().length >= 1 && !loading && results.length === 0}
 		<div
 			class="absolute top-full left-0 z-50 mt-1.5 w-full rounded-lg border border-border-2 bg-popover"
 		>

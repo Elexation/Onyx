@@ -15,7 +15,7 @@ func NewSearchService(repo SearchRepo) *SearchService {
 }
 
 func (s *SearchService) Search(query string, limit int) ([]domain.SearchResult, int, error) {
-	if len(strings.TrimSpace(query)) < 2 {
+	if len(strings.TrimSpace(query)) < 1 {
 		return nil, 0, nil
 	}
 	return s.repo.Search(query, limit)

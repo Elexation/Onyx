@@ -118,6 +118,7 @@
 		use:droppable={{ path: item.path, ondrop }}
 		tabindex={0}
 		role="gridcell"
+		data-file-name={item.name}
 	>
 		<div class="relative mx-auto w-24">
 			<div
@@ -171,6 +172,7 @@
 				use:droppable={{ path: item.path, ondrop, enabled: item.isDir }}
 				tabindex={0}
 				role="gridcell"
+				data-file-name={item.name}
 			>
 				<div class="relative mx-auto w-24">
 					<div

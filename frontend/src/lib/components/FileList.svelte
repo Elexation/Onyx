@@ -25,6 +25,7 @@
 
 	let {
 		items,
+		highlightName = null,
 		onopen,
 		onrename,
 		ondelete,
@@ -36,6 +37,7 @@
 		ondrop,
 	}: {
 		items: FileInfo[];
+		highlightName?: string | null;
 		onopen: (item: FileInfo) => void;
 		onrename: (item: FileInfo) => void;
 		ondelete: (paths: string[]) => void;
@@ -110,6 +112,51 @@
 			}),
 			getItems: () => items,
 		});
+	});
+
+	$effect(() => {
+		if (!highlightName || items.length === 0 || !scrollEl) return;
+		const idx = items.findIndex((i) => i.name === highlightName);
+		if (idx === -1) return;
+
+		const el = scrollEl;
+		const hdrEl = headerEl;
+		const name = highlightName;
+		let rafId1: number, rafId2: number;
+		let t1: ReturnType<typeof setTimeout>, t2: ReturnType<typeof setTimeout>, t3: ReturnType<typeof setTimeout>;
+
+		rafId1 = requestAnimationFrame(() => {
+			const headerHeight = hdrEl?.offsetHeight ?? 0;
+			const rowHeight = viewport.isMobile ? 64 : 48;
+			const targetTop = headerHeight + idx * rowHeight;
+			const centerOffset = el.clientHeight / 2 - rowHeight / 2;
+			el.scrollTo({ top: Math.max(0, targetTop - centerOffset), behavior: "instant" });
+
+			t1 = setTimeout(() => {
+				const row = el.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(name)}"]`);
+				if (row) {
+					row.style.transition = "none";
+					row.style.backgroundColor = "oklch(0.74 0.13 245 / 0.3)";
+					t2 = setTimeout(() => {
+						row.style.transition = "background-color 1.5s ease-out";
+						rafId2 = requestAnimationFrame(() => {
+							row.style.backgroundColor = "";
+						});
+						t3 = setTimeout(() => {
+							row.style.transition = "";
+						}, 1600);
+					}, 600);
+				}
+			}, 50);
+		});
+
+		return () => {
+			cancelAnimationFrame(rafId1);
+			cancelAnimationFrame(rafId2);
+			clearTimeout(t1);
+			clearTimeout(t2);
+			clearTimeout(t3);
+		};
 	});
 
 	const GRID_COLS =
@@ -239,6 +286,7 @@
 									use:droppable={{ path: file.path, ondrop, enabled: file.isDir }}
 									tabindex={0}
 									role="row"
+									data-file-name={file.name}
 								>
 									<div class="flex min-w-0 items-center gap-3 md:gap-3">
 										{#if viewport.isMobile && isSelected}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from "svelte";
 	import { page } from "$app/state";
-	import { goto } from "$app/navigation";
+	import { goto, replaceState } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
 	import { checkConflicts } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
@@ -44,6 +44,10 @@
 	let loading = $state(true);
 	let showLoading = $state(false);
 	let refreshing = $state(false);
+
+	// Search-highlight state
+	let highlightName = $state<string | null>(null);
+	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Dialog state
 	let renameOpen = $state(false);
@@ -141,10 +145,26 @@
 		if (untrack(() => sharesEnabled.enabled)) sharedPaths.refresh();
 	});
 
-	// Clear selection on navigation
+	// Clear selection + highlight on navigation
 	$effect(() => {
 		path;
 		selection.clear();
+		highlightName = null;
+		clearTimeout(highlightTimer);
+		return () => clearTimeout(highlightTimer);
+	});
+
+	// Consume search-highlight state after listing loads
+	$effect(() => {
+		if (loading || !listing) return;
+		const h = (page.state as { highlight?: string })?.highlight;
+		if (!h) return;
+
+		highlightName = h;
+		replaceState(page.url, {});
+
+		clearTimeout(highlightTimer);
+		highlightTimer = setTimeout(() => { highlightName = null; }, 2000);
 	});
 
 	// Hoisted Intl.Collator: per-call localeCompare loads locale data each
@@ -499,24 +519,22 @@
 	role="application"
 	use:shortcuts={shortcutMap}
 >
-	{#if !showLoading && !error}
-		<div class="border-b border-border px-4 py-3">
-			<FileToolbar
-				onnewfolder={() => (newFolderOpen = true)}
-				onrefresh={refresh}
-				{refreshing}
-				ondelete={() => handleDelete([...selection.items])}
-				onpaste={handlePaste}
-				ondownload={handleDownload}
-				onshare={handleShareSelected}
-				onupload={handleUpload}
-			>
-				{#snippet viewControls()}
-					<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
-				{/snippet}
-			</FileToolbar>
-		</div>
-	{/if}
+	<div class="border-b border-border px-4 py-3">
+		<FileToolbar
+			onnewfolder={() => (newFolderOpen = true)}
+			onrefresh={refresh}
+			{refreshing}
+			ondelete={() => handleDelete([...selection.items])}
+			onpaste={handlePaste}
+			ondownload={handleDownload}
+			onshare={handleShareSelected}
+			onupload={handleUpload}
+		>
+			{#snippet viewControls()}
+				<ViewControls viewMode={activeView} onviewchange={handleViewChange} />
+			{/snippet}
+		</FileToolbar>
+	</div>
 
 	<div class="border-b border-border px-4 py-3">
 		<Breadcrumbs {path} ondrop={handleDrop} />
@@ -528,13 +546,14 @@
 		<div class="flex items-center justify-center py-20 text-sm text-destructive">
 			{error}
 		</div>
-	{:else}
+	{:else if !loading}
 		<UploadZone currentDir={path || "/"} onupload={handleUpload}>
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 			<div class="flex min-h-0 flex-1 flex-col p-4" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
 				{#if activeView === "grid"}
 					<FileGrid
 						items={sorted}
+						{highlightName}
 						onopen={handleOpen}
 						onrename={handleRename}
 						ondelete={handleDelete}
@@ -548,6 +567,7 @@
 				{:else}
 					<FileList
 						items={sorted}
+						{highlightName}
 						onopen={handleOpen}
 						onrename={handleRename}
 						ondelete={handleDelete}

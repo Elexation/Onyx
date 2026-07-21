@@ -1,7 +1,7 @@
 <script lang="ts">
-	import MenuIcon from "@lucide/svelte/icons/menu";
 	import SearchIcon from "@lucide/svelte/icons/search";
 	import XIcon from "@lucide/svelte/icons/x";
+	import HeaderShell from "./HeaderShell.svelte";
 	import SearchBar from "./SearchBar.svelte";
 	import BrandMark from "./BrandMark.svelte";
 	import UserChip from "./UserChip.svelte";
@@ -24,11 +24,12 @@
 	}
 </script>
 
-<header
-	class="relative z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4 max-md:h-14 max-md:gap-2 max-md:px-[14px]"
+<HeaderShell
+	hamburgerOpen={drawerOpen}
+	onHamburgerToggle={() => (drawerOpen = !drawerOpen)}
+	showHamburger={!mobileSearchOpen}
 >
 	{#if mobileSearchOpen}
-		<!-- Mobile search expanded: X close + full-width SearchBar -->
 		<button
 			type="button"
 			class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
@@ -41,20 +42,9 @@
 			<SearchBar autoFocusKey={searchFocusKey} onescape={closeMobileSearch} />
 		</div>
 	{:else}
-		<button
-			type="button"
-			class="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-			aria-label="Open navigation"
-			aria-expanded={drawerOpen}
-			onclick={() => (drawerOpen = !drawerOpen)}
-		>
-			<MenuIcon class="size-5" strokeWidth={2} />
-		</button>
-
 		<BrandMark />
 	{/if}
 
-	<!-- Desktop SearchBar (always in flow on desktop) -->
 	<div class="mx-auto hidden w-full max-w-[520px] flex-1 md:block">
 		<SearchBar />
 	</div>
@@ -73,4 +63,4 @@
 			<UserChip />
 		</div>
 	{/if}
-</header>
+</HeaderShell>

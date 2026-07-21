@@ -9,6 +9,7 @@
 @custom-variant data-open (&[data-state="open"]);
 @custom-variant data-closed (&[data-state="closed"]);
 
+/* Dark-mode only — no light-mode variants exist. Adding @media (prefers-color-scheme: light) blocks requires a full palette rewrite. */
 :root {
 	--radius: 0.625rem;
 	--background: oklch(0.145 0 0);

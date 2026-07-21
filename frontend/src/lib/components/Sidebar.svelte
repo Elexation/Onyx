@@ -42,9 +42,9 @@
 </script>
 
 <aside
-	class="flex h-full w-[220px] shrink-0 flex-col gap-[14px] overflow-auto border-r border-border bg-card p-[14px] max-md:w-[280px]"
+	class="flex h-full w-[220px] shrink-0 flex-col gap-3.5 overflow-auto border-r border-border bg-card p-3.5 max-md:w-[280px]"
 >
-	<nav class="flex flex-col gap-[2px]">
+	<nav class="flex flex-col gap-0.5">
 		{#each links as link}
 			{@const disabled =
 				(link.href === "/shares" && !sharesEnabled.enabled) ||

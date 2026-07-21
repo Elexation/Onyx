@@ -15,10 +15,12 @@
 	} = $props();
 
 	let failed = $state(false);
+	let loading = $state(true);
 
 	$effect(() => {
 		file.path;
 		failed = false;
+		loading = true;
 	});
 
 	const currentIndex = $derived(siblings.findIndex((s) => s.path === file.path));
@@ -52,11 +54,16 @@
 		{#if failed}
 			<p class="text-[15px] text-muted-foreground">Unable to load image</p>
 		{:else}
+			{#if loading}
+				<p class="absolute text-[15px] text-muted-foreground">Loading…</p>
+			{/if}
 			<img
 				src={url ?? getPreviewUrl(file.path)}
 				alt={file.name}
 				class="max-h-full max-w-full object-contain"
-				onerror={() => failed = true}
+				class:invisible={loading}
+				onload={() => { loading = false; }}
+				onerror={() => { failed = true; loading = false; }}
 				data-preview-content
 			/>
 		{/if}
@@ -65,7 +72,7 @@
 	{#if siblings.length > 1}
 		<div class="flex items-center gap-3 text-muted-foreground" data-preview-content>
 			<button
-				class="rounded-md px-2.5 py-1 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="flex min-h-[44px] items-center rounded-md px-2.5 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasPrev}
 				onclick={prev}
 			>
@@ -73,7 +80,7 @@
 			</button>
 			<span class="font-mono text-meta">{currentIndex + 1} / {siblings.length}</span>
 			<button
-				class="rounded-md px-2.5 py-1 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+				class="flex min-h-[44px] items-center rounded-md px-2.5 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
 				disabled={!hasNext}
 				onclick={next}
 			>

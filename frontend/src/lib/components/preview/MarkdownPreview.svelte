@@ -45,7 +45,7 @@
 	</div>
 {:else}
 	<div class="flex-1 overflow-auto rounded-lg border border-border bg-[#1e1e1e] p-6" data-preview-content>
-		<article class="prose prose-invert max-w-none">
+		<article class="prose prose-invert max-w-none break-words">
 			{@html html}
 		</article>
 	</div>

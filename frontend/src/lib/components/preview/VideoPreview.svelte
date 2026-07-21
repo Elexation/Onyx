@@ -128,7 +128,9 @@
 
 	// Force the bottom bar visible while any scrub is in flight; the
 	// normal 3s auto-hide resumes once the gesture settles.
-	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0);
+	let controlsFocused = $state(false);
+	let qualityMenuOpen = $state(false);
+	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0 || controlsFocused || qualityMenuOpen);
 
 	function restorePosition() {
 		if (!videoEl) return;
@@ -307,6 +309,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+		if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
 
 		switch (e.key) {
 			case " ":
@@ -404,8 +407,10 @@
 	});
 
 	$effect(() => {
+		let cancelled = false;
 		getSettings()
 			.then((s) => {
+				if (cancelled) return;
 				const raw = s.values["playback.default_quality_ceiling"];
 				const n = raw ? parseInt(raw, 10) : NaN;
 				if (!isNaN(n)) {
@@ -413,11 +418,13 @@
 					hlsHandle?.setAutoLevelCap(n);
 				}
 			})
-			.catch(() => { /* default stays 1080 */ });
+			.catch(() => {});
+		return () => { cancelled = true; };
 	});
 
 	$effect(() => {
-		const path = file.path;
+		let cancelled = false;
+		const filePath = file.path;
 		if (url && !streamBase) {
 			detectedMode = "native";
 			nativeSupported = true;
@@ -430,8 +437,8 @@
 		pendingSeek = null;
 		probeInfo = null;
 		const infoBase = streamBase ? `${streamBase}/info` : "/api/stream/info";
-		fetchProbeInfo(path, infoBase).then(async (result) => {
-			if (path !== file.path) return;
+		fetchProbeInfo(filePath, infoBase).then(async (result) => {
+			if (cancelled) return;
 			if (result.status === "no-video") {
 				detectedMode = "no-video";
 				return;
@@ -443,10 +450,11 @@
 			}
 			probeInfo = result.info;
 			const native = await canPlayNative(result.info);
-			if (path !== file.path) return;
+			if (cancelled) return;
 			nativeSupported = native;
 			detectedMode = native ? "native" : "transcode-required";
 		});
+		return () => { cancelled = true; };
 	});
 
 	$effect(() => {
@@ -605,6 +613,13 @@
 		class:opacity-0={!controlsVisible}
 		class:pointer-events-none={!controlsVisible}
 		onclick={(e) => e.stopPropagation()}
+		onfocusin={() => { controlsFocused = true; }}
+		onfocusout={(e) => {
+			if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+				controlsFocused = false;
+				resetControlsTimer();
+			}
+		}}
 	>
 		<div class="seek-bar relative h-1 w-full cursor-pointer rounded-full bg-white/20">
 			<div
@@ -623,13 +638,13 @@
 				value={displayTime}
 				oninput={handleSeekInput}
 				onchange={handleSeekChange}
-				class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+				class="absolute inset-x-0 -top-5 h-[calc(100%+2.5rem)] w-full cursor-pointer opacity-0"
 			/>
 		</div>
 
 		<div class="flex items-center gap-2">
 			<button
-				class="rounded p-1 text-white/80 transition-colors hover:text-white"
+				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
 				onclick={togglePlay}
 				aria-label={playing ? "Pause" : "Play"}
 			>
@@ -640,7 +655,7 @@
 				{/if}
 			</button>
 
-			<span class="min-w-0 font-mono text-meta text-white/80 tabular-nums">
+			<span class="shrink-0 font-mono text-meta text-white/80 tabular-nums">
 				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
 			</span>
 
@@ -648,7 +663,7 @@
 
 			<div class="flex items-center gap-1">
 				<button
-					class="rounded p-1 text-white/80 transition-colors hover:text-white"
+					class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
 					onclick={toggleMute}
 					aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
 				>
@@ -671,13 +686,13 @@
 			</div>
 
 			{#if showQualityMenu}
-				<DropdownMenu.Root>
+				<DropdownMenu.Root bind:open={qualityMenuOpen}>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
 							<button
 								{...props}
 								aria-label="Quality settings"
-								class="flex items-center gap-1 rounded p-1 text-white/80 transition-colors hover:text-white"
+								class="flex min-h-[44px] min-w-[44px] items-center gap-1 rounded text-white/80 transition-colors hover:text-white"
 							>
 								<SettingsIcon class="size-4" />
 								<span class="hidden font-mono text-[11px] sm:inline">{qualityButtonLabel}</span>
@@ -729,7 +744,7 @@
 			{/if}
 
 			<button
-				class="rounded p-1 text-white/80 transition-colors hover:text-white"
+				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
 				onclick={toggleFullscreen}
 				aria-label="Fullscreen"
 			>
@@ -742,6 +757,14 @@
 </div>
 
 <style>
+	.seek-bar:has(input:focus-visible) {
+		outline: 2px solid var(--accent-brand);
+		outline-offset: 2px;
+		border-radius: 9999px;
+	}
+	.seek-bar input:focus-visible {
+		outline: none;
+	}
 	.volume-slider::-webkit-slider-thumb {
 		-webkit-appearance: none;
 		appearance: none;
@@ -761,5 +784,9 @@
 	}
 	.volume-slider::-moz-range-track {
 		background: transparent;
+	}
+	.volume-slider:focus-visible {
+		outline: 2px solid var(--accent-brand);
+		outline-offset: 2px;
 	}
 </style>

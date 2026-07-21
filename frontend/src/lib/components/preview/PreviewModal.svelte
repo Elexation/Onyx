@@ -7,9 +7,6 @@
 	import XIcon from "@lucide/svelte/icons/x";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 
-	// Preview components are dynamically imported so heavy deps
-	// (shiki, pdfjs-dist, marked, dompurify) stay out of the
-	// /files route chunk until first preview-open of that type.
 	const previewLoaders = {
 		text: () => import("./TextPreview.svelte"),
 		markdown: () => import("./MarkdownPreview.svelte"),
@@ -35,6 +32,8 @@
 		streamBase?: string;
 	} = $props();
 
+	let dialogEl = $state<HTMLDialogElement | null>(null);
+
 	const type = $derived(getPreviewType(file));
 	const tooLarge = $derived(isPreviewTooLarge(file));
 
@@ -42,10 +41,15 @@
 		items.filter((i) => !i.isDir && getPreviewType(i) === "image")
 	);
 
+	function closeModal() {
+		dialogEl?.close();
+		onclose();
+	}
+
 	function handleBackdropClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
 		if (target.closest("[data-preview-content]")) return;
-		onclose();
+		closeModal();
 	}
 
 	function handleDownload() {
@@ -54,19 +58,25 @@
 		a.download = file.name;
 		a.click();
 	}
+
+	$effect(() => {
+		dialogEl?.showModal();
+	});
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div
-	class="fixed inset-0 z-50 flex flex-col bg-black/80"
+<dialog
+	bind:this={dialogEl}
+	aria-labelledby="preview-modal-title"
+	class="fixed inset-0 z-50 m-0 flex h-full max-h-full w-full max-w-full flex-col border-none bg-black/80 p-0"
+	oncancel={(e) => { e.preventDefault(); closeModal(); }}
 	onclick={handleBackdropClick}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
-		<h2 class="min-w-0 flex-1 truncate text-[15px] font-medium">{file.name}</h2>
+		<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
 		<div class="flex items-center gap-1">
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={handleDownload}
 				title="Download"
 				aria-label="Download"
@@ -74,8 +84,8 @@
 				<DownloadIcon class="size-4" />
 			</button>
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-				onclick={onclose}
+				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				onclick={closeModal}
 				title="Close"
 				aria-label="Close preview"
 			>
@@ -85,6 +95,17 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video"}>
+		{#snippet previewLoading()}
+			<div class="flex flex-1 items-center justify-center text-muted-foreground">
+				<p class="text-[15px]">Loading…</p>
+			</div>
+		{/snippet}
+		{#snippet previewError()}
+			<div class="flex flex-1 items-center justify-center text-destructive">
+				<p class="text-[15px]">Failed to load preview</p>
+			</div>
+		{/snippet}
+
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
 				<p class="text-[15px]">File too large to preview (<span class="font-mono text-meta">{formatFileSize(file.size)}</span>)</p>
@@ -94,17 +115,27 @@
 				</Button>
 			</div>
 		{:else if type === "text"}
-			{#await previewLoaders.text() then mod}
+			{#await previewLoaders.text()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const TextPreview = mod.default}
 				<TextPreview path={file.path} {url} />
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{:else if type === "markdown"}
-			{#await previewLoaders.markdown() then mod}
+			{#await previewLoaders.markdown()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const MarkdownPreview = mod.default}
 				<MarkdownPreview path={file.path} {url} />
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{:else if type === "image"}
-			{#await previewLoaders.image() then mod}
+			{#await previewLoaders.image()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const ImagePreview = mod.default}
 				<ImagePreview
 					{file}
@@ -112,22 +143,42 @@
 					onnavigate={(f) => { file = f; }}
 					{url}
 				/>
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{:else if type === "video"}
-			{#await previewLoaders.video() then mod}
+			{#await previewLoaders.video()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const VideoPreview = mod.default}
-				<VideoPreview {file} {onclose} {url} {streamBase} />
+				<VideoPreview {file} onclose={closeModal} {url} {streamBase} />
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{:else if type === "audio"}
-			{#await previewLoaders.audio() then mod}
+			{#await previewLoaders.audio()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const AudioPreview = mod.default}
 				<AudioPreview path={file.path} {url} />
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{:else if type === "pdf"}
-			{#await previewLoaders.pdf() then mod}
+			{#await previewLoaders.pdf()}
+				{@render previewLoading()}
+			{:then mod}
 				{@const PdfPreview = mod.default}
 				<PdfPreview path={file.path} {url} />
+			{:catch}
+				{@render previewError()}
 			{/await}
 		{/if}
 	</div>
-</div>
+</dialog>
+
+<style>
+	dialog::backdrop {
+		background: transparent;
+	}
+</style>

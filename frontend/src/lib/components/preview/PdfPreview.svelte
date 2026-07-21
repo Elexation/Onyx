@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from "svelte";
 	import { getPreviewUrl } from "$lib/preview.js";
 	import * as pdfjsLib from "pdfjs-dist";
 	import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -28,8 +29,9 @@
 	let renderingPages = new Set<number>();
 	let renderTasks = new Map<number, pdfjsLib.RenderTask>();
 	let renderGen = 0;
-	let canvasRefs: (HTMLCanvasElement | null)[] = [];
-	let pageRefs: (HTMLDivElement | null)[] = [];
+	let docGen = $state(0);
+	let canvasRefs = $state<(HTMLCanvasElement | null)[]>([]);
+	let pageRefs = $state<(HTMLDivElement | null)[]>([]);
 	let observer: IntersectionObserver | null = null;
 	let updateCurrentPageRaf: number | null = null;
 
@@ -169,8 +171,9 @@
 		renderTasks.clear();
 		renderedPages.clear();
 		renderingPages.clear();
-		canvasRefs.length = 0;
-		pageRefs.length = 0;
+		canvasRefs = [];
+		pageRefs = [];
+		docGen++;
 		baseHeights = [];
 		firstPageBaseWidth = 0;
 
@@ -233,6 +236,10 @@
 		if (resizeTimer) clearTimeout(resizeTimer);
 		resizeTimer = setTimeout(() => applyFitToWidth(), 150);
 	}
+
+	onDestroy(() => {
+		if (resizeTimer) clearTimeout(resizeTimer);
+	});
 </script>
 
 <svelte:window onresize={handleResize} />
@@ -247,53 +254,61 @@
 	</div>
 {:else}
 	<div class="flex flex-1 flex-col overflow-hidden" data-preview-content>
-		<div class="flex items-center gap-1.5 border-b border-border bg-background/90 px-3 py-1.5 backdrop-blur-sm">
+		<div class="flex items-center gap-1.5 overflow-x-auto border-b border-border bg-background/90 px-3 py-1.5 backdrop-blur-sm">
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
 				disabled={currentPage <= 1}
 				onclick={() => { currentPage = Math.max(1, currentPage - 1); scrollToPage(currentPage); }}
+				title="Previous page"
+				aria-label="Previous page"
 			>
 				<ChevronLeftIcon class="size-4" />
 			</button>
-			<div class="flex items-center gap-1 text-muted-foreground">
+			<div class="flex shrink-0 items-center gap-1 text-muted-foreground">
 				<input
 					type="number"
 					min="1"
 					max={totalPages}
 					value={currentPage}
 					onchange={handlePageInput}
-					class="w-10 rounded-md bg-muted px-1 py-0.5 text-center font-mono text-[11px] text-foreground"
+					class="w-12 rounded-md bg-muted px-1 py-0.5 text-center font-mono text-[11px] text-foreground"
 				/>
 				<span class="font-mono text-[11px]">/ {totalPages}</span>
 			</div>
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
 				disabled={currentPage >= totalPages}
 				onclick={() => { currentPage = Math.min(totalPages, currentPage + 1); scrollToPage(currentPage); }}
+				title="Next page"
+				aria-label="Next page"
 			>
 				<ChevronRightIcon class="size-4" />
 			</button>
 
-			<div class="mx-2 h-4 w-px bg-border"></div>
+			<div class="mx-2 h-4 w-px shrink-0 bg-border"></div>
 
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => zoom(-0.25)}
+				title="Zoom out"
+				aria-label="Zoom out"
 			>
 				<ZoomOutIcon class="size-4" />
 			</button>
-			<span class="min-w-[3rem] text-center font-mono text-[11px] text-muted-foreground tabular-nums">
+			<span class="min-w-[3rem] shrink-0 text-center font-mono text-[11px] text-muted-foreground tabular-nums">
 				{Math.round(scale * 100)}%
 			</span>
 			<button
-				class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => zoom(0.25)}
+				title="Zoom in"
+				aria-label="Zoom in"
 			>
 				<ZoomInIcon class="size-4" />
 			</button>
 
 			<button
-				class="rounded-md p-1.5 transition-colors hover:bg-muted"
+				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
 				class:text-foreground={fitToWidth}
 				class:text-muted-foreground={!fitToWidth}
 				onclick={toggleFitToWidth}
@@ -310,7 +325,7 @@
 			class="flex flex-1 flex-col items-center gap-3 overflow-auto py-4"
 			onscroll={scheduleUpdateCurrentPage}
 		>
-			{#each Array(totalPages) as _, i}
+			{#each Array(totalPages) as _, i (`${docGen}-${i}`)}
 				<div
 					bind:this={pageRefs[i]}
 					data-page={i + 1}

@@ -62,6 +62,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+		if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
 
 		switch (e.key) {
 			case " ":
@@ -138,7 +139,7 @@
 							value={displayTime}
 							oninput={handleSeekInput}
 							onchange={handleSeekChange}
-							class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+							class="absolute inset-x-0 -top-5 h-[calc(100%+2.5rem)] w-full cursor-pointer opacity-0"
 						/>
 					</div>
 					<div class="flex justify-between font-mono text-meta text-muted-foreground">
@@ -149,8 +150,9 @@
 
 				<div class="flex items-center gap-2">
 					<button
-						class="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+						class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
 						onclick={toggleMute}
+						aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
 					>
 						{#if muted || volume === 0}
 							<VolumeXIcon class="size-4" />
@@ -165,7 +167,8 @@
 						step="0.05"
 						value={muted ? 0 : volume}
 						oninput={handleVolumeInput}
-						class="volume-slider h-1 w-full cursor-pointer appearance-none rounded-full bg-muted"
+						aria-label="Volume"
+						class="volume-slider h-11 w-full cursor-pointer appearance-none rounded-full bg-transparent"
 					/>
 				</div>
 			</div>
@@ -174,6 +177,14 @@
 </div>
 
 <style>
+	.seek-bar:has(input:focus-visible) {
+		outline: 2px solid var(--accent-brand);
+		outline-offset: 2px;
+		border-radius: 9999px;
+	}
+	.seek-bar input:focus-visible {
+		outline: none;
+	}
 	.volume-slider::-webkit-slider-thumb {
 		-webkit-appearance: none;
 		appearance: none;
@@ -182,6 +193,11 @@
 		border-radius: 50%;
 		background: oklch(0.985 0 0);
 		cursor: pointer;
+	}
+	.volume-slider::-webkit-slider-runnable-track {
+		height: 4px;
+		border-radius: 9999px;
+		background: var(--color-muted);
 	}
 	.volume-slider::-moz-range-thumb {
 		width: 10px;
@@ -192,6 +208,12 @@
 		cursor: pointer;
 	}
 	.volume-slider::-moz-range-track {
-		background: transparent;
+		height: 4px;
+		border-radius: 9999px;
+		background: var(--color-muted);
+	}
+	.volume-slider:focus-visible {
+		outline: 2px solid var(--accent-brand);
+		outline-offset: 2px;
 	}
 </style>

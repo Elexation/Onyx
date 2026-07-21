@@ -231,7 +231,7 @@
 				<Button variant="outline" onclick={() => (open = false)} disabled={submitting}>
 					Cancel
 				</Button>
-				<Button onclick={submit} disabled={submitting || !name.trim()}>
+				<Button onclick={submit} loading={submitting} disabled={!name.trim()}>
 					{submitting ? "Creating…" : "Create Token"}
 				</Button>
 			</Dialog.Footer>

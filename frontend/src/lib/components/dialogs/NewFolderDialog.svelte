@@ -65,7 +65,7 @@
 		/>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-			<Button onclick={submit} disabled={submitting || !folderName.trim()}>
+			<Button onclick={submit} loading={submitting} disabled={!folderName.trim()}>
 				{submitting ? "Creating…" : "Create"}
 			</Button>
 		</Dialog.Footer>

@@ -51,20 +51,20 @@
 		<AlertDialog.Header>
 			{#if trashEnabled}
 				<AlertDialog.Title>Delete {itemName}?</AlertDialog.Title>
-				<AlertDialog.Description>Move to trash, or delete permanently?</AlertDialog.Description>
+				<AlertDialog.Description>Trashed files can be restored. Permanent deletion can't be undone.</AlertDialog.Description>
 			{:else}
-				<AlertDialog.Title>Delete {itemName}?</AlertDialog.Title>
-				<AlertDialog.Description>This action cannot be undone.</AlertDialog.Description>
+				<AlertDialog.Title>Permanently delete {itemName}?</AlertDialog.Title>
+				<AlertDialog.Description>This can't be undone.</AlertDialog.Description>
 			{/if}
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={submitting}>Cancel</AlertDialog.Cancel>
 			{#if trashEnabled}
-				<Button variant="destructive" disabled={submitting} onclick={() => doDelete(true)}>
-					{submittingAction === "permanent" ? "Deleting…" : "Delete Permanently"}
+				<Button variant="destructive" loading={submittingAction === "permanent"} disabled={submitting} onclick={() => doDelete(true)}>
+					{submittingAction === "permanent" ? "Deleting…" : "Delete permanently"}
 				</Button>
 				<AlertDialog.Action disabled={submitting} onclick={() => doDelete(false)}>
-					{submittingAction === "trash" ? "Moving…" : "Move to Trash"}
+					{submittingAction === "trash" ? "Moving…" : "Move to trash"}
 				</AlertDialog.Action>
 			{:else}
 				<AlertDialog.Action disabled={submitting} onclick={() => doDelete(true)}>

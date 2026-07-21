@@ -66,7 +66,7 @@
 				{#if error}
 					<p class="text-sm text-destructive">{error}</p>
 				{/if}
-				<Button type="submit" size="lg" class="w-full" disabled={loading}>
+				<Button type="submit" size="lg" class="w-full" loading={loading}>
 					{loading ? "Signing in…" : "Sign in"}
 				</Button>
 			</form>

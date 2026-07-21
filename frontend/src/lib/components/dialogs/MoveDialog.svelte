@@ -185,7 +185,7 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-			<Button onclick={submit} disabled={submitting}>
+			<Button onclick={submit} loading={submitting}>
 				{#if submitting}
 					{mode === "move" ? "Moving…" : "Copying…"}
 				{:else}

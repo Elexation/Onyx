@@ -252,7 +252,7 @@
 			</div>
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button onclick={submit} disabled={submitting || (usePassword && !password)}>
+				<Button onclick={submit} loading={submitting} disabled={usePassword && !password}>
 					{submitting ? "Creating…" : "Create Link"}
 				</Button>
 			</Dialog.Footer>

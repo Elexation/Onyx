@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createVirtualizer } from "@tanstack/svelte-virtual";
+	import { get } from "svelte/store";
 	import type { Snippet } from "svelte";
 
 	let {
@@ -21,21 +22,31 @@
 	} = $props();
 
 	let containerWidth = $state(0);
-	const makeGetScrollElement = (el: HTMLDivElement | null) => () => el;
 
 	const columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap))));
 	const rowCount = $derived(Math.ceil(items.length / columns));
 
 	// keep `count: rowCount` alone — do NOT pass `lanes: columns` (that's
 	// masonry; items stack silently at y=0 when items < lanes).
-	let virtualizer = $derived(
-		createVirtualizer({
+	// Create once + setOptions on prop change; re-creating inside $derived
+	// discards the row-measurement cache and observers on every refresh.
+	// Placeholder values avoid reading reactive props at script body;
+	// $effect populates real values synchronously on mount.
+	const virtualizer = createVirtualizer({
+		count: 0,
+		getScrollElement: () => scrollEl,
+		estimateSize: () => 1,
+		overscan: 5,
+	});
+
+	$effect(() => {
+		get(virtualizer).setOptions({
 			count: rowCount,
-			getScrollElement: makeGetScrollElement(scrollEl),
+			getScrollElement: () => scrollEl,
 			estimateSize: () => itemHeight + gap,
 			overscan,
-		}),
-	);
+		});
+	});
 </script>
 
 <div bind:this={scrollEl} bind:clientWidth={containerWidth} class="min-h-0 flex-1 overflow-auto">

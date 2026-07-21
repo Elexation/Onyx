@@ -22,15 +22,15 @@
 		strokeWidth?: number;
 	} = $props();
 
-	const CODE_TYPES = [
+	const CODE_TYPES = new Set([
 		"application/json",
 		"application/xml",
 		"application/javascript",
 		"application/typescript",
 		"application/xhtml+xml",
-	];
+	]);
 
-	const DOC_TYPES = [
+	const DOC_TYPES = new Set([
 		"application/pdf",
 		"application/msword",
 		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -38,16 +38,16 @@
 		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
 		"application/vnd.ms-excel",
 		"application/vnd.ms-powerpoint",
-	];
+	]);
 
-	const ARCHIVE_TYPES = [
+	const ARCHIVE_TYPES = new Set([
 		"application/zip",
 		"application/gzip",
 		"application/x-tar",
 		"application/x-7z-compressed",
 		"application/x-rar-compressed",
 		"application/x-bzip2",
-	];
+	]);
 
 	const EXT_COLOR: Record<string, string> = {
 		pdf: "oklch(0.65 0.18 27)",
@@ -120,13 +120,13 @@
 	function getIcon(mime: string, dir: boolean, n: string) {
 		if (dir) return Folder;
 		if (mime) {
-			if (DOC_TYPES.includes(mime)) return FileText;
+			if (DOC_TYPES.has(mime)) return FileText;
 			if (mime.startsWith("text/")) return FileText;
 			if (mime.startsWith("image/")) return Image;
 			if (mime.startsWith("video/")) return Video;
 			if (mime.startsWith("audio/")) return Music;
-			if (CODE_TYPES.includes(mime)) return FileCode;
-			if (ARCHIVE_TYPES.includes(mime)) return Archive;
+			if (CODE_TYPES.has(mime)) return FileCode;
+			if (ARCHIVE_TYPES.has(mime)) return Archive;
 		}
 		const ext = getExt(n);
 		if (ext in EXT_ICON) return EXT_ICON[ext];
@@ -143,7 +143,7 @@
 		if (mime.startsWith("video/")) return "oklch(0.7 0.18 305)";
 		if (mime.startsWith("audio/")) return "oklch(0.75 0.14 320)";
 		if (mime.startsWith("text/")) return "oklch(0.7 0.1 245)";
-		if (ARCHIVE_TYPES.includes(mime)) return "oklch(0.75 0.1 60)";
+		if (ARCHIVE_TYPES.has(mime)) return "oklch(0.75 0.1 60)";
 		return undefined;
 	}
 

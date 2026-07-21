@@ -159,10 +159,18 @@
 
 	onMount(() => { load(); });
 
+	// Coalesce trash.changed bursts (e.g. parallel bulk-delete emits N events
+	// in quick succession) into one trailing-edge listTrash() refetch.
 	$effect(() => {
-		const offTrash = changes.on("trash.changed", load);
+		let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+		const debouncedLoad = () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+			debounceTimer = setTimeout(load, 250);
+		};
+		const offTrash = changes.on("trash.changed", debouncedLoad);
 		const offBehind = changes.onBehind(load);
 		return () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
 			offTrash();
 			offBehind();
 		};
@@ -298,7 +306,8 @@
 		if (failed > 0) {
 			await load();
 		} else {
-			items = items.filter((i) => !restoredIds.includes(i.id));
+			const restoredSet = new Set(restoredIds);
+			items = items.filter((i) => !restoredSet.has(i.id));
 		}
 		for (const id of restoredIds) selected.delete(id);
 		selected = new Set(selected);
@@ -355,18 +364,14 @@
 	async function handleBulkPermanentDelete() {
 		const ids = [...selected];
 		submitting = true;
-		let deleted = 0;
-		let failed = 0;
-		for (const id of ids) {
-			try {
-				await permanentDeleteTrashItem(id);
-				deleted++;
-			} catch {
-				failed++;
-			}
-		}
+		const results = await Promise.allSettled(
+			ids.map((id) => permanentDeleteTrashItem(id)),
+		);
+		const failed = results.filter((r) => r.status === "rejected").length;
+		const deleted = results.length - failed;
 		if (failed === 0) {
-			items = items.filter((i) => !ids.includes(i.id));
+			const idSet = new Set(ids);
+			items = items.filter((i) => !idSet.has(i.id));
 			toast.success(`Permanently deleted ${deleted} item${deleted !== 1 ? "s" : ""}`);
 		} else {
 			await load();

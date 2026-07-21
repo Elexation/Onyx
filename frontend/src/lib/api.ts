@@ -40,5 +40,6 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 		throw e;
 	}
 
+	if (res.status === 204) return undefined as T;
 	return res.json() as Promise<T>;
 }

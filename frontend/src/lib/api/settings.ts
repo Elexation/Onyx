@@ -10,8 +10,20 @@ export type SettingsResponse = {
 	meta: SettingsMeta;
 };
 
+// In-flight de-dupe: concurrent callers share one round trip; cleared on settle
+// so PATCH-followed-by-GET still observes fresh values.
+let inflightGet: Promise<SettingsResponse> | null = null;
+
 export async function getSettings(): Promise<SettingsResponse> {
-	return request<SettingsResponse>("GET", "/api/settings");
+	if (inflightGet) return inflightGet;
+	inflightGet = (async () => {
+		try {
+			return await request<SettingsResponse>("GET", "/api/settings");
+		} finally {
+			inflightGet = null;
+		}
+	})();
+	return inflightGet;
 }
 
 export async function updateSettings(updates: Record<string, string>): Promise<{

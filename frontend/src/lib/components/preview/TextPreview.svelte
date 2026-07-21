@@ -9,6 +9,15 @@
 	let loading = $state(true);
 	let error = $state("");
 
+	// Above this byte size, skip Shiki tokenization (which runs on the
+	// main thread) and fall back to plaintext. ~250–500ms of work at
+	// 256KB; larger inputs would jank the modal open.
+	const HIGHLIGHT_SIZE_LIMIT = 256 * 1024;
+
+	function escapeHtml(s: string): string {
+		return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	}
+
 	const langMap: Record<string, string> = {
 		".js": "javascript",
 		".mjs": "javascript",
@@ -80,11 +89,15 @@
 			if (!res.ok) throw new Error("Failed to load file");
 			const code = await res.text();
 			if (signal.aborted) return;
-			const filename = p.split("/").pop() ?? p;
-			const lang = detectLang(filename);
-			const rendered = await codeToHtml(code, { lang, theme: "dark-plus" });
-			if (signal.aborted) return;
-			html = DOMPurify.sanitize(rendered);
+			if (code.length > HIGHLIGHT_SIZE_LIMIT) {
+				html = `<pre><code>${escapeHtml(code)}</code></pre>`;
+			} else {
+				const filename = p.split("/").pop() ?? p;
+				const lang = detectLang(filename);
+				const rendered = await codeToHtml(code, { lang, theme: "dark-plus" });
+				if (signal.aborted) return;
+				html = DOMPurify.sanitize(rendered);
+			}
 		} catch (e) {
 			if (signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
 			error = e instanceof Error ? e.message : "Failed to load file";

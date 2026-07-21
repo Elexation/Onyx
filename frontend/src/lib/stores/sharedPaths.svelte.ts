@@ -35,6 +35,14 @@ export const sharedPaths = {
 // a share. Module-load subscription is safe because changes.on() just
 // registers the callback — events flow only after changes.start() runs from
 // (app)/+layout.svelte. Cost is one always-on listener for the SPA lifetime.
+//
+// Debounced: a poll batch with N share events would otherwise fire N full
+// listShares() round trips. Trailing-edge 250ms coalesces bursts to one.
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 changes.on("share.changed", () => {
-	sharedPaths.refresh();
+	if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
+	refreshDebounceTimer = setTimeout(() => {
+		refreshDebounceTimer = null;
+		sharedPaths.refresh();
+	}, 250);
 });

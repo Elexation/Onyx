@@ -147,11 +147,17 @@
 		selection.clear();
 	});
 
+	// Hoisted Intl.Collator: per-call localeCompare loads locale data each
+	// invocation; one shared collator is materially faster across an
+	// O(n log n) sort on large directories (sort re-runs on every listing
+	// refresh).
+	const sortCollator = new Intl.Collator();
+
 	function compareItems(a: FileInfo, b: FileInfo, field: SortField, dir: SortDir): number {
 		let cmp = 0;
 		switch (field) {
 			case "name":
-				cmp = a.name.localeCompare(b.name);
+				cmp = sortCollator.compare(a.name, b.name);
 				break;
 			case "size":
 				cmp = a.size - b.size;
@@ -160,7 +166,7 @@
 				cmp = a.modTime - b.modTime;
 				break;
 			case "type":
-				cmp = (a.mimeType ?? "").localeCompare(b.mimeType ?? "");
+				cmp = sortCollator.compare(a.mimeType ?? "", b.mimeType ?? "");
 				break;
 		}
 		return dir === "asc" ? cmp : -cmp;
@@ -398,20 +404,33 @@
 	// a relevant event. Replaces the prior setTimeout(load, 500) hack tied
 	// to uppy 'complete' — server now emits file.changed after CompleteUpload's
 	// rename completes, so the next 5s poll picks it up deterministically.
+	//
+	// Coalesce burst events through a 300ms trailing-edge throttle: a single
+	// thumb.ready burst on a media-heavy directory can emit one event per file,
+	// each of which would otherwise drive a full /api/files/* refetch.
 	$effect(() => {
 		const dir = normalizeDir(path);
 		const isInDir = (parent: string) => parent === dir;
-		const refetch = () => load(path);
+		let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+		const scheduleRefetch = () => {
+			if (refetchTimer) return;
+			refetchTimer = setTimeout(() => {
+				refetchTimer = null;
+				const myGen = navGen;
+				load(path, { isRefresh: true, isCancelled: () => myGen !== navGen });
+			}, 300);
+		};
 
 		const offFile = changes.on("file.changed", (p) => {
-			if (isInDir(p.parentPath)) refetch();
+			if (isInDir(p.parentPath)) scheduleRefetch();
 		});
 		const offThumb = changes.on("thumb.ready", (p) => {
 			const parent = p.path.substring(0, p.path.lastIndexOf("/")) || "/";
-			if (isInDir(parent)) refetch();
+			if (isInDir(parent)) scheduleRefetch();
 		});
-		const offBehind = changes.onBehind(refetch);
+		const offBehind = changes.onBehind(scheduleRefetch);
 		return () => {
+			if (refetchTimer) clearTimeout(refetchTimer);
 			offFile();
 			offThumb();
 			offBehind();

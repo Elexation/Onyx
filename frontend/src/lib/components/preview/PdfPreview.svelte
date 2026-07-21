@@ -22,6 +22,8 @@
 	let error = $state("");
 
 	let pageHeights = $state<number[]>([]);
+	let baseHeights: number[] = [];
+	let firstPageBaseWidth = 0;
 	let renderedPages = new Set<number>();
 	let renderingPages = new Set<number>();
 	let renderTasks = new Map<number, pdfjsLib.RenderTask>();
@@ -29,10 +31,10 @@
 	let canvasRefs: (HTMLCanvasElement | null)[] = [];
 	let pageRefs: (HTMLDivElement | null)[] = [];
 	let observer: IntersectionObserver | null = null;
+	let updateCurrentPageRaf: number | null = null;
 
-	function calculateFitScale(viewport: { width: number }): number {
-		const w = containerEl?.clientWidth ?? 800;
-		return (w - 48) / viewport.width;
+	function applyScale() {
+		pageHeights = baseHeights.map((h) => h * scale);
 	}
 
 	async function renderPage(pageNum: number) {
@@ -78,13 +80,21 @@
 						if (pageNum) renderPage(pageNum);
 					}
 				}
-				updateCurrentPage();
+				scheduleUpdateCurrentPage();
 			},
 			{ root: containerEl, rootMargin: "200px 0px", threshold: 0.1 },
 		);
 		for (const ref of pageRefs) {
 			if (ref) observer.observe(ref);
 		}
+	}
+
+	function scheduleUpdateCurrentPage() {
+		if (updateCurrentPageRaf !== null) return;
+		updateCurrentPageRaf = requestAnimationFrame(() => {
+			updateCurrentPageRaf = null;
+			updateCurrentPage();
+		});
 	}
 
 	function updateCurrentPage() {
@@ -127,11 +137,10 @@
 		else rerender();
 	}
 
-	async function applyFitToWidth() {
-		if (!pdfDoc) return;
-		const page = await pdfDoc.getPage(1);
-		const viewport = page.getViewport({ scale: 1 });
-		scale = calculateFitScale(viewport);
+	function applyFitToWidth() {
+		if (firstPageBaseWidth === 0) return;
+		const w = containerEl?.clientWidth ?? 800;
+		scale = (w - 48) / firstPageBaseWidth;
 		rerender();
 	}
 
@@ -141,9 +150,7 @@
 		renderTasks.clear();
 		renderedPages.clear();
 		renderingPages.clear();
-		if (pdfDoc) {
-			updatePageHeights();
-		}
+		applyScale();
 		// Re-render visible pages after heights update
 		requestAnimationFrame(() => {
 			if (observer) {
@@ -151,20 +158,6 @@
 				setupObserver();
 			}
 		});
-	}
-
-	async function updatePageHeights() {
-		if (!pdfDoc) return;
-		const gen = renderGen;
-		const heights: number[] = [];
-		for (let i = 1; i <= totalPages; i++) {
-			const page = await pdfDoc.getPage(i);
-			if (gen !== renderGen) return;
-			const viewport = page.getViewport({ scale });
-			heights.push(viewport.height);
-		}
-		if (gen !== renderGen) return;
-		pageHeights = heights;
 	}
 
 	$effect(() => {
@@ -178,6 +171,8 @@
 		renderingPages.clear();
 		canvasRefs.length = 0;
 		pageRefs.length = 0;
+		baseHeights = [];
+		firstPageBaseWidth = 0;
 
 		const loadingTask = pdfjsLib.getDocument({
 			url: url ?? getPreviewUrl(path),
@@ -191,11 +186,20 @@
 				totalPages = doc.numPages;
 				currentPage = 1;
 
-				const page = await doc.getPage(1);
-				const viewport = page.getViewport({ scale: 1 });
-				scale = calculateFitScale(viewport);
+				// Fetch all page proxies in parallel — pdf.js's worker handles
+				// these concurrently. Cache base-scale dimensions so subsequent
+				// zooms recompute heights via multiplication, never re-fetch.
+				const pages = await Promise.all(
+					Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)),
+				);
+				if (cancelled) return;
 
-				await updatePageHeights();
+				firstPageBaseWidth = pages[0].getViewport({ scale: 1 }).width;
+				baseHeights = pages.map((p) => p.getViewport({ scale: 1 }).height);
+
+				const w = containerEl?.clientWidth ?? 800;
+				scale = (w - 48) / firstPageBaseWidth;
+				applyScale();
 				loading = false;
 
 				// Wait for DOM to render page containers, then setup observer
@@ -213,6 +217,10 @@
 			cancelled = true;
 			loadingTask.destroy();
 			if (observer) observer.disconnect();
+			if (updateCurrentPageRaf !== null) {
+				cancelAnimationFrame(updateCurrentPageRaf);
+				updateCurrentPageRaf = null;
+			}
 			for (const task of renderTasks.values()) task.cancel();
 			renderTasks.clear();
 			if (pdfDoc) pdfDoc.destroy();
@@ -300,7 +308,7 @@
 		<div
 			bind:this={containerEl}
 			class="flex flex-1 flex-col items-center gap-3 overflow-auto py-4"
-			onscroll={updateCurrentPage}
+			onscroll={scheduleUpdateCurrentPage}
 		>
 			{#each Array(totalPages) as _, i}
 				<div

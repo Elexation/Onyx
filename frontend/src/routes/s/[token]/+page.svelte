@@ -101,11 +101,18 @@
 		a.click();
 	}
 
+	// Navigation generation: bumped whenever the token-driven $effect fires;
+	// in-flight loads check it after each await so a token change mid-load
+	// can't write the old token's data onto the new token's reactive state.
+	let navGen = 0;
+
 	$effect(() => {
-		if (token) loadShare();
+		if (!token) return;
+		const myGen = ++navGen;
+		loadShare(myGen);
 	});
 
-	async function loadShare() {
+	async function loadShare(myGen: number) {
 		loading = true;
 		error = "";
 		fileName = "";
@@ -116,12 +123,15 @@
 		expiresAt = 0;
 		try {
 			const res = await fetch(`/api/public/s/${safeToken}`);
+			if (myGen !== navGen) return;
 			if (!res.ok) {
 				const data = await res.json().catch(() => ({ error: "Not found" }));
+				if (myGen !== navGen) return;
 				error = data.error || "Share not found";
 				return;
 			}
 			const data = await res.json();
+			if (myGen !== navGen) return;
 			if (data.passwordRequired) {
 				passwordRequired = true;
 				isDir = data.isDir;
@@ -129,9 +139,10 @@
 			}
 			applyData(data);
 		} catch {
+			if (myGen !== navGen) return;
 			error = "Failed to load share";
 		} finally {
-			loading = false;
+			if (myGen === navGen) loading = false;
 		}
 	}
 

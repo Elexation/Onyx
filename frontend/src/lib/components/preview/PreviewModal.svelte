@@ -3,15 +3,21 @@
 	import { getPreviewType, isPreviewTooLarge, getPreviewUrl } from "$lib/preview.js";
 	import { getDownloadUrl } from "$lib/api/files.js";
 	import { formatFileSize } from "$lib/utils/format.js";
-	import TextPreview from "./TextPreview.svelte";
-	import MarkdownPreview from "./MarkdownPreview.svelte";
-	import ImagePreview from "./ImagePreview.svelte";
-	import VideoPreview from "./VideoPreview.svelte";
-	import AudioPreview from "./AudioPreview.svelte";
-	import PdfPreview from "./PdfPreview.svelte";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import XIcon from "@lucide/svelte/icons/x";
 	import DownloadIcon from "@lucide/svelte/icons/download";
+
+	// Preview components are dynamically imported so heavy deps
+	// (shiki, pdfjs-dist, marked, dompurify) stay out of the
+	// /files route chunk until first preview-open of that type.
+	const previewLoaders = {
+		text: () => import("./TextPreview.svelte"),
+		markdown: () => import("./MarkdownPreview.svelte"),
+		image: () => import("./ImagePreview.svelte"),
+		video: () => import("./VideoPreview.svelte"),
+		audio: () => import("./AudioPreview.svelte"),
+		pdf: () => import("./PdfPreview.svelte"),
+	};
 
 	let {
 		file = $bindable(),
@@ -88,22 +94,40 @@
 				</Button>
 			</div>
 		{:else if type === "text"}
-			<TextPreview path={file.path} {url} />
+			{#await previewLoaders.text() then mod}
+				{@const TextPreview = mod.default}
+				<TextPreview path={file.path} {url} />
+			{/await}
 		{:else if type === "markdown"}
-			<MarkdownPreview path={file.path} {url} />
+			{#await previewLoaders.markdown() then mod}
+				{@const MarkdownPreview = mod.default}
+				<MarkdownPreview path={file.path} {url} />
+			{/await}
 		{:else if type === "image"}
-			<ImagePreview
-				{file}
-				siblings={imageSiblings}
-				onnavigate={(f) => { file = f; }}
-				{url}
-			/>
+			{#await previewLoaders.image() then mod}
+				{@const ImagePreview = mod.default}
+				<ImagePreview
+					{file}
+					siblings={imageSiblings}
+					onnavigate={(f) => { file = f; }}
+					{url}
+				/>
+			{/await}
 		{:else if type === "video"}
-			<VideoPreview {file} {onclose} {url} {streamBase} />
+			{#await previewLoaders.video() then mod}
+				{@const VideoPreview = mod.default}
+				<VideoPreview {file} {onclose} {url} {streamBase} />
+			{/await}
 		{:else if type === "audio"}
-			<AudioPreview path={file.path} {url} />
+			{#await previewLoaders.audio() then mod}
+				{@const AudioPreview = mod.default}
+				<AudioPreview path={file.path} {url} />
+			{/await}
 		{:else if type === "pdf"}
-			<PdfPreview path={file.path} {url} />
+			{#await previewLoaders.pdf() then mod}
+				{@const PdfPreview = mod.default}
+				<PdfPreview path={file.path} {url} />
+			{/await}
 		{/if}
 	</div>
 </div>

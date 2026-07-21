@@ -1,11 +1,10 @@
-import Uppy from "@uppy/core";
-import Tus from "@uppy/tus";
-import { emaFilter } from "@uppy/utils";
+import type Uppy from "@uppy/core";
 import { uploadState } from "$lib/stores/upload.svelte.js";
 import { deleteFiles } from "$lib/api/files.js";
 import { getCsrfToken } from "$lib/api";
 
 let instance: Uppy | null = null;
+let emaFilterFn: ((newValue: number, oldValue: number, halfLife: number, dt: number) => number) | null = null;
 
 // Raw progress buffer — not reactive. Uppy events write here freely.
 // The flush timer reads from here and batch-updates reactive uploadState.
@@ -48,7 +47,7 @@ function startFlushTimer() {
 			const instantSpeed = (bytesDelta / dt) * 1000;
 			smoothedSpeed = smoothedSpeed === 0
 				? instantSpeed
-				: emaFilter(instantSpeed, smoothedSpeed, SPEED_HALF_LIFE, dt);
+				: emaFilterFn!(instantSpeed, smoothedSpeed, SPEED_HALF_LIFE, dt);
 		}
 
 		// Compute ETA
@@ -70,10 +69,18 @@ function stopFlushTimer() {
 	prevTotalUploaded = 0;
 }
 
-export function getUppy(): Uppy {
+async function getUppy(): Promise<Uppy> {
 	if (instance) return instance;
 
-	instance = new Uppy({
+	const [{ default: UppyCore }, { default: Tus }, { emaFilter }] = await Promise.all([
+		import("@uppy/core"),
+		import("@uppy/tus"),
+		import("@uppy/utils"),
+	]);
+
+	emaFilterFn = emaFilter;
+
+	instance = new UppyCore({
 		id: "onyx-uploader",
 		autoProceed: false,
 		allowMultipleUploadBatches: true,
@@ -154,7 +161,7 @@ export async function addFiles(
 	targetDir: string,
 	resolutions?: ConflictResolution,
 ) {
-	const uppy = getUppy();
+	const uppy = await getUppy();
 	const CHUNK_SIZE = 50;
 
 	// Clear previous completed uploads before starting new batch
@@ -203,7 +210,13 @@ export async function addFiles(
 		const chunkEntries = descriptors.slice(i, i + CHUNK_SIZE);
 		const inGroupByData = new Map<File, boolean>();
 		for (const entry of chunkEntries) inGroupByData.set(entry.desc.data, entry.inGroup);
-		const before = new Set(uppy.getFiles().map((f) => f.id));
+
+		// Capture newly added files via event — O(chunk) instead of O(total queue)
+		const added: { id: string; name: string; size: number; data: unknown }[] = [];
+		const onFileAdded = (file: any) => {
+			added.push({ id: file.id, name: file.name, size: file.size ?? 0, data: file.data });
+		};
+		uppy.on("file-added", onFileAdded);
 
 		try {
 			uppy.addFiles(chunkEntries.map((e) => e.desc));
@@ -212,11 +225,12 @@ export async function addFiles(
 			// AggregateError only for non-restriction errors — shouldn't happen.
 		}
 
+		uppy.off("file-added", onFileAdded);
+
 		const addedGrouped: { id: string; name: string; size: number }[] = [];
 		const addedLoose: { id: string; name: string; size: number }[] = [];
-		for (const f of uppy.getFiles()) {
-			if (before.has(f.id)) continue;
-			const desc = { id: f.id, name: f.name, size: f.size ?? 0 };
+		for (const f of added) {
+			const desc = { id: f.id, name: f.name, size: f.size };
 			const target = inGroupByData.get(f.data as File) ? addedGrouped : addedLoose;
 			target.push(desc);
 		}
@@ -230,26 +244,26 @@ export async function addFiles(
 	}
 }
 
-export function startUpload() {
-	const uppy = getUppy();
-	return uppy.upload();
+export async function startUpload() {
+	if (!instance) return;
+	return instance.upload();
 }
 
 export function cancelUpload(fileId: string) {
-	const uppy = getUppy();
-	uppy.removeFile(fileId);
+	if (!instance) return;
+	instance.removeFile(fileId);
 	uploadState.removeFile(fileId);
 }
 
 export async function cancelGroup(groupId: string) {
-	const uppy = getUppy();
+	if (!instance) return;
 	const meta = uploadState.groupMeta[groupId];
 	const groupItems = uploadState.items.filter((i) => i.group === groupId);
 	const hasActive = groupItems.some((i) => i.status !== "complete");
 
 	for (const item of groupItems) {
 		try {
-			uppy.removeFile(item.id);
+			instance.removeFile(item.id);
 		} catch {
 			// File may already have been removed (completed and cleaned up)
 		}
@@ -272,7 +286,7 @@ export async function cancelGroup(groupId: string) {
 }
 
 export async function cancelAll() {
-	const uppy = getUppy();
+	if (!instance) return;
 
 	// Skip fully-completed groups — their meta lingers until the next addFiles clears it,
 	// and we must not delete successful uploads when cancelling a concurrent upload.
@@ -291,7 +305,7 @@ export async function cancelAll() {
 		groupDirs.push(dirPath);
 	}
 
-	uppy.cancelAll();
+	instance.cancelAll();
 	stopFlushTimer();
 	uploadState.clear();
 
@@ -306,6 +320,6 @@ export async function cancelAll() {
 }
 
 export function retryUpload(fileId: string) {
-	const uppy = getUppy();
-	uppy.retryUpload(fileId);
+	if (!instance) return;
+	instance.retryUpload(fileId);
 }

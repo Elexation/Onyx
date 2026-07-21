@@ -188,6 +188,9 @@
 	}
 
 	async function refreshTokensQuiet() {
+		// Skip the round trip when the tokens section has never been opened —
+		// background change-feed signals shouldn't pull data the user can't see.
+		if (tokens.length === 0 && section !== "tokens") return;
 		try {
 			const res = await listTokens();
 			tokens = res.tokens ?? [];

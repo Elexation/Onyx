@@ -12,8 +12,21 @@ export async function createShare(req: CreateShareRequest): Promise<ShareLink> {
 	return request<ShareLink>("POST", "/api/shares", req);
 }
 
+// In-flight de-dupe: concurrent callers (e.g. /shares page + sharedPaths
+// store both reacting to share.changed) share one round trip; cleared on
+// settle so a follow-up call after a mutation observes fresh values.
+let inflightList: Promise<{ shares: ShareLink[] }> | null = null;
+
 export async function listShares(): Promise<{ shares: ShareLink[] }> {
-	return request<{ shares: ShareLink[] }>("GET", "/api/shares");
+	if (inflightList) return inflightList;
+	inflightList = (async () => {
+		try {
+			return await request<{ shares: ShareLink[] }>("GET", "/api/shares");
+		} finally {
+			inflightList = null;
+		}
+	})();
+	return inflightList;
 }
 
 export async function getShareByPath(path: string): Promise<ShareLink | null> {

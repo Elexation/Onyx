@@ -16,6 +16,11 @@
 	let muted = $state(false);
 	let failed = $state(false);
 
+	// Scrub state — same UI-layer coalescing pattern as VideoPreview.
+	// Drag motion updates UI only; commit on `change` (pointerup/Enter/blur).
+	let scrubbing = $state(false);
+	let scrubTime = $state(0);
+
 	function togglePlay() {
 		if (!audioEl || failed) return;
 		if (audioEl.paused) audioEl.play().catch(() => { failed = true; });
@@ -33,8 +38,17 @@
 	}
 
 	function handleSeekInput(e: Event) {
+		scrubbing = true;
+		scrubTime = Number((e.target as HTMLInputElement).value);
+	}
+
+	function handleSeekChange(e: Event) {
 		if (!audioEl) return;
-		audioEl.currentTime = Number((e.target as HTMLInputElement).value);
+		const target = Number((e.target as HTMLInputElement).value);
+		audioEl.currentTime = target;
+		currentTime = target;
+		scrubTime = target;
+		scrubbing = false;
 	}
 
 	function handleVolumeInput(e: Event) {
@@ -71,7 +85,8 @@
 		return () => { el.pause(); };
 	});
 
-	const seekPercent = $derived(duration > 0 ? (currentTime / duration) * 100 : 0);
+	const displayTime = $derived(scrubbing ? scrubTime : currentTime);
+	const seekPercent = $derived(duration > 0 ? (displayTime / duration) * 100 : 0);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -120,13 +135,14 @@
 							min="0"
 							max={duration}
 							step="0.1"
-							value={currentTime}
+							value={displayTime}
 							oninput={handleSeekInput}
+							onchange={handleSeekChange}
 							class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
 						/>
 					</div>
 					<div class="flex justify-between font-mono text-meta text-muted-foreground">
-						<span>{formatMediaTime(currentTime)}</span>
+						<span>{formatMediaTime(displayTime)}</span>
 						<span>{formatMediaTime(duration)}</span>
 					</div>
 				</div>

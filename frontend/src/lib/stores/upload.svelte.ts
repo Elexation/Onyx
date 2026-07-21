@@ -21,41 +21,39 @@ class UploadState {
 	speed = $state(0);
 	eta = $state<number | null>(null);
 	private autoMinimizeTimer: ReturnType<typeof setTimeout> | null = null;
+	// id → item proxy. Source of truth is `items`; this index is rebuilt after
+	// every structural mutation so chunk-frequency lookups stay O(1).
+	private itemsById = new Map<string, UploadItem>();
 
-	get hasItems() {
-		return this.items.length > 0;
-	}
+	hasItems = $derived(this.items.length > 0);
+	activeCount = $derived(
+		this.items.filter((i) => i.status === "uploading" || i.status === "pending").length,
+	);
+	isComplete = $derived(this.items.length > 0 && this.activeCount === 0);
+	totalBytes = $derived(this.items.reduce((sum, i) => sum + i.size, 0));
+	totalBytesUploaded = $derived(this.items.reduce((sum, i) => sum + i.bytesUploaded, 0));
+	totalProgress = $derived(
+		this.totalBytes === 0 ? 0 : Math.round((this.totalBytesUploaded / this.totalBytes) * 100),
+	);
 
-	get activeCount() {
-		return this.items.filter((i) => i.status === "uploading" || i.status === "pending").length;
-	}
-
-	get isComplete() {
-		return this.items.length > 0 && this.activeCount === 0;
-	}
-
-	get totalBytes() {
-		return this.items.reduce((sum, i) => sum + i.size, 0);
-	}
-
-	get totalBytesUploaded() {
-		return this.items.reduce((sum, i) => sum + i.bytesUploaded, 0);
-	}
-
-	get totalProgress() {
-		const total = this.totalBytes;
-		if (total === 0) return 0;
-		return Math.round((this.totalBytesUploaded / total) * 100);
+	private rebuildIndex() {
+		this.itemsById.clear();
+		for (const item of this.items) this.itemsById.set(item.id, item);
 	}
 
 	addFile(id: string, name: string, size: number) {
 		this.items.push({ id, name, size, progress: 0, bytesUploaded: 0, status: "pending" });
+		this.rebuildIndex();
 		this.minimized = false;
 		this.clearAutoMinimize();
 	}
 
 	addFiles(files: { id: string; name: string; size: number }[], group?: string) {
-		this.items = [...this.items, ...files.map((f) => ({ ...f, progress: 0, bytesUploaded: 0, status: "pending" as const, group }))];
+		this.items = [
+			...this.items,
+			...files.map((f) => ({ ...f, progress: 0, bytesUploaded: 0, status: "pending" as const, group })),
+		];
+		this.rebuildIndex();
 		this.minimized = false;
 		this.clearAutoMinimize();
 	}
@@ -66,12 +64,13 @@ class UploadState {
 
 	removeGroup(groupId: string) {
 		this.items = this.items.filter((i) => i.group !== groupId);
+		this.rebuildIndex();
 		const { [groupId]: _, ...rest } = this.groupMeta;
 		this.groupMeta = rest;
 	}
 
 	updateProgress(id: string, bytesUploaded: number) {
-		const item = this.items.find((i) => i.id === id);
+		const item = this.itemsById.get(id);
 		if (item) {
 			item.bytesUploaded = bytesUploaded;
 			item.progress = item.size > 0 ? Math.round((bytesUploaded / item.size) * 100) : 0;
@@ -85,7 +84,7 @@ class UploadState {
 	}
 
 	markComplete(id: string) {
-		const item = this.items.find((i) => i.id === id);
+		const item = this.itemsById.get(id);
 		if (item) {
 			item.bytesUploaded = item.size;
 			item.progress = 100;
@@ -95,7 +94,7 @@ class UploadState {
 	}
 
 	markError(id: string, error: string) {
-		const item = this.items.find((i) => i.id === id);
+		const item = this.itemsById.get(id);
 		if (item) {
 			item.status = "error";
 			item.error = error;
@@ -104,10 +103,12 @@ class UploadState {
 
 	removeFile(id: string) {
 		this.items = this.items.filter((i) => i.id !== id);
+		this.rebuildIndex();
 	}
 
 	clearCompleted() {
 		this.items = this.items.filter((i) => i.status !== "complete");
+		this.rebuildIndex();
 		// Clean up groups with no remaining items
 		const activeGroups = new Set(this.items.map((i) => i.group).filter(Boolean));
 		const newMeta: Record<string, GroupMeta> = {};
@@ -120,6 +121,7 @@ class UploadState {
 
 	clear() {
 		this.items = [];
+		this.itemsById.clear();
 		this.groupMeta = {};
 		this.speed = 0;
 		this.eta = null;

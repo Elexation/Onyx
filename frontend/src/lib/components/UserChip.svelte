@@ -1,7 +1,9 @@
 <script lang="ts">
 	import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
+	import { goto } from "$app/navigation";
 	import { logout } from "$lib/auth.svelte.js";
 	import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+	import FileTextIcon from "@lucide/svelte/icons/file-text";
 	import LogOutIcon from "@lucide/svelte/icons/log-out";
 	import UserIcon from "@lucide/svelte/icons/user";
 
@@ -19,6 +21,10 @@
 		<UserIcon class="size-4" />
 		<span>Signed in as {name}</span>
 	</DropdownMenu.Label>
+	<DropdownMenu.Item onclick={() => goto('/docs/api')}>
+		<FileTextIcon />
+		API Reference
+	</DropdownMenu.Item>
 	<DropdownMenu.Separator />
 	<DropdownMenu.Item variant="destructive" onclick={logout}>
 		<LogOutIcon />

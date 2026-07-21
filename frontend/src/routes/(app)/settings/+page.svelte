@@ -128,8 +128,11 @@
 
 	let shareDisableConfirmOpen = $state(false);
 	let versionDisableConfirmOpen = $state(false);
+	let togglingShare = false;
+	let togglingVersion = false;
 	let versioningChecked = $state(false);
 	let sharingChecked = $state(false);
+	let trashChecked = $state(false);
 	let debounceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 	let tokens = $state<PersonalAccessToken[]>([]);
@@ -164,6 +167,7 @@
 			meta = res.meta;
 			versioningChecked = settings["versions.enabled"] === "true";
 			sharingChecked = settings["shares.enabled"] === "true";
+			trashChecked = settings["trash.enabled"] === "true";
 		} catch {
 			toast.error("Failed to load settings");
 		} finally {
@@ -180,8 +184,9 @@
 			const res = await getSettings();
 			settings = res.values;
 			meta = res.meta;
-			versioningChecked = settings["versions.enabled"] === "true";
-			sharingChecked = settings["shares.enabled"] === "true";
+			if (!togglingVersion) versioningChecked = settings["versions.enabled"] === "true";
+			if (!togglingShare) sharingChecked = settings["shares.enabled"] === "true";
+			trashChecked = settings["trash.enabled"] === "true";
 		} catch {
 			// silent — background refresh shouldn't toast
 		}
@@ -229,6 +234,10 @@
 				}
 			} catch {
 				toast.error("Failed to save setting");
+				refreshSettingsQuiet();
+			} finally {
+				if (key === "shares.enabled") togglingShare = false;
+				if (key === "versions.enabled") togglingVersion = false;
 			}
 		}, 500);
 	}
@@ -245,6 +254,7 @@
 		}
 		if (key === "trash.enabled") {
 			trashEnabled.set(checked);
+			trashChecked = checked;
 		}
 	}
 
@@ -253,6 +263,7 @@
 			toggleBool("shares.enabled", true);
 			return;
 		}
+		togglingShare = true;
 		try {
 			const res = await shareCount();
 			if (res.count > 0) {
@@ -270,6 +281,7 @@
 
 	function cancelDisableSharing() {
 		shareDisableConfirmOpen = false;
+		togglingShare = false;
 		sharingChecked = true;
 	}
 
@@ -278,6 +290,7 @@
 			toggleBool("versions.enabled", true);
 			return;
 		}
+		togglingVersion = true;
 		try {
 			const res = await versionCount();
 			if (res.count > 0) {
@@ -295,6 +308,7 @@
 
 	function cancelDisableVersioning() {
 		versionDisableConfirmOpen = false;
+		togglingVersion = false;
 		versioningChecked = true;
 	}
 
@@ -492,16 +506,16 @@
 	}
 </script>
 
-{#snippet row(label: string, desc: string, control: Snippet)}
-	<div class="flex items-center justify-between gap-6 border-t border-border py-4">
+{#snippet row(label: string, desc: string, control: Snippet, controlId: string)}
+	<label for={controlId} class="flex cursor-pointer items-center justify-between gap-6 border-t border-border py-4">
 		<div class="min-w-0 flex-1">
-			<p class="text-sm font-medium">{label}</p>
+			<span class="text-sm font-medium">{label}</span>
 			{#if desc}
 				<p class="mt-0.5 text-xs text-muted-foreground">{desc}</p>
 			{/if}
 		</div>
 		<div class="shrink-0">{@render control()}</div>
-	</div>
+	</label>
 {/snippet}
 
 <div class="flex h-full flex-col md:flex-row">
@@ -594,6 +608,7 @@
 				{#if section === "versioning"}
 					{#snippet versioningSwitch()}
 						<Switch
+							id="versioning-enabled"
 							bind:checked={versioningChecked}
 							onCheckedChange={(checked: boolean) => handleVersionToggle(checked)}
 						/>
@@ -602,10 +617,12 @@
 						"Enable file versioning",
 						"",
 						versioningSwitch,
+						"versioning-enabled",
 					)}
 
 					{#snippet versionsMaxCount()}
 						<Input
+							id="versions-max-count"
 							type="number"
 							min="0"
 							max="100"
@@ -619,10 +636,12 @@
 						"Maximum versions per file",
 						"How many old versions to keep per file. 0 = unlimited, max 100. Default 10.",
 						versionsMaxCount,
+						"versions-max-count",
 					)}
 
 					{#snippet versionsMaxAge()}
 						<Input
+							id="versions-max-age"
 							type="number"
 							min="0"
 							max="8760"
@@ -636,10 +655,12 @@
 						"Maximum version age (hours)",
 						"Discard versions older than this. 0 = never expire, max 8,760 (1 year). Default 2,160 (90 days).",
 						versionsMaxAge,
+						"versions-max-age",
 					)}
 
 					{#snippet versionsMaxFileSize()}
 						<Input
+							id="versions-max-file-size"
 							type="number"
 							min="0"
 							max="20480"
@@ -653,10 +674,12 @@
 						"Maximum file size to version (MB)",
 						"Files larger than this are not versioned. 0 = unlimited, max 20,480 (20 GB). Default 1,024 (1 GB).",
 						versionsMaxFileSize,
+						"versions-max-file-size",
 					)}
 
 					{#snippet versionsMaxStorage()}
 						<Input
+							id="versions-max-storage"
 							type="number"
 							min="0"
 							max="20480"
@@ -670,13 +693,15 @@
 						"Maximum version storage (MB)",
 						"Total storage budget for versions. Oldest are purged when exceeded. 0 = unlimited, max 20,480 (20 GB). Default 0 (unlimited).",
 						versionsMaxStorage,
+						"versions-max-storage",
 					)}
 				{/if}
 
 				{#if section === "trash"}
 					{#snippet trashEnabledSwitch()}
 						<Switch
-							checked={settings["trash.enabled"] === "true"}
+							id="trash-enabled"
+							bind:checked={trashChecked}
 							onCheckedChange={(checked: boolean) => toggleBool("trash.enabled", checked)}
 						/>
 					{/snippet}
@@ -684,10 +709,12 @@
 						"Enable trash",
 						"Move deleted files to trash instead of permanent deletion.",
 						trashEnabledSwitch,
+						"trash-enabled",
 					)}
 
 					{#snippet trashPurgeAge()}
 						<Input
+							id="trash-purge-age"
 							type="number"
 							min="0"
 							max="365"
@@ -701,10 +728,12 @@
 						"Auto-purge after (days)",
 						"Automatically delete trashed items after this many days. 0 = never purge, max 365. Default 30.",
 						trashPurgeAge,
+						"trash-purge-age",
 					)}
 
 					{#snippet trashMaxSize()}
 						<Input
+							id="trash-max-size"
 							type="number"
 							min="0"
 							max="102400"
@@ -718,12 +747,14 @@
 						"Maximum trash size (MB)",
 						"Total storage budget for trash. Oldest items are purged when exceeded. 0 = unlimited, max 102,400 (100 GB). Default 0 (unlimited).",
 						trashMaxSize,
+						"trash-max-size",
 					)}
 				{/if}
 
 				{#if section === "sharing"}
 					{#snippet sharingSwitch()}
 						<Switch
+							id="sharing-enabled"
 							bind:checked={sharingChecked}
 							onCheckedChange={(checked: boolean) => handleShareToggle(checked)}
 						/>
@@ -732,12 +763,14 @@
 						"Enable sharing",
 						"",
 						sharingSwitch,
+						"sharing-enabled",
 					)}
 				{/if}
 
 				{#if section === "uploads"}
 					{#snippet uploadMaxSize()}
 						<Input
+							id="upload-max-size"
 							type="number"
 							min="0"
 							max="102400"
@@ -751,6 +784,7 @@
 						"Maximum file size (MB)",
 						"Reject uploads larger than this. 0 = unlimited, max 102,400 (100 GB). Default 0 (unlimited).",
 						uploadMaxSize,
+						"upload-max-size",
 					)}
 				{/if}
 
@@ -761,7 +795,7 @@
 							value={settings["playback.default_quality_ceiling"] ?? "1080"}
 							onValueChange={(v) => save("playback.default_quality_ceiling", v)}
 						>
-							<Select.Trigger class="w-[180px]">
+							<Select.Trigger id="playback-quality" class="w-[180px]">
 								{qualityLabel(settings["playback.default_quality_ceiling"] ?? "1080")}
 							</Select.Trigger>
 							<Select.Content>
@@ -775,12 +809,14 @@
 						"Default quality ceiling",
 						"Caps the highest rendition produced when transcoding videos. Viewers can still pick a lower quality manually. “Unlimited” encodes up to source resolution.",
 						playbackQuality,
+						"playback-quality",
 					)}
 				{/if}
 
 				{#if section === "security"}
 					{#snippet sessionLifetime()}
 						<Input
+							id="session-lifetime"
 							type="number"
 							min="1"
 							max="720"
@@ -794,6 +830,7 @@
 						"Session lifetime (hours)",
 						"How long a sign-in stays valid. 1–720 hours (30 days). Default 720. Only affects new sessions.",
 						sessionLifetime,
+						"session-lifetime",
 					)}
 
 					<div class="mt-8 border-t border-border pt-6">
@@ -807,6 +844,7 @@
 								<Input
 									id="current-password"
 									type="password"
+									autocomplete="current-password"
 									bind:value={currentPassword}
 								/>
 							</div>
@@ -815,6 +853,7 @@
 								<Input
 									id="new-password"
 									type="password"
+									autocomplete="new-password"
 									placeholder="Minimum {MIN_PASSWORD_LENGTH} characters"
 									bind:value={newPassword}
 								/>
@@ -824,6 +863,7 @@
 								<Input
 									id="confirm-password"
 									type="password"
+									autocomplete="new-password"
 									bind:value={confirmPassword}
 								/>
 							</div>
@@ -855,7 +895,7 @@
 									<div class="rounded-xl border border-border bg-card p-[14px]">
 										<div class="flex items-start justify-between gap-3">
 											<div class="min-w-0 flex-1 space-y-1.5">
-												<div class="flex items-center gap-2 text-[15px] font-medium">
+												<div class="flex min-w-0 items-center gap-2 text-[15px] font-medium">
 													<span class="truncate">{tok.name}</span>
 													<span class="shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
 														{scopeBadgeLabel(tok.scope)}
@@ -865,20 +905,30 @@
 													onyx_…{tok.tokenLast8}
 												</p>
 												<div class="grid grid-cols-1 gap-x-3 gap-y-0.5 font-mono text-[11px] text-muted-foreground md:grid-cols-3">
-													<span>Created {formatTokenDate(tok.createdAt)}</span>
-													<span>Last used {formatLastUsed(tok.lastUsedAt)}</span>
-													<span>Expires {formatTokenDate(tok.expiresAt)}</span>
+													<span class="truncate">Created {formatTokenDate(tok.createdAt)}</span>
+													<span class="truncate">Last used {formatLastUsed(tok.lastUsedAt)}</span>
+													<span class="truncate">Expires {formatTokenDate(tok.expiresAt)}</span>
 												</div>
 											</div>
 											<Button
 												variant="ghost"
-												size="icon-xs"
-												class="shrink-0 cursor-pointer"
+												size="icon"
+												class="shrink-0 cursor-pointer md:hidden"
 												onclick={() => askRevokeToken(tok)}
 												title="Revoke token"
 												aria-label="Revoke token {tok.name}"
 											>
-												<XIcon class="size-3.5" strokeWidth={2} />
+												<XIcon class="size-4" strokeWidth={2} />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon-sm"
+												class="hidden shrink-0 cursor-pointer md:block"
+												onclick={() => askRevokeToken(tok)}
+												title="Revoke token"
+												aria-label="Revoke token {tok.name}"
+											>
+												<XIcon class="size-4" strokeWidth={2} />
 											</Button>
 										</div>
 									</div>
@@ -908,6 +958,7 @@
 
 					{#snippet listenPortInput()}
 						<Input
+							id="listen-port"
 							type="number"
 							min="1024"
 							max="65535"
@@ -926,6 +977,7 @@
 								? "Locked — running in Docker. Change the host-side port via the ONYX_PORT env var on your Docker host, then restart with docker compose up -d."
 								: "Port the server binds to. Range 1024–65535. Takes effect after restart. If you get locked out, set the ONYX_PORT environment variable and restart.",
 						listenPortInput,
+						"listen-port",
 					)}
 				{/if}
 			{/if}

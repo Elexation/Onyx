@@ -31,6 +31,7 @@
 	let submitting = $state(false);
 	let shareUrl = $state("");
 	let copied = $state(false);
+	let copiedTimer: ReturnType<typeof setTimeout>;
 	let loading = $state(false);
 	let existing = $state<ShareLink | null>(null);
 	let revoking = $state(false);
@@ -58,6 +59,7 @@
 			password = "";
 			shareUrl = "";
 			copied = false;
+			clearTimeout(copiedTimer);
 			existing = null;
 			showCreateForm = false;
 			closeEnabled = false;
@@ -135,7 +137,8 @@
 				throw new Error("No clipboard method available");
 			}
 			copied = true;
-			setTimeout(() => (copied = false), 2000);
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = false), 2000);
 		} catch {
 			toast.error("Couldn't copy — select the link and copy manually");
 		}

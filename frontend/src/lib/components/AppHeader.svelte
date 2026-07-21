@@ -32,7 +32,7 @@
 	{#if mobileSearchOpen}
 		<button
 			type="button"
-			class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+			class="inline-flex size-9 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
 			aria-label="Close search"
 			onclick={closeMobileSearch}
 		>
@@ -53,7 +53,7 @@
 		<div class="ml-auto flex items-center gap-1.5">
 			<button
 				type="button"
-				class="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+				class="inline-flex size-9 min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
 				aria-label="Search"
 				title="Search"
 				onclick={openMobileSearch}

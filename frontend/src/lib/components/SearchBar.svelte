@@ -19,6 +19,7 @@
 	let loading = $state(false);
 	let open = $state(false);
 	let activeIndex = $state(-1);
+	let errored = $state(false);
 	let containerEl = $state<HTMLDivElement | null>(null);
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -32,6 +33,7 @@
 			searchSeq++;
 			results = [];
 			total = 0;
+			errored = false;
 			open = false;
 			return;
 		}
@@ -39,6 +41,7 @@
 		debounceTimer = setTimeout(async () => {
 			const seq = ++searchSeq;
 			loading = true;
+			errored = false;
 			try {
 				const res: SearchResponse = await search(q);
 				if (seq !== searchSeq) return;
@@ -50,6 +53,8 @@
 				if (seq !== searchSeq) return;
 				results = [];
 				total = 0;
+				errored = true;
+				open = true;
 			} finally {
 				if (seq === searchSeq) loading = false;
 			}
@@ -182,11 +187,11 @@
 
 	{#if open && results.length > 0}
 		<div
-			class="absolute top-full left-0 z-50 mt-1.5 w-full overflow-hidden rounded-lg border border-border-2 bg-popover"
+			class="absolute top-full left-0 z-50 mt-1.5 w-full max-h-[min(400px,50vh)] overflow-y-auto rounded-lg border border-border-2 bg-popover"
 		>
 			{#each results as result, i}
 				<button
-					class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted {i ===
+					class="flex w-full items-center gap-2 px-3 py-2 max-md:min-h-11 text-left text-sm transition-colors hover:bg-muted {i ===
 					activeIndex
 						? 'bg-muted'
 						: ''}"
@@ -222,6 +227,12 @@
 					{total - results.length} more result{total - results.length === 1 ? "" : "s"}
 				</div>
 			{/if}
+		</div>
+	{:else if open && errored && !loading}
+		<div
+			class="absolute top-full left-0 z-50 mt-1.5 w-full rounded-lg border border-border-2 bg-popover"
+		>
+			<div class="px-3 py-4 text-center text-sm text-muted-foreground">Search failed — try again</div>
 		</div>
 	{:else if open && query.trim().length >= 1 && !loading && results.length === 0}
 		<div

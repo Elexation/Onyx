@@ -70,13 +70,14 @@
 			<form onsubmit={handleSubmit} class="grid gap-4">
 				<div class="grid gap-2">
 					<Label for="username">Admin username</Label>
-					<Input id="username" value="admin" disabled />
+					<Input id="username" value="admin" autocomplete="username" disabled />
 				</div>
 				<div class="grid gap-2">
 					<Label for="password">Password</Label>
 					<Input
 						id="password"
 						type="password"
+						autocomplete="new-password"
 						placeholder="At least 8 characters"
 						bind:value={password}
 						required
@@ -85,7 +86,7 @@
 				</div>
 				<div class="grid gap-2">
 					<Label for="confirm">Confirm password</Label>
-					<Input id="confirm" type="password" bind:value={confirm} required />
+					<Input id="confirm" type="password" autocomplete="new-password" bind:value={confirm} required />
 				</div>
 				{#if error}
 					<p class="text-sm text-destructive">{error}</p>

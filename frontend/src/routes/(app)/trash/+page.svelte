@@ -33,11 +33,13 @@
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
+	let loadError = $state(false);
 	let emptyConfirmOpen = $state(false);
 	let deleteConfirmOpen = $state(false);
 	let bulkDeleteConfirmOpen = $state(false);
 	let deleteTarget = $state<TrashItem | null>(null);
 	let submitting = $state(false);
+	let restoring = $state(false);
 
 	// Snapshot counts at dialog-open time so the title doesn't flicker when
 	// items[]/selected mutate during the await (or the change feed lands
@@ -99,10 +101,8 @@
 		return `purges in ${hours}h`;
 	}
 
-	function handleItemClick(e: MouseEvent, item: TrashItem) {
-		e.stopPropagation();
-		if (e.shiftKey && lastSelected) {
-			e.preventDefault();
+	function applySelection(modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }, item: TrashItem) {
+		if (modifiers.shiftKey && lastSelected) {
 			const start = allIds.indexOf(lastSelected);
 			const end = allIds.indexOf(item.id);
 			if (start !== -1 && end !== -1) {
@@ -113,8 +113,7 @@
 				selected = next;
 				lastSelected = item.id;
 			}
-		} else if (e.ctrlKey || e.metaKey) {
-			e.preventDefault();
+		} else if (modifiers.ctrlKey || modifiers.metaKey) {
 			const next = new Set(selected);
 			if (next.has(item.id)) next.delete(item.id);
 			else next.add(item.id);
@@ -128,6 +127,25 @@
 				selected = new Set([item.id]);
 				lastSelected = item.id;
 			}
+		}
+	}
+
+	function handleItemClick(e: MouseEvent, item: TrashItem) {
+		e.stopPropagation();
+		applySelection(e, item);
+	}
+
+	function handleItemKeydown(e: KeyboardEvent, item: TrashItem) {
+		if (e.key === "Enter" || e.key === " ") {
+			e.preventDefault();
+			e.stopPropagation();
+			applySelection(e, item);
+		}
+	}
+
+	function handlePageKeydown(e: KeyboardEvent) {
+		if (e.key === "Escape" && selected.size > 0 && !restoreConflictOpen && !emptyConfirmOpen && !deleteConfirmOpen && !bulkDeleteConfirmOpen) {
+			clearSelection();
 		}
 	}
 
@@ -148,10 +166,12 @@
 			]);
 			items = trashRes.items;
 			trashCount.set(items.length);
+			loadError = false;
 			if (settings) {
 				purgeAgeHours = parseDurationHours(settings.values["trash.purge_age"] ?? "720h");
 			}
 		} catch {
+			loadError = true;
 			toast.error("Failed to load trash");
 		} finally {
 			loading = false;
@@ -251,7 +271,9 @@
 	// prompts via ConflictDialog if any, then restores each item with the
 	// chosen strategy. Selection mutations are scoped to actually-restored ids.
 	async function restoreItems(ids: string[]) {
-		if (ids.length === 0) return;
+		if (ids.length === 0 || restoring) return;
+		restoring = true;
+		try {
 
 		let conflicts: RestoreConflictItem[] = [];
 		try {
@@ -330,6 +352,8 @@
 			const suffix = parts.length ? ` (${parts.join(" · ")})` : "";
 			toast.success(`Restored ${totalRestored} item${totalRestored !== 1 ? "s" : ""}${suffix}`);
 		}
+
+		} finally { restoring = false; }
 	}
 
 	function confirmDelete(item: TrashItem) {
@@ -414,6 +438,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={handlePageKeydown} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="flex min-h-full flex-col gap-4 p-4" onclick={clearSelection}>
 	<!-- Header (always visible) -->
@@ -448,6 +474,7 @@
 			<Button
 				variant="outline"
 				size="sm"
+				disabled={restoring}
 				onclick={(e) => { e.stopPropagation(); restoreItems([...selected]); }}
 			>
 				<RotateCcwIcon class="size-[15px]" strokeWidth={2} />
@@ -478,6 +505,14 @@
 	<!-- Content -->
 	{#if loading}
 		<LoadingState />
+	{:else if loadError}
+		<EmptyState
+			icon={Trash2Icon}
+			title="Failed to load trash"
+			description="Something went wrong. Try again."
+		>
+			<Button variant="outline" size="sm" onclick={() => { loading = true; load(); }}>Retry</Button>
+		</EmptyState>
 	{:else if !trashEnabled.enabled && items.length === 0}
 		<EmptyState
 			icon={Trash2Icon}
@@ -518,6 +553,7 @@
 									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 grid-cols-[1fr_auto] md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 px-[14px] py-2.5 md:py-2
 										{isSelected ? 'bg-accent-brand-dim' : ''}"
 									onclick={(e) => handleItemClick(e, item)}
+									onkeydown={(e) => handleItemKeydown(e, item)}
 									oncontextmenucapture={(e) => {
 										if (viewport.isMobile) {
 											e.preventDefault();
@@ -566,6 +602,7 @@
 										<Button
 											variant="outline"
 											size="xs"
+											disabled={restoring}
 											onclick={() => restoreItems([item.id])}
 										>
 											Restore
@@ -575,7 +612,7 @@
 							{/snippet}
 						</ContextMenu.Trigger>
 						<ContextMenu.Content class="w-48">
-							<ContextMenu.Item onclick={() => handleContextRestore(item)}>
+							<ContextMenu.Item disabled={restoring} onclick={() => handleContextRestore(item)}>
 								{selected.has(item.id) && selected.size > 1 ? `Restore ${selected.size} items` : "Restore"}
 							</ContextMenu.Item>
 							<ContextMenu.Separator />

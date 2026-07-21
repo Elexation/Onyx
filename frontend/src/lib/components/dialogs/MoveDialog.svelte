@@ -4,6 +4,7 @@
 	import { move, copy, listDirectory } from "$lib/api/files.js";
 	import type { BatchResult } from "$lib/api/files.js";
 	import { toast } from "svelte-sonner";
+	import LoadingState from "$lib/components/LoadingState.svelte";
 	import FolderIcon from "@lucide/svelte/icons/folder";
 	import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -22,6 +23,9 @@
 
 	let destination = $state("");
 	let submitting = $state(false);
+	let treeLoading = $state(false);
+	let treeError = $state(false);
+	let treeContainer = $state<HTMLDivElement | null>(null);
 
 	interface TreeNode {
 		name: string;
@@ -38,11 +42,13 @@
 		if (open) {
 			destination = "";
 			roots = [];
+			treeError = false;
 			loadChildren("");
 		}
 	});
 
 	async function loadChildren(parentPath: string) {
+		if (parentPath === "") treeLoading = true;
 		try {
 			const listing = await listDirectory(parentPath, { dirsOnly: true });
 			const dirs = listing.items
@@ -57,12 +63,15 @@
 				}));
 			if (parentPath === "") {
 				roots = dirs;
+				treeError = false;
 			} else {
 				setChildren(roots, parentPath, dirs);
 				roots = [...roots];
 			}
 		} catch {
-			// silently fail — tree node just won't expand
+			if (parentPath === "") treeError = true;
+		} finally {
+			if (parentPath === "") treeLoading = false;
 		}
 	}
 
@@ -90,6 +99,15 @@
 
 	function selectNode(path: string) {
 		destination = path;
+	}
+
+	function focusSibling(current: EventTarget | null, direction: 1 | -1) {
+		if (!treeContainer || !current) return;
+		const items = Array.from(treeContainer.querySelectorAll<HTMLElement>('[role="treeitem"]:not([aria-disabled="true"]), button'));
+		const idx = items.indexOf(current as HTMLElement);
+		if (idx === -1) return;
+		const next = items[idx + direction];
+		if (next) next.focus();
 	}
 
 	async function submit() {
@@ -143,6 +161,12 @@
 					} else if (e.key === "ArrowLeft") {
 						e.preventDefault();
 						if (hasDisclosure && node.expanded) toggleNode(node);
+					} else if (e.key === "ArrowDown") {
+						e.preventDefault();
+						focusSibling(e.currentTarget, 1);
+					} else if (e.key === "ArrowUp") {
+						e.preventDefault();
+						focusSibling(e.currentTarget, -1);
 					}
 				}}
 			>
@@ -170,16 +194,31 @@
 		<Dialog.Header>
 			<Dialog.Title>{mode === "move" ? "Move" : "Copy"} to…</Dialog.Title>
 		</Dialog.Header>
-		<div class="min-h-[200px] max-h-64 overflow-y-auto rounded-lg border border-border bg-background p-1.5">
-			<button
-				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
-					{destination === '' ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}"
-				onclick={() => selectNode("")}
-			>
-				<FolderIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
-				<span class="font-medium">/</span>
-			</button>
-			{@render treeNodes(roots, 0)}
+		<div bind:this={treeContainer} class="min-h-[200px] max-h-64 overflow-y-auto rounded-lg border border-border bg-background p-1.5">
+			{#if treeLoading && roots.length === 0}
+				<LoadingState compact />
+			{:else if treeError && roots.length === 0}
+				<div class="flex flex-col items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+					<p>Failed to load directories</p>
+					<Button variant="outline" size="sm" onclick={() => loadChildren("")}>Retry</Button>
+				</div>
+			{:else}
+				<button
+					class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
+						{destination === '' ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}"
+					onclick={() => selectNode("")}
+					onkeydown={(e) => {
+						if (e.key === "ArrowDown") {
+							e.preventDefault();
+							focusSibling(e.currentTarget, 1);
+						}
+					}}
+				>
+					<FolderIcon class="size-4 shrink-0 text-accent-brand" strokeWidth={2} />
+					<span class="font-medium">/</span>
+				</button>
+				{@render treeNodes(roots, 0)}
+			{/if}
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>

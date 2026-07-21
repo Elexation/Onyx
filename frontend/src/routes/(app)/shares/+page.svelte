@@ -22,6 +22,7 @@
 
 	let shares = $state<ShareLink[]>([]);
 	let loading = $state(true);
+	let loadError = $state(false);
 	let deleteTarget = $state<ShareLink | null>(null);
 	let deleteConfirmOpen = $state(false);
 	let submitting = $state(false);
@@ -30,7 +31,9 @@
 		try {
 			const res = await listShares();
 			shares = res.shares;
+			loadError = false;
 		} catch {
+			loadError = true;
 			toast.error("Failed to load shares");
 		} finally {
 			loading = false;
@@ -94,6 +97,14 @@
 		</EmptyState>
 	{:else if loading}
 		<LoadingState />
+	{:else if loadError}
+		<EmptyState
+			icon={LinkIcon}
+			title="Failed to load shares"
+			description="Something went wrong. Try again."
+		>
+			<Button variant="outline" size="sm" onclick={() => { loading = true; load(); }}>Retry</Button>
+		</EmptyState>
 	{:else}
 		<ListCard class="flex-col" gridCols="md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_60px]">
 			{#snippet header()}
@@ -122,7 +133,7 @@
 								/>
 								<div class="min-w-0 flex-1">
 									<p class="flex items-center gap-1.5 truncate text-[15px] font-medium md:text-base">
-										<span class="truncate">{basename(share.filePath)}</span>
+										<span class="truncate" title={basename(share.filePath)}>{basename(share.filePath)}</span>
 										{#if share.hasPassword}
 											<LockIcon class="size-3 shrink-0 text-muted-foreground md:hidden" strokeWidth={2.5} />
 										{/if}
@@ -170,13 +181,13 @@
 							<div class="hidden text-center md:block">
 								<Button
 									variant="ghost"
-									size="icon-xs"
+									size="icon-sm"
 									class="cursor-pointer"
 									onclick={() => confirmDelete(share)}
 									title="Revoke link"
 									aria-label="Revoke share link"
 								>
-									<XIcon class="size-3.5" strokeWidth={2} />
+									<XIcon class="size-4" strokeWidth={2} />
 								</Button>
 							</div>
 						</div>

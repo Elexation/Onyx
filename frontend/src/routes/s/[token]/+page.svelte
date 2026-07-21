@@ -228,7 +228,7 @@
 					<div class="flex min-w-0 items-center gap-3">
 						<FolderIcon class="size-5 shrink-0 text-accent-brand" strokeWidth={2} />
 						<div class="min-w-0">
-							<div class="truncate text-[15px] font-medium">{fileName}</div>
+							<div class="truncate text-[15px] font-medium" title={fileName}>{fileName}</div>
 							<div class="text-meta tabular-nums text-muted-foreground">
 								{items.length} item{items.length !== 1 ? "s" : ""} · {formatFileSize(totalSize)}
 							</div>
@@ -264,7 +264,7 @@
 											class="size-6 shrink-0 text-accent-brand md:size-5"
 											strokeWidth={1.4}
 										/>
-										<span class="truncate text-[15px]">{item.name}</span>
+										<span class="truncate text-[15px]" title={item.name}>{item.name}</span>
 									</div>
 									<div class="hidden text-right text-meta tabular-nums md:block">—</div>
 									<div class="hidden md:block"></div>
@@ -281,7 +281,7 @@
 											class="size-6 shrink-0 text-muted-foreground md:size-5"
 											strokeWidth={1.4}
 										/>
-										<span class="truncate text-[15px] font-medium">{item.name}</span>
+										<span class="truncate text-[15px] font-medium" title={item.name}>{item.name}</span>
 										{#if itemExt}
 											<span class="shrink-0 rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground">
 												{itemExt}
@@ -346,7 +346,7 @@
 									<FileIcon {mimeType} class="size-8" strokeWidth={1.2} />
 								</div>
 								<div class="flex min-w-0 flex-col items-center gap-1">
-									<div class="w-full truncate text-[15px] font-medium">{fileName}</div>
+									<div class="w-full truncate text-[15px] font-medium" title={fileName}>{fileName}</div>
 									<div class="flex items-center gap-2 text-meta tabular-nums text-muted-foreground">
 										{#if ext}
 											<span class="rounded-[5px] bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em]">

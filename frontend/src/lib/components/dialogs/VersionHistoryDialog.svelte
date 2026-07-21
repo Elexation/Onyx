@@ -72,12 +72,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-w-lg">
+	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Version history</Dialog.Title>
 			<Dialog.Description>Previous versions of {fileName}</Dialog.Description>
 		</Dialog.Header>
 
+		<div class="min-h-[200px]">
 		{#if loading}
 			<LoadingState compact />
 		{:else if versions.length === 0}
@@ -116,6 +117,7 @@
 				</ul>
 			</div>
 		{/if}
+		</div>
 
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>Close</Button>

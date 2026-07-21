@@ -64,7 +64,7 @@
 		><code>{code}</code></pre>
 		<button
 			onclick={() => copyToClipboard(code, id)}
-			class="absolute right-2 top-2 rounded-md bg-muted px-2 py-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+			class="absolute right-2 top-2 rounded-md bg-muted px-2 py-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
 			aria-label={copiedId === id ? "Copied" : "Copy to clipboard"}
 		>
 			<span class="relative block size-3.5 overflow-hidden">

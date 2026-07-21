@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from "svelte";
 	import * as Dialog from "$lib/components/ui/dialog/index.js";
 	import * as Select from "$lib/components/ui/select/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
@@ -27,7 +28,10 @@
 	let createdToken = $state<PersonalAccessToken | null>(null);
 	let closeEnabled = $state(false);
 	let copied = $state(false);
+	let copiedTimer: ReturnType<typeof setTimeout>;
 	let tokenInput: HTMLInputElement | null = $state(null);
+
+	onDestroy(() => clearTimeout(copiedTimer));
 
 	const scopeOptions: { value: TokenScope; label: string; description: string }[] = [
 		{ value: "read", label: "Read-only", description: "GET requests only — listing, download, preview" },
@@ -63,12 +67,13 @@
 			createdToken = null;
 			closeEnabled = false;
 			copied = false;
+			clearTimeout(copiedTimer);
 		}
 	});
 
 	$effect(() => {
 		if (createdToken && tokenInput) {
-			tokenInput.focus();
+			tokenInput.focus({ preventScroll: true });
 			tokenInput.select();
 			tokenInput.scrollLeft = 0;
 			const timer = setTimeout(() => {
@@ -105,9 +110,24 @@
 
 	async function copyToken() {
 		if (!createdToken?.token) return;
-		await navigator.clipboard.writeText(createdToken.token);
-		copied = true;
-		setTimeout(() => (copied = false), 2000);
+		try {
+			if (navigator.clipboard && window.isSecureContext) {
+				await navigator.clipboard.writeText(createdToken.token);
+			} else if (tokenInput) {
+				tokenInput.focus({ preventScroll: true });
+				tokenInput.select();
+				tokenInput.setSelectionRange(0, createdToken.token.length);
+				const ok = document.execCommand("copy");
+				if (!ok) throw new Error("execCommand copy failed");
+			} else {
+				throw new Error("No clipboard method available");
+			}
+			copied = true;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = false), 2000);
+		} catch {
+			toast.error("Couldn't copy — select the token and copy manually");
+		}
 	}
 
 	function scopeLabel(s: TokenScope): string {
@@ -145,7 +165,7 @@
 						bind:ref={tokenInput}
 						value={createdToken.token ?? ""}
 						readonly
-						class="font-mono text-xs"
+						class="font-mono"
 					/>
 					<Button variant="outline" size="icon" onclick={copyToken} class="shrink-0" aria-label={copied ? "Copied" : "Copy token"}>
 						{#if copied}

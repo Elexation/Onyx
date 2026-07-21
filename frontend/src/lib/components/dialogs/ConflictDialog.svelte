@@ -79,7 +79,7 @@
 			<div class="mt-1 grid grid-cols-2 gap-2.5">
 				<div class="rounded-lg border border-border bg-muted p-3">
 					<div
-						class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+						class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
 					>
 						Existing
 					</div>
@@ -87,7 +87,7 @@
 						<FileIcon name={currentName} class="size-7 shrink-0" />
 						<div class="min-w-0">
 							<div class="truncate text-meta font-medium">{currentName}</div>
-							<div class="font-mono text-[11px] text-muted-foreground">
+							<div class="font-mono text-xs text-muted-foreground">
 								{formatFileSize(current.existing.size)} · {formatDate(current.existing.modTime)}
 							</div>
 						</div>
@@ -95,7 +95,7 @@
 				</div>
 				<div class="rounded-lg border border-border bg-muted p-3">
 					<div
-						class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+						class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
 					>
 						{incomingLabel}
 					</div>
@@ -103,7 +103,7 @@
 						<FileIcon name={currentName} class="size-7 shrink-0" />
 						<div class="min-w-0">
 							<div class="truncate text-meta font-medium">{currentName}</div>
-							<div class="font-mono text-[11px] text-muted-foreground">
+							<div class="font-mono text-xs text-muted-foreground">
 								{formatFileSize(current.incoming.size)} · {formatDate(current.incoming.modTime)}
 							</div>
 						</div>

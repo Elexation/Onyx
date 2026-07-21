@@ -57,6 +57,7 @@
 					<Input
 						id="password"
 						type="password"
+						autocomplete="current-password"
 						placeholder="Enter admin password"
 						bind:value={password}
 						required

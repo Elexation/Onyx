@@ -22,7 +22,7 @@
 	{#if showHamburger}
 		<button
 			type="button"
-			class="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+			class="inline-flex size-9 min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
 			aria-label="Open navigation"
 			aria-expanded={hamburgerOpen}
 			onclick={onHamburgerToggle}

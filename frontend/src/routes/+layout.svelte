@@ -4,16 +4,32 @@
 	import { page } from "$app/state";
 	import { auth, checkStatus } from "$lib/auth.svelte.js";
 	import { onMount } from "svelte";
+	import Button from "$lib/components/ui/button/button.svelte";
 
 	let { children } = $props();
+
+	let bootstrapError = $state(false);
+	let retrying = $state(false);
 
 	onMount(async () => {
 		try {
 			await checkStatus();
 		} catch {
-			auth.checked = true;
+			bootstrapError = true;
 		}
 	});
+
+	async function retryBootstrap() {
+		retrying = true;
+		try {
+			await checkStatus();
+			bootstrapError = false;
+		} catch {
+			bootstrapError = true;
+		} finally {
+			retrying = false;
+		}
+	}
 
 	function resolveRedirect(path: string, a: typeof auth): string | null {
 		if (!a.checked) return null;
@@ -31,6 +47,16 @@
 	});
 </script>
 
-{#if auth.checked && !redirectTarget}
+{#if bootstrapError}
+	<div class="flex h-screen items-center justify-center bg-background">
+		<div class="text-center">
+			<p class="text-lg font-semibold text-foreground">Can't reach the server</p>
+			<p class="mt-2 text-sm text-muted-foreground">Check that Onyx is running and try again.</p>
+			<Button class="mt-4" disabled={retrying} onclick={retryBootstrap}>
+				{retrying ? "Retrying…" : "Retry"}
+			</Button>
+		</div>
+	</div>
+{:else if auth.checked && !redirectTarget}
 	{@render children()}
 {/if}

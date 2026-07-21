@@ -67,7 +67,7 @@
 		{#if docsDrawer.filterQuery}
 			<button
 				onclick={() => (docsDrawer.filterQuery = "")}
-				class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+				class="absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-1.5 text-muted-foreground hover:text-foreground"
 				aria-label="Clear filter"
 			>
 				<XIcon class="size-3.5" />

@@ -22,6 +22,7 @@
 	import { draggable } from "$lib/actions/draggable.js";
 	import { droppable } from "$lib/actions/droppable.js";
 	import { setupMarquee } from "$lib/actions/marquee.js";
+	import ListCard from "./ListCard.svelte";
 
 	let {
 		items,
@@ -170,12 +171,8 @@
 		bind:this={scrollEl}
 		class="relative min-h-0 flex-1 overflow-auto px-[14px] pb-[14px]"
 	>
-		<div class="overflow-hidden rounded-xl border border-border bg-card">
-			<!-- Header: desktop only -->
-			<div
-				bind:this={headerEl}
-				class="hidden border-b border-border bg-list-header text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid {GRID_COLS} md:px-[14px] md:py-2.5"
-			>
+		<ListCard gridCols={GRID_COLS} bind:headerRef={headerEl}>
+			{#snippet header()}
 				{#each columns as col}
 					<button
 						class="inline-flex items-center gap-1 transition-colors hover:text-foreground
@@ -194,7 +191,8 @@
 					</button>
 				{/each}
 				<div></div>
-			</div>
+			{/snippet}
+			{#snippet children()}
 
 			<VirtualList {items} estimateSize={() => (viewport.isMobile ? 64 : 48)} externalScrollEl={scrollEl}>
 				{#snippet row({ item, style })}
@@ -393,7 +391,8 @@
 					{/if}
 				{/snippet}
 			</VirtualList>
-		</div>
+			{/snippet}
+		</ListCard>
 	</div>
 {/if}
 

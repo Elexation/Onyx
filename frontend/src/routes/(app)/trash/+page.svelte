@@ -29,6 +29,7 @@
 	import LoadingState from "$lib/components/LoadingState.svelte";
 	import EmptyState from "$lib/components/EmptyState.svelte";
 	import PageHeader from "$lib/components/PageHeader.svelte";
+	import ListCard from "$lib/components/ListCard.svelte";
 
 	let items = $state<TrashItem[]>([]);
 	let loading = $state(true);
@@ -493,21 +494,18 @@
 		/>
 	{:else}
 		<!-- List -->
-		<div class="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
-			<!-- Table header (desktop) -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				class="hidden border-b border-border bg-list-header text-[11px] font-semibold tracking-wider text-muted-foreground uppercase md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px] md:gap-3 md:px-[14px] md:py-2.5"
-				onclick={(e) => e.stopPropagation()}
-			>
-				<div>Name</div>
-				<div class="text-center">Deleted</div>
-				<div class="text-center">Size</div>
-				<div class="text-center">Purges in</div>
-				<div></div>
-			</div>
-
-			<!-- Rows -->
+		<ListCard class="flex-col" gridCols="md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px]">
+			{#snippet header()}
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div class="contents" onclick={(e) => e.stopPropagation()}>
+					<div>Name</div>
+					<div class="text-center">Deleted</div>
+					<div class="text-center">Size</div>
+					<div class="text-center">Purges in</div>
+					<div></div>
+				</div>
+			{/snippet}
+			{#snippet children()}
 			<div class="flex flex-col">
 				{#each items as item (item.id)}
 					{@const isSelected = selected.has(item.id)}
@@ -588,7 +586,8 @@
 					</ContextMenu.Root>
 				{/each}
 			</div>
-		</div>
+			{/snippet}
+		</ListCard>
 	{/if}
 </div>
 

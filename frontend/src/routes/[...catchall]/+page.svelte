@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from "$app/state";
+	import { Button } from "$lib/components/ui/button";
 
 	const subhead = $derived(
 		page.url.pathname.startsWith("/s/")
@@ -18,5 +19,6 @@
 		</div>
 		<h1 class="mt-6 text-xl font-semibold tracking-[-0.01em]">Page not found</h1>
 		<p class="mt-2 max-w-[45ch] text-sm text-muted-foreground">{subhead}</p>
+		<Button href="/" variant="outline" class="mt-6">Back to home</Button>
 	</div>
 </div>

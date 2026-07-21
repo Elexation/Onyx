@@ -113,11 +113,11 @@
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={onmoveto}>
 				<FolderInputIcon />
-				Move to...
+				Move to folder…
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={oncopyto}>
 				<FolderOutputIcon />
-				Copy to...
+				Copy to folder…
 			</DropdownMenu.Item>
 			{#if sharesEnabled.enabled}
 				<DropdownMenu.Separator />

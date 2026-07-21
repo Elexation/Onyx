@@ -56,7 +56,7 @@
 					title={link.href === "/trash"
 						? "Trash is disabled. Enable it in Settings."
 						: "Sharing is disabled. Enable it in Settings."}
-					class="flex min-h-[38px] cursor-not-allowed items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium text-muted-foreground/40"
+					class="flex min-h-[38px] cursor-not-allowed items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium text-muted-foreground-2"
 				>
 					<link.icon class="size-[17px]" strokeWidth={2} />
 					<span class="flex-1">{link.label}</span>

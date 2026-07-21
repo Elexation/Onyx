@@ -112,11 +112,11 @@
 			<ContextMenu.Separator />
 			<ContextMenu.Item onclick={onmoveto}>
 				<FolderInputIcon />
-				Move to...
+				Move to folder…
 			</ContextMenu.Item>
 			<ContextMenu.Item onclick={oncopyto}>
 				<FolderOutputIcon />
-				Copy to...
+				Copy to folder…
 			</ContextMenu.Item>
 			{#if sharesEnabled.enabled}
 				<ContextMenu.Separator />

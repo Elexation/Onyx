@@ -109,7 +109,7 @@
 		"versions.max_age": { min: 0, max: 8760, label: "Max version age" },
 		"versions.max_file_size": { min: 0, max: 20480, label: "Max file size to version" },
 		"versions.max_storage": { min: 0, max: 20480, label: "Max version storage" },
-		"trash.purge_age": { min: 0, max: 8760, label: "Trash purge age" },
+		"trash.purge_age": { min: 0, max: 365, label: "Trash purge age" },
 		"trash.max_size": { min: 0, max: 102400, label: "Max trash size" },
 		"session.lifetime": { min: 1, max: 720, label: "Session lifetime" },
 		"upload.max_size": { min: 0, max: 102400, label: "Max file size" },
@@ -361,6 +361,29 @@
 		return match ? parseInt(match[1]) : 0;
 	}
 
+	function durationToDays(val: string): number {
+		return Math.round(durationToHours(val) / 24);
+	}
+
+	function validateAndSaveDurationDays(key: string, raw: string) {
+		const n = parseInt(raw);
+		const cap = caps[key];
+		if (!cap) return;
+		if (isNaN(n)) {
+			toast.error(`${cap.label} must be a whole number`);
+			return;
+		}
+		if (n < cap.min) {
+			toast.error(`${cap.label} must be at least ${cap.min} days`);
+			return;
+		}
+		if (n > cap.max) {
+			toast.error(`${cap.label} cannot exceed ${cap.max.toLocaleString()} days`);
+			return;
+		}
+		save(key, `${n * 24}h`);
+	}
+
 	function bytesToMB(val: string): number {
 		const n = parseInt(val);
 		if (isNaN(n) || n === 0) return 0;
@@ -433,7 +456,8 @@
 		if (diff < 60) return "Just now";
 		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
 		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-		return formatAbsoluteDate(unix);
+		const days = Math.floor(diff / 86400);
+		return `${formatAbsoluteDate(unix)} (${days}d ago)`;
 	}
 
 	async function handleChangePassword() {
@@ -593,7 +617,7 @@
 					{/snippet}
 					{@render row(
 						"Maximum versions per file",
-						"How many old versions to keep per file. 0 = unlimited, max 100.",
+						"How many old versions to keep per file. 0 = unlimited, max 100. Default 10.",
 						versionsMaxCount,
 					)}
 
@@ -644,7 +668,7 @@
 					{/snippet}
 					{@render row(
 						"Maximum version storage (MB)",
-						"Total storage budget for versions. Oldest are purged when exceeded. 0 = unlimited, max 20,480 (20 GB).",
+						"Total storage budget for versions. Oldest are purged when exceeded. 0 = unlimited, max 20,480 (20 GB). Default 0 (unlimited).",
 						versionsMaxStorage,
 					)}
 				{/if}
@@ -666,16 +690,16 @@
 						<Input
 							type="number"
 							min="0"
-							max="8760"
+							max="365"
 							step="1"
-							value={durationToHours(settings["trash.purge_age"] ?? "720h")}
-							onchange={(e) => validateAndSaveDuration("trash.purge_age", e.currentTarget.value)}
+							value={durationToDays(settings["trash.purge_age"] ?? "720h")}
+							onchange={(e) => validateAndSaveDurationDays("trash.purge_age", e.currentTarget.value)}
 							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
-						"Auto-purge after (hours)",
-						"Automatically delete trashed items after this long. 0 = never purge, max 8,760 (1 year). Default 720 (30 days).",
+						"Auto-purge after (days)",
+						"Automatically delete trashed items after this many days. 0 = never purge, max 365. Default 30.",
 						trashPurgeAge,
 					)}
 
@@ -692,7 +716,7 @@
 					{/snippet}
 					{@render row(
 						"Maximum trash size (MB)",
-						"Total storage budget for trash. Oldest items are purged when exceeded. 0 = unlimited, max 102,400 (100 GB).",
+						"Total storage budget for trash. Oldest items are purged when exceeded. 0 = unlimited, max 102,400 (100 GB). Default 0 (unlimited).",
 						trashMaxSize,
 					)}
 				{/if}
@@ -725,7 +749,7 @@
 					{/snippet}
 					{@render row(
 						"Maximum file size (MB)",
-						"Reject uploads larger than this. 0 = unlimited, max 102,400 (100 GB).",
+						"Reject uploads larger than this. 0 = unlimited, max 102,400 (100 GB). Default 0 (unlimited).",
 						uploadMaxSize,
 					)}
 				{/if}

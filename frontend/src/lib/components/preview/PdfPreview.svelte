@@ -8,6 +8,7 @@
 	import ZoomInIcon from "@lucide/svelte/icons/zoom-in";
 	import ZoomOutIcon from "@lucide/svelte/icons/zoom-out";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
+	import { Button } from "$lib/components/ui/button/index.js";
 
 	pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -255,15 +256,14 @@
 {:else}
 	<div class="flex flex-1 flex-col overflow-hidden" data-preview-content>
 		<div class="flex items-center gap-1.5 overflow-x-auto border-b border-border bg-background/90 px-3 py-1.5 backdrop-blur-sm">
-			<button
-				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				disabled={currentPage <= 1}
 				onclick={() => { currentPage = Math.max(1, currentPage - 1); scrollToPage(currentPage); }}
 				title="Previous page"
 				aria-label="Previous page"
 			>
 				<ChevronLeftIcon class="size-4" />
-			</button>
+			</Button>
 			<div class="flex shrink-0 items-center gap-1 text-muted-foreground">
 				<input
 					type="number"
@@ -275,49 +275,44 @@
 				/>
 				<span class="font-mono text-[11px]">/ {totalPages}</span>
 			</div>
-			<button
-				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				disabled={currentPage >= totalPages}
 				onclick={() => { currentPage = Math.min(totalPages, currentPage + 1); scrollToPage(currentPage); }}
 				title="Next page"
 				aria-label="Next page"
 			>
 				<ChevronRightIcon class="size-4" />
-			</button>
+			</Button>
 
 			<div class="mx-2 h-4 w-px shrink-0 bg-border"></div>
 
-			<button
-				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				onclick={() => zoom(-0.25)}
 				title="Zoom out"
 				aria-label="Zoom out"
 			>
 				<ZoomOutIcon class="size-4" />
-			</button>
+			</Button>
 			<span class="min-w-[3rem] shrink-0 text-center font-mono text-[11px] text-muted-foreground tabular-nums">
 				{Math.round(scale * 100)}%
 			</span>
-			<button
-				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				onclick={() => zoom(0.25)}
 				title="Zoom in"
 				aria-label="Zoom in"
 			>
 				<ZoomInIcon class="size-4" />
-			</button>
+			</Button>
 
-			<button
-				class="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
-				class:text-foreground={fitToWidth}
-				class:text-muted-foreground={!fitToWidth}
+			<Button variant="ghost" size="icon-touch"
+				class={fitToWidth ? "text-foreground" : "text-muted-foreground"}
 				onclick={toggleFitToWidth}
 				title="Fit to width"
 				aria-label="Fit to width"
 				aria-pressed={fitToWidth}
 			>
 				<MaximizeIcon class="size-4" />
-			</button>
+			</Button>
 		</div>
 
 		<div

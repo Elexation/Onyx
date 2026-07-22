@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getPreviewUrl } from "$lib/preview.js";
 	import type { FileInfo } from "$lib/types";
+	import { Button } from "$lib/components/ui/button/index.js";
 
 	let {
 		file,
@@ -71,21 +72,19 @@
 
 	{#if siblings.length > 1}
 		<div class="flex items-center gap-3 text-muted-foreground" data-preview-content>
-			<button
-				class="flex min-h-[44px] items-center rounded-md px-2.5 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+			<Button variant="ghost" class="min-h-[44px] px-2.5 text-meta"
 				disabled={!hasPrev}
 				onclick={prev}
 			>
 				&larr; Prev
-			</button>
+			</Button>
 			<span class="font-mono text-meta">{currentIndex + 1} / {siblings.length}</span>
-			<button
-				class="flex min-h-[44px] items-center rounded-md px-2.5 text-meta transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+			<Button variant="ghost" class="min-h-[44px] px-2.5 text-meta"
 				disabled={!hasNext}
 				onclick={next}
 			>
 				Next &rarr;
-			</button>
+			</Button>
 		</div>
 	{/if}
 </div>

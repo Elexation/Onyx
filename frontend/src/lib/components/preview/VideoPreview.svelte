@@ -16,6 +16,8 @@
 	import ChevronsLeftIcon from "@lucide/svelte/icons/chevrons-left";
 	import ChevronsRightIcon from "@lucide/svelte/icons/chevrons-right";
 	import { fade } from "svelte/transition";
+	import { Button } from "$lib/components/ui/button/index.js";
+	import "./media-controls.css";
 
 	let { file, onclose, url, streamBase }: { file: FileInfo; onclose: () => void; url?: string; streamBase?: string } = $props();
 
@@ -643,8 +645,7 @@
 		</div>
 
 		<div class="flex items-center gap-2">
-			<button
-				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
+			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
 				onclick={togglePlay}
 				aria-label={playing ? "Pause" : "Play"}
 			>
@@ -653,7 +654,7 @@
 				{:else}
 					<PlayIcon class="size-4" />
 				{/if}
-			</button>
+			</Button>
 
 			<span class="shrink-0 font-mono text-meta text-white/80 tabular-nums">
 				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
@@ -661,9 +662,8 @@
 
 			<div class="flex-1"></div>
 
-			<div class="flex items-center gap-1">
-				<button
-					class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
+			<div class="flex items-center gap-1" style="--slider-track: rgb(255 255 255 / 0.2)">
+				<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
 					onclick={toggleMute}
 					aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
 				>
@@ -672,7 +672,7 @@
 					{:else}
 						<Volume2Icon class="size-4" />
 					{/if}
-				</button>
+				</Button>
 				<input
 					type="range"
 					min="0"
@@ -681,7 +681,7 @@
 					value={muted ? 0 : volume}
 					oninput={handleVolumeInput}
 					aria-label="Volume"
-					class="volume-slider h-1 w-16 cursor-pointer appearance-none rounded-full bg-white/20"
+					class="volume-slider h-11 w-16 cursor-pointer appearance-none rounded-full bg-transparent"
 				/>
 			</div>
 
@@ -689,14 +689,16 @@
 				<DropdownMenu.Root bind:open={qualityMenuOpen}>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
-							<button
+							<Button
 								{...props}
+								variant="ghost"
+								size="icon-touch"
 								aria-label="Quality settings"
-								class="flex min-h-[44px] min-w-[44px] items-center gap-1 rounded text-white/80 transition-colors hover:text-white"
+								class="gap-1 text-white/80 hover:bg-transparent hover:text-white"
 							>
 								<SettingsIcon class="size-4" />
 								<span class="hidden font-mono text-[11px] sm:inline">{qualityButtonLabel}</span>
-							</button>
+							</Button>
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="min-w-36">
@@ -743,50 +745,14 @@
 				</DropdownMenu.Root>
 			{/if}
 
-			<button
-				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-white/80 transition-colors hover:text-white"
+			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
 				onclick={toggleFullscreen}
 				aria-label="Fullscreen"
 			>
 				<MaximizeIcon class="size-4" />
-			</button>
+			</Button>
 		</div>
 	</div>
 	{/if}
 	{/if}
 </div>
-
-<style>
-	.seek-bar:has(input:focus-visible) {
-		outline: 2px solid var(--accent-brand);
-		outline-offset: 2px;
-		border-radius: 9999px;
-	}
-	.seek-bar input:focus-visible {
-		outline: none;
-	}
-	.volume-slider::-webkit-slider-thumb {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: white;
-		cursor: pointer;
-	}
-	.volume-slider::-moz-range-thumb {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: white;
-		border: none;
-		cursor: pointer;
-	}
-	.volume-slider::-moz-range-track {
-		background: transparent;
-	}
-	.volume-slider:focus-visible {
-		outline: 2px solid var(--accent-brand);
-		outline-offset: 2px;
-	}
-</style>

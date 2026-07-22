@@ -5,6 +5,8 @@
 	import PauseIcon from "@lucide/svelte/icons/pause";
 	import Volume2Icon from "@lucide/svelte/icons/volume-2";
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
+	import { Button } from "$lib/components/ui/button/index.js";
+	import "./media-controls.css";
 
 	let { path, url }: { path: string; url?: string } = $props();
 
@@ -148,9 +150,8 @@
 					</div>
 				</div>
 
-				<div class="flex items-center gap-2">
-					<button
-						class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+				<div class="flex items-center gap-2" style="--slider-track: var(--color-muted)">
+					<Button variant="ghost" size="icon-touch" class="text-muted-foreground hover:bg-transparent"
 						onclick={toggleMute}
 						aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
 					>
@@ -159,7 +160,7 @@
 						{:else}
 							<Volume2Icon class="size-4" />
 						{/if}
-					</button>
+					</Button>
 					<input
 						type="range"
 						min="0"
@@ -175,45 +176,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	.seek-bar:has(input:focus-visible) {
-		outline: 2px solid var(--accent-brand);
-		outline-offset: 2px;
-		border-radius: 9999px;
-	}
-	.seek-bar input:focus-visible {
-		outline: none;
-	}
-	.volume-slider::-webkit-slider-thumb {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: oklch(0.985 0 0);
-		cursor: pointer;
-	}
-	.volume-slider::-webkit-slider-runnable-track {
-		height: 4px;
-		border-radius: 9999px;
-		background: var(--color-muted);
-	}
-	.volume-slider::-moz-range-thumb {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: oklch(0.985 0 0);
-		border: none;
-		cursor: pointer;
-	}
-	.volume-slider::-moz-range-track {
-		height: 4px;
-		border-radius: 9999px;
-		background: var(--color-muted);
-	}
-	.volume-slider:focus-visible {
-		outline: 2px solid var(--accent-brand);
-		outline-offset: 2px;
-	}
-</style>

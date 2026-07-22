@@ -5,6 +5,7 @@
 	import SearchBar from "./SearchBar.svelte";
 	import BrandMark from "./BrandMark.svelte";
 	import UserChip from "./UserChip.svelte";
+	import { Button } from "$lib/components/ui/button/index.js";
 
 	interface Props {
 		drawerOpen?: boolean;
@@ -30,14 +31,12 @@
 	showHamburger={!mobileSearchOpen}
 >
 	{#if mobileSearchOpen}
-		<button
-			type="button"
-			class="inline-flex size-9 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+		<Button variant="ghost" size="icon-header" class="text-muted-foreground md:hidden"
 			aria-label="Close search"
 			onclick={closeMobileSearch}
 		>
 			<XIcon class="size-5" strokeWidth={2} />
-		</button>
+		</Button>
 		<div class="flex-1 md:hidden">
 			<SearchBar autoFocusKey={searchFocusKey} onescape={closeMobileSearch} />
 		</div>
@@ -51,15 +50,13 @@
 
 	{#if !mobileSearchOpen}
 		<div class="ml-auto flex items-center gap-1.5">
-			<button
-				type="button"
-				class="inline-flex size-9 min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+			<Button variant="ghost" size="icon-header" class="text-muted-foreground md:hidden"
 				aria-label="Search"
 				title="Search"
 				onclick={openMobileSearch}
 			>
 				<SearchIcon class="size-[18px]" strokeWidth={2} />
-			</button>
+			</Button>
 			<UserChip />
 		</div>
 	{/if}

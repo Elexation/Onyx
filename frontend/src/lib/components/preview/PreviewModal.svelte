@@ -75,22 +75,20 @@
 	<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
 		<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
 		<div class="flex items-center gap-1">
-			<button
-				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				onclick={handleDownload}
 				title="Download"
 				aria-label="Download"
 			>
 				<DownloadIcon class="size-4" />
-			</button>
-			<button
-				class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			</Button>
+			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
 				onclick={closeModal}
 				title="Close"
 				aria-label="Close preview"
 			>
 				<XIcon class="size-4" />
-			</button>
+			</Button>
 		</div>
 	</div>
 

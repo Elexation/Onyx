@@ -1,0 +1,45 @@
+.seek-bar:has(input:focus-visible) {
+	outline: 2px solid var(--accent-brand);
+	outline-offset: 2px;
+	border-radius: 9999px;
+}
+
+.seek-bar input:focus-visible {
+	outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: white;
+	cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-runnable-track {
+	height: 4px;
+	border-radius: 9999px;
+	background: var(--slider-track, transparent);
+}
+
+.volume-slider::-moz-range-thumb {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: white;
+	border: none;
+	cursor: pointer;
+}
+
+.volume-slider::-moz-range-track {
+	height: 4px;
+	border-radius: 9999px;
+	background: var(--slider-track, transparent);
+}
+
+.volume-slider:focus-visible {
+	outline: 2px solid var(--accent-brand);
+	outline-offset: 2px;
+}

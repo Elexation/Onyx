@@ -13,6 +13,7 @@
 	import LinkIcon from "@lucide/svelte/icons/link";
 	import LoadingState from "$lib/components/LoadingState.svelte";
 	import type { ShareLink } from "$lib/types.js";
+	import { copyToClipboard } from "$lib/utils/clipboard.js";
 	import { formatAbsoluteDateTime, formatRemainingLong } from "$lib/utils/format.js";
 
 	let {
@@ -125,17 +126,7 @@
 
 	async function copyUrl() {
 		try {
-			if (navigator.clipboard && window.isSecureContext) {
-				await navigator.clipboard.writeText(shareUrl);
-			} else if (urlInputRef) {
-				urlInputRef.focus();
-				urlInputRef.select();
-				urlInputRef.setSelectionRange(0, shareUrl.length);
-				const ok = document.execCommand("copy");
-				if (!ok) throw new Error("execCommand copy failed");
-			} else {
-				throw new Error("No clipboard method available");
-			}
+			await copyToClipboard(shareUrl, urlInputRef ?? undefined);
 			copied = true;
 			clearTimeout(copiedTimer);
 			copiedTimer = setTimeout(() => (copied = false), 2000);

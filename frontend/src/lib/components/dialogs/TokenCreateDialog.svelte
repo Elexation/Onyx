@@ -12,6 +12,7 @@
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import type { PersonalAccessToken, TokenScope } from "$lib/types.js";
 	import { formatAbsoluteDate } from "$lib/utils/format.js";
+	import { copyToClipboard } from "$lib/utils/clipboard.js";
 
 	let {
 		open = $bindable(false),
@@ -111,17 +112,7 @@
 	async function copyToken() {
 		if (!createdToken?.token) return;
 		try {
-			if (navigator.clipboard && window.isSecureContext) {
-				await navigator.clipboard.writeText(createdToken.token);
-			} else if (tokenInput) {
-				tokenInput.focus({ preventScroll: true });
-				tokenInput.select();
-				tokenInput.setSelectionRange(0, createdToken.token.length);
-				const ok = document.execCommand("copy");
-				if (!ok) throw new Error("execCommand copy failed");
-			} else {
-				throw new Error("No clipboard method available");
-			}
+			await copyToClipboard(createdToken.token, tokenInput ?? undefined);
 			copied = true;
 			clearTimeout(copiedTimer);
 			copiedTimer = setTimeout(() => (copied = false), 2000);

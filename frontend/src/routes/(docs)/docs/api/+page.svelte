@@ -4,26 +4,14 @@
 	import BookOpenIcon from "@lucide/svelte/icons/book-open";
 	import CopyIcon from "@lucide/svelte/icons/copy";
 	import CheckIcon from "@lucide/svelte/icons/check";
+	import { copyToClipboard as copyText } from "$lib/utils/clipboard.js";
 
 	let copiedId = $state<string | null>(null);
 	let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
 	async function copyToClipboard(text: string, id: string) {
 		try {
-			if (navigator.clipboard && window.isSecureContext) {
-				await navigator.clipboard.writeText(text);
-			} else {
-				const ta = document.createElement("textarea");
-				ta.value = text;
-				ta.style.position = "fixed";
-				ta.style.opacity = "0";
-				document.body.appendChild(ta);
-				ta.focus();
-				ta.select();
-				const ok = document.execCommand("copy");
-				document.body.removeChild(ta);
-				if (!ok) throw new Error("copy failed");
-			}
+			await copyText(text);
 			copiedId = id;
 			if (copyTimer) clearTimeout(copyTimer);
 			copyTimer = setTimeout(() => (copiedId = null), 2000);

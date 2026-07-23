@@ -22,6 +22,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	streamRL := middleware.NewStreamRateLimiter(trustedProxy)
 	trashRL := middleware.NewStreamRateLimiter(trustedProxy)
 	uploadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
+	sseCL := middleware.NewConcurrencyLimiter(trustedProxy, 10)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -118,7 +119,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Delete("/{id}", tokenHandler.Delete)
 		})
 
-		r.Get("/changes", changesHandler.Get)
+		r.With(sseCL.Middleware).Get("/changes", changesHandler.Get)
 	})
 
 	// Public share API routes (no auth). All read endpoints sit behind

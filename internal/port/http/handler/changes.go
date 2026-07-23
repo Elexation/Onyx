@@ -1,11 +1,21 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
+)
+
+const (
+	ssePollInterval      = 500 * time.Millisecond
+	sseHeartbeatInterval = 30 * time.Second
+	sseRetryMs           = 5000
 )
 
 type ChangesHandler struct {
@@ -16,23 +26,19 @@ func NewChangesHandler(events *service.EventStore) *ChangesHandler {
 	return &ChangesHandler{events: events}
 }
 
-type changesResponse struct {
-	Cursor int64           `json:"cursor"`
-	Events []service.Event `json:"events"`
-	Behind bool            `json:"behind,omitempty"`
+type sseEvent struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
-// Get handles GET /api/changes?since={cursor}.
+// Get handles GET /api/changes as a Server-Sent Events stream.
 //
-// Bootstrap (no since): returns {cursor: latestID, events: []} so the next
-// poll has an anchor without dumping retained history.
+// Cursor recovery: reads Last-Event-ID header (set automatically by
+// EventSource on reconnect) to resume from the client's last seen event.
+// Without it, bootstraps from the current latest event id so new
+// connections don't replay retained history.
 //
-// Normal (since=N): returns events with id > N (oldest first, capped at
-// MaxEventsPerPoll). When the client cursor is older than the oldest
-// retained event (cursor < minID-1), sets behind: true so the page knows
-// to refetch its slice.
-//
-// PAT exclusion: bearer-authenticated requests are rejected here as
+// PAT exclusion: bearer-authenticated requests are rejected as
 // defense-in-depth; the primary gate is CheckScope's admin block list.
 func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if middleware.IsBearerAuth(r.Context()) {
@@ -40,42 +46,86 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sinceParam := r.URL.Query().Get("since")
-	if sinceParam == "" {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming not supported"})
+		return
+	}
+
+	cursor := int64(-1)
+	if lastID := r.Header.Get("Last-Event-ID"); lastID != "" {
+		if parsed, err := strconv.ParseInt(lastID, 10, 64); err == nil && parsed >= 0 {
+			cursor = parsed
+		}
+	}
+	if cursor < 0 {
 		latest, err := h.events.LatestID()
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read latest event"})
 			return
 		}
-		writeJSON(w, http.StatusOK, changesResponse{Cursor: latest, Events: []service.Event{}})
+		cursor = latest
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	if _, err := fmt.Fprintf(w, "retry: %d\n\n", sseRetryMs); err != nil {
 		return
 	}
+	flusher.Flush()
 
-	cursor, err := strconv.ParseInt(sinceParam, 10, 64)
-	if err != nil || cursor < 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "since must be a non-negative integer"})
-		return
-	}
+	poll := time.NewTicker(ssePollInterval)
+	defer poll.Stop()
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
 
-	events, minID, maxID, err := h.events.Since(cursor, service.MaxEventsPerPoll)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read events"})
-		return
-	}
-	if events == nil {
-		events = []service.Event{}
-	}
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprintf(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-poll.C:
+			events, minID, maxID, err := h.events.Since(cursor, service.MaxEventsPerPoll)
+			if err != nil {
+				slog.Warn("changes: poll failed", "error", err)
+				continue
+			}
 
-	nextCursor := cursor
-	if len(events) > 0 {
-		nextCursor = events[len(events)-1].ID
-	} else if maxID > nextCursor {
-		nextCursor = maxID
-	}
+			needsFlush := false
 
-	resp := changesResponse{Cursor: nextCursor, Events: events}
-	if minID > 0 && cursor < minID-1 {
-		resp.Behind = true
+			if minID > 0 && cursor < minID-1 {
+				if _, err := fmt.Fprintf(w, "data: {\"type\":\"behind\"}\n\n"); err != nil {
+					return
+				}
+				needsFlush = true
+			}
+
+			for _, ev := range events {
+				data, err := json.Marshal(sseEvent{Type: ev.Type, Payload: ev.Payload})
+				if err != nil {
+					continue
+				}
+				if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", ev.ID, data); err != nil {
+					return
+				}
+				cursor = ev.ID
+				needsFlush = true
+			}
+
+			if len(events) == 0 && maxID > cursor {
+				cursor = maxID
+			}
+
+			if needsFlush {
+				flusher.Flush()
+			}
+		}
 	}
-	writeJSON(w, http.StatusOK, resp)
 }

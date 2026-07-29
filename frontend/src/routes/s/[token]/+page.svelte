@@ -98,7 +98,10 @@
 		const a = document.createElement("a");
 		a.href = downloadUrl(item.path);
 		a.download = item.name;
+		a.target = "_blank";
+		document.body.appendChild(a);
 		a.click();
+		document.body.removeChild(a);
 	}
 
 	// Navigation generation: bumped whenever the token-driven $effect fires;

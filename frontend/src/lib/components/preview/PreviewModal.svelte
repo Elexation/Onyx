@@ -57,7 +57,10 @@
 		const a = document.createElement("a");
 		a.href = downloadUrl ?? getDownloadUrl(file.path);
 		a.download = file.name;
+		a.target = "_blank";
+		document.body.appendChild(a);
 		a.click();
+		document.body.removeChild(a);
 	}
 
 	$effect(() => {

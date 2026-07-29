@@ -62,7 +62,10 @@
 		const a = document.createElement("a");
 		a.href = getDownloadUrl(item.path);
 		a.download = item.name;
+		a.target = "_blank";
+		document.body.appendChild(a);
 		a.click();
+		document.body.removeChild(a);
 	}
 </script>
 

@@ -248,7 +248,10 @@
 			const a = document.createElement("a");
 			a.href = getDownloadUrl(item.path);
 			a.download = item.name;
+			a.target = "_blank";
+			document.body.appendChild(a);
 			a.click();
+			document.body.removeChild(a);
 		}
 	}
 
@@ -262,7 +265,10 @@
 				const a = document.createElement("a");
 				a.href = getDownloadUrl(item.path);
 				a.download = item.name;
+				a.target = "_blank";
+				document.body.appendChild(a);
 				a.click();
+				document.body.removeChild(a);
 				return;
 			}
 		}
@@ -270,7 +276,10 @@
 		const a = document.createElement("a");
 		a.href = getZipDownloadUrl(paths);
 		a.download = "";
+		a.target = "_blank";
+		document.body.appendChild(a);
 		a.click();
+		document.body.removeChild(a);
 	}
 
 	function handleRename(item: FileInfo) {

@@ -4,6 +4,7 @@
 	import { getDownloadUrl } from "$lib/api/files.js";
 	import { formatFileSize } from "$lib/utils/format.js";
 	import { Button } from "$lib/components/ui/button/index.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 	import XIcon from "@lucide/svelte/icons/x";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 
@@ -67,32 +68,34 @@
 <dialog
 	bind:this={dialogEl}
 	aria-labelledby="preview-modal-title"
-	class="fixed inset-0 z-50 m-0 flex h-full max-h-full w-full max-w-full flex-col border-none bg-black/80 p-0"
+	class="fixed inset-0 z-50 m-0 flex h-full max-h-full w-full max-w-full flex-col overflow-hidden border-none bg-black/80 p-0"
 	oncancel={(e) => { e.preventDefault(); closeModal(); }}
 	onclick={handleBackdropClick}
 >
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
-		<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
-		<div class="flex items-center gap-1">
-			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
-				onclick={handleDownload}
-				title="Download"
-				aria-label="Download"
-			>
-				<DownloadIcon class="size-4" />
-			</Button>
-			<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
-				onclick={closeModal}
-				title="Close"
-				aria-label="Close preview"
-			>
-				<XIcon class="size-4" />
-			</Button>
+	{#if type !== "pdf"}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
+			<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
+			<div class="flex items-center gap-1">
+				<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
+					onclick={handleDownload}
+					title="Download"
+					aria-label="Download"
+				>
+					<DownloadIcon class="size-4" />
+				</Button>
+				<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
+					onclick={closeModal}
+					title="Close"
+					aria-label="Close preview"
+				>
+					<XIcon class="size-4" />
+				</Button>
+			</div>
 		</div>
-	</div>
+	{/if}
 
-	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video"}>
+	<div class="flex min-h-0 flex-1 flex-col" class:p-4={type !== "video" && type !== "pdf"}>
 		{#snippet previewLoading()}
 			<div class="flex flex-1 items-center justify-center text-muted-foreground">
 				<p class="text-[15px]">Loading…</p>
@@ -167,7 +170,7 @@
 				{@render previewLoading()}
 			{:then mod}
 				{@const PdfPreview = mod.default}
-				<PdfPreview path={file.path} {url} />
+				<PdfPreview path={file.path} {url} name={file.name} ondownload={handleDownload} onclose={closeModal} />
 			{:catch}
 				{@render previewError()}
 			{/await}

@@ -595,7 +595,7 @@
 
 		{#if keySeekOffset !== 0}
 			<div
-				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 font-mono text-meta text-white backdrop-blur-sm"
+				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 text-meta tabular-nums text-white backdrop-blur-sm"
 				transition:fade={{ duration: 120 }}
 			>
 				{#if keySeekOffset < 0}
@@ -656,7 +656,7 @@
 				{/if}
 			</Button>
 
-			<span class="shrink-0 font-mono text-meta text-white/80 tabular-nums">
+			<span class="shrink-0 text-meta tabular-nums text-white/80">
 				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
 			</span>
 

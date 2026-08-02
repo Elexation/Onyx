@@ -131,7 +131,7 @@
 
 {#if uploadState.hasItems}
 	<div
-		class="fixed right-4 bottom-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card"
+		class="fixed right-4 bottom-[84px] z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card md:bottom-4"
 	>
 		<!-- Header -->
 		<button

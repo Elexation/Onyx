@@ -220,7 +220,7 @@
 	function scrollToPage(pageNum: number) {
 		renderPage(pageNum);
 		const ref = pageRefs[pageNum - 1];
-		if (ref) ref.scrollIntoView({ behavior: "smooth", block: "start" });
+		if (ref) ref.scrollIntoView({ behavior: "instant", block: "start" });
 	}
 
 	function handlePageInput(e: Event) {
@@ -294,14 +294,29 @@
 		applyZoom();
 	}
 
+	let wheelAccum = 0;
+
 	function handleWheel(e: WheelEvent) {
 		if (!e.ctrlKey) return;
 		e.preventDefault();
+
+		wheelAccum += e.deltaY;
+		if (Math.abs(wheelAccum) < 50) return;
+
+		const direction: 1 | -1 = wheelAccum > 0 ? -1 : 1;
+		wheelAccum = 0;
 		fitToWidth = false;
 
 		const prevScale = scale;
-		const factor = 1 - e.deltaY * 0.01;
-		scale = Math.max(baseScale * 0.5, Math.min(baseScale * 5, scale * factor));
+		const percent = Math.round((scale / baseScale) * 100);
+		const step = 25;
+		const next =
+			direction > 0
+				? Math.ceil((percent + 1) / step) * step
+				: Math.floor((percent - 1) / step) * step;
+		scale = Math.max(baseScale * 0.5, Math.min(baseScale * 5, (baseScale * next) / 100));
+
+		if (scale === prevScale) return;
 		const ratio = scale / prevScale;
 
 		applyZoom();

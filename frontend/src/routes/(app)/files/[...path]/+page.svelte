@@ -451,7 +451,22 @@
 		};
 
 		const offFile = changes.on("file.changed", (p) => {
-			if (isInDir(p.parentPath)) scheduleRefetch();
+			if (isInDir(p.parentPath)) {
+				scheduleRefetch();
+				return;
+			}
+			const affected = (p.kind === "move" || p.kind === "rename") ? p.oldPath : p.path;
+			if (affected && (affected === dir || dir.startsWith(affected + "/"))) {
+				if (p.kind === "delete") {
+					const parent = affected.slice(0, affected.lastIndexOf("/")) || "/";
+					toast.info("This folder was deleted");
+					goto(parent === "/" ? "/files" : `/files${parent}`);
+				} else if (p.kind === "move" || p.kind === "rename") {
+					const newDir = p.path + dir.slice(affected.length);
+					toast.info(p.kind === "rename" ? "This folder was renamed" : "This folder was moved");
+					goto(newDir === "/" ? "/files" : `/files${newDir}`);
+				}
+			}
 		});
 		const offThumb = changes.on("thumb.ready", (p) => {
 			const parent = p.path.substring(0, p.path.lastIndexOf("/")) || "/";

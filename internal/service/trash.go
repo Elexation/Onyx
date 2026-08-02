@@ -212,6 +212,11 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	s.cascadeShareDelete(item.OriginalPath, info.IsDir())
 
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "add", ID: id})
+	recordIf(s.events, "file.changed", FileChangedPayload{
+		Path:       item.OriginalPath,
+		ParentPath: parentOf(item.OriginalPath),
+		Kind:       "delete",
+	})
 	return MoveToTrashResult{Path: filePath, Success: true}
 }
 

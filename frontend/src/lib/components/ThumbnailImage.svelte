@@ -4,8 +4,8 @@
 	const CACHE_LIMIT = 200;
 	const cache = new Map<string, CacheEntry>();
 
-	function cacheKey(path: string, size: string) {
-		return size + "\0" + path;
+	function cacheKey(path: string, size: string, modTime?: number) {
+		return size + "\0" + path + "\0" + (modTime ?? 0);
 	}
 
 	function cacheSet(key: string, entry: CacheEntry) {
@@ -27,11 +27,13 @@
 	let {
 		path,
 		size = "medium",
+		modTime,
 		class: className = "",
 		children,
 	}: {
 		path: string;
 		size?: "small" | "medium" | "large";
+		modTime?: number;
 		class?: string;
 		children: Snippet;
 	} = $props();
@@ -43,7 +45,7 @@
 	let ownedUrl: string | null = null;
 	let imgRetried = false;
 
-	const key = $derived(cacheKey(path, size));
+	const key = $derived(cacheKey(path, size, modTime));
 
 	function clearOwnedUrl() {
 		if (ownedUrl) {
@@ -97,10 +99,8 @@
 		const maxAttempts = 3;
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
-				const res = await fetch(
-					`/api/thumbs${encodeFilePath(path)}?size=${size}`,
-					{ credentials: "same-origin" },
-				);
+				const thumbUrl = `/api/thumbs${encodeFilePath(path)}?size=${size}${modTime ? `&v=${modTime}` : ""}`;
+				const res = await fetch(thumbUrl, { credentials: "same-origin" });
 				if (res.status === 200) {
 					const blob = await res.blob();
 					const objectUrl = URL.createObjectURL(blob);

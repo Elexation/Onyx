@@ -187,6 +187,7 @@
 						{:else if hasThumbnail}
 							<ThumbnailImage
 								path={item.path}
+								modTime={item.modTime}
 								size="large"
 								class="flex h-full w-full items-center justify-center"
 							>

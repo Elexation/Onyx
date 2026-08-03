@@ -296,6 +296,7 @@
 										{:else if !file.isDir && (file.mimeType?.startsWith("image/") || file.mimeType?.startsWith("video/"))}
 											<ThumbnailImage
 												path={file.path}
+												modTime={file.modTime}
 												size="small"
 												class="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded md:size-6"
 											>

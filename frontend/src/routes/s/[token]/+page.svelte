@@ -302,7 +302,7 @@
 											aria-label="Download {item.name}"
 											onclick={(e) => { e.stopPropagation(); downloadItem(item); }}
 											onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); downloadItem(item); } }}
-											class="cursor-pointer rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+											class="cursor-pointer rounded-md p-1.5 text-muted-foreground outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
 										>
 											<DownloadIcon class="size-4" />
 										</span>

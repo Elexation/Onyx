@@ -65,7 +65,7 @@
 				<a
 					href={link.href}
 					onclick={() => onNavigate?.()}
-					class="flex min-h-[38px] items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium transition-colors hover:bg-muted {active
+					class="flex min-h-[38px] items-center gap-[10px] rounded-lg px-3 py-[9px] text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 {active
 						? 'bg-muted text-foreground'
 						: 'text-foreground-dim'}"
 				>

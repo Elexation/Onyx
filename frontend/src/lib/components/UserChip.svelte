@@ -34,7 +34,7 @@
 
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
-		class="hidden items-center gap-2 rounded-full border border-transparent py-1 pr-2 pl-1 text-meta font-medium text-foreground transition-colors hover:bg-muted data-[state=open]:bg-muted lg:flex"
+		class="hidden items-center gap-2 rounded-full border border-transparent py-1 pr-2 pl-1 text-meta font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-muted lg:flex"
 		aria-label="Signed in as {name}"
 	>
 		<span
@@ -53,7 +53,7 @@
 
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
-		class="inline-flex size-9 items-center justify-center rounded-full bg-accent-brand-dim font-mono text-meta font-semibold text-accent-brand transition-colors hover:bg-accent-brand/20 data-[state=open]:bg-accent-brand/20 lg:hidden"
+		class="inline-flex size-9 items-center justify-center rounded-full bg-accent-brand-dim font-mono text-meta font-semibold text-accent-brand outline-none transition-colors hover:bg-accent-brand/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent-brand/20 lg:hidden"
 		aria-label="Signed in as {name}"
 	>
 		{initial}

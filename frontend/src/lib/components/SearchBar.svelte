@@ -181,7 +181,7 @@
 			}}
 			type="text"
 			placeholder="Search files, folders, contents…"
-			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground-2 focus:outline-none"
+			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground-2 outline-none"
 		/>
 	</div>
 

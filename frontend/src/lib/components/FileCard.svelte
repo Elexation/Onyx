@@ -89,7 +89,7 @@
 
 {#if item.name === ".."}
 	<div
-		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 transition-colors select-none hover:border-border-2 active:bg-muted"
+		class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-border bg-card p-2.5 transition-colors select-none outline-none hover:border-border-2 active:bg-muted focus-visible:border-border-2"
 		onclick={(e) => {
 			if (viewport.isMobile) {
 				e.stopPropagation();
@@ -149,10 +149,10 @@
 		{#snippet trigger(triggerProps)}
 			<div
 				{...triggerProps}
-				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none
+				class="relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-colors select-none outline-none
 					{isSelected
-					? 'border-accent-brand bg-accent-brand-dim'
-					: 'border-border bg-card hover:border-border-2 active:bg-muted'}
+					? 'border-accent-brand bg-accent-brand-dim focus-visible:ring-1 focus-visible:ring-accent-brand'
+					: 'border-border bg-card hover:border-border-2 active:bg-muted focus-visible:border-border-2'}
 					{isCut ? 'opacity-50' : ''}"
 				onclick={handleClick}
 				oncontextmenucapture={(e) => {

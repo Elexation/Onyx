@@ -139,8 +139,8 @@
 		{@const hasDisclosure = node.loaded ? node.children.length > 0 : node.hasSubDirs}
 		<div role="none">
 			<div
-				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
-					{destination === node.path ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}
+				class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] outline-none transition-colors
+					{destination === node.path ? 'bg-accent-brand-dim text-foreground focus-visible:ring-1 focus-visible:ring-accent-brand' : 'hover:bg-muted focus-visible:bg-muted'}
 					{isSource ? 'pointer-events-none opacity-40' : 'cursor-pointer'}"
 				style="padding-left: {depth * 20 + 8}px"
 				role="treeitem"
@@ -204,8 +204,8 @@
 				</div>
 			{:else}
 				<button
-					class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] transition-colors
-						{destination === '' ? 'bg-accent-brand-dim text-foreground' : 'hover:bg-muted'}"
+					class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[15px] outline-none transition-colors
+						{destination === '' ? 'bg-accent-brand-dim text-foreground focus-visible:ring-1 focus-visible:ring-accent-brand' : 'hover:bg-muted focus-visible:bg-muted'}"
 					onclick={() => selectNode("")}
 					onkeydown={(e) => {
 						if (e.key === "ArrowDown") {

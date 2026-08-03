@@ -65,6 +65,7 @@
 
 	$effect(() => {
 		dialogEl?.showModal();
+		(document.activeElement as HTMLElement)?.blur();
 	});
 </script>
 

@@ -199,7 +199,7 @@
 					{@const file = item as FileInfo}
 					{#if file.name === ".."}
 						<div
-							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 hover:bg-muted active:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
+							class="grid cursor-pointer items-center border-b border-border text-muted-foreground transition-colors select-none last:border-b-0 outline-none hover:bg-muted active:bg-muted focus-visible:bg-muted {GRID_COLS} px-[14px] py-3.5 md:py-[11px]"
 							{style}
 							onclick={(e) => {
 								if (viewport.isMobile) {
@@ -262,8 +262,8 @@
 							{#snippet trigger(triggerProps)}
 								<div
 									{...triggerProps}
-									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
-										{isSelected ? 'bg-accent-brand-dim' : 'hover:bg-muted active:bg-muted'}
+									class="grid cursor-pointer items-center border-b border-border transition-colors select-none last:border-b-0 outline-none {GRID_COLS} px-[14px] py-3.5 md:py-[11px]
+										{isSelected ? 'bg-accent-brand-dim focus-visible:ring-1 focus-visible:ring-accent-brand' : 'hover:bg-muted active:bg-muted focus-visible:bg-muted'}
 										{isCut ? 'opacity-50' : ''}"
 									{style}
 									onclick={(e) => handleRowClick(e, file)}

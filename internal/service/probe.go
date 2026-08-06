@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -53,7 +52,11 @@ type ProbeService struct {
 // NewProbeService wires the service. ffprobe is probed here; if missing,
 // HasFFprobe returns false and Probe returns an error.
 func NewProbeService(s *storage.LocalStorage, dataDir string) (*ProbeService, error) {
-	realRoot, err := filepath.EvalSymlinks(dataDir)
+	absDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(absDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data dir: %w", err)
 	}
@@ -64,7 +67,7 @@ func NewProbeService(s *storage.LocalStorage, dataDir string) (*ProbeService, er
 	return &ProbeService{
 		storage:  s,
 		ffmpeg:   media.Detect(),
-		dataDir:  dataDir,
+		dataDir:  absDir,
 		realRoot: realRoot,
 		sema:     make(chan struct{}, limit),
 		stopCh:   make(chan struct{}),
@@ -176,8 +179,8 @@ func (ps *ProbeService) resolveSafePath(relPath string) (string, error) {
 		return "", err
 	}
 	clean := strings.TrimLeft(relPath, "/")
-	clean = path.Clean(clean)
-	if clean == ".." || strings.HasPrefix(clean, "../") || clean == "." {
+	clean = filepath.Clean(filepath.FromSlash(clean))
+	if clean == ".." || strings.HasPrefix(clean, string(filepath.Separator)+"..") || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == "." {
 		return "", errors.New("invalid path")
 	}
 	osPath := filepath.Join(ps.dataDir, filepath.FromSlash(clean))

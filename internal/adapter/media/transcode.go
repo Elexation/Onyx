@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"fmt"
+	"math"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -67,6 +68,7 @@ type HLSOptions struct {
 	Encoder      Encoder
 	Renditions   []Rendition
 	HasAudio     bool
+	Framerate    float64
 }
 
 // BuildHLSCommand returns an unstarted exec.Cmd configured to produce
@@ -123,10 +125,23 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 	// frame; other encoders stay CPU-side all the way.
 	args = append(args, "-filter_complex", buildFilterComplex(opts.Renditions, encoder))
 
+	// GOP size: force encoder keyframes at segment boundaries so the HLS
+	// muxer cuts where expected. Without this, x264's default keyint (250
+	// frames) produces ~8.3s segments at 29.97fps while the playlist says
+	// 6s — causing hls.js to apply a growing timestampOffset that desyncs
+	// native vs transcoded playback.
+	gopFrames := HLSSegmentSeconds * 30
+	if opts.Framerate > 0 {
+		gopFrames = int(math.Round(opts.Framerate * float64(HLSSegmentSeconds)))
+	}
+	if gopFrames <= 0 {
+		gopFrames = HLSSegmentSeconds * 30
+	}
+
 	// Per-rendition video mapping + encoder flags.
 	for i, r := range opts.Renditions {
 		args = append(args, "-map", fmt.Sprintf("[v%dout]", i))
-		args = append(args, buildVideoEncoderArgs(encoder, i, r)...)
+		args = append(args, buildVideoEncoderArgs(encoder, i, r, gopFrames)...)
 	}
 
 	// Per-rendition audio mapping — each variant gets its own
@@ -146,6 +161,11 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 
 	args = append(args,
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", HLSSegmentSeconds),
+	)
+	if opts.StartSegment > 0 {
+		args = append(args, "-output_ts_offset", strconv.Itoa(opts.StartSegment*HLSSegmentSeconds))
+	}
+	args = append(args,
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(HLSSegmentSeconds),
 		"-hls_segment_type", "fmp4",
@@ -200,8 +220,9 @@ func buildFilterComplex(rungs []Rendition, enc Encoder) string {
 // for the given encoder and rung index. All encoders use VBR with a
 // per-rung target bitrate + maxrate + bufsize so the ABR ladder has
 // predictable bandwidth rungs regardless of which encoder is selected.
-func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
+func buildVideoEncoderArgs(enc Encoder, i int, r Rendition, gopFrames int) []string {
 	sfx := fmt.Sprintf(":v:%d", i)
+	g := strconv.Itoa(gopFrames)
 	switch enc {
 	case EncoderNVENC:
 		return []string{
@@ -209,6 +230,7 @@ func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
 			"-preset" + sfx, "p4",
 			"-tune" + sfx, "hq",
 			"-rc" + sfx, "vbr",
+			"-g" + sfx, g,
 			"-b" + sfx, r.VBitrate,
 			"-maxrate" + sfx, r.MaxRate,
 			"-bufsize" + sfx, r.BufSize,
@@ -218,6 +240,7 @@ func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
 		return []string{
 			"-c" + sfx, string(enc),
 			"-preset" + sfx, "medium",
+			"-g" + sfx, g,
 			"-b" + sfx, r.VBitrate,
 			"-maxrate" + sfx, r.MaxRate,
 			"-bufsize" + sfx, r.BufSize,
@@ -226,6 +249,7 @@ func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
 	case EncoderVAAPI:
 		return []string{
 			"-c" + sfx, string(enc),
+			"-g" + sfx, g,
 			"-b" + sfx, r.VBitrate,
 			"-maxrate" + sfx, r.MaxRate,
 			"-bufsize" + sfx, r.BufSize,
@@ -236,6 +260,7 @@ func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
 			"-c" + sfx, string(enc),
 			"-quality" + sfx, "quality",
 			"-rc" + sfx, "vbr_peak",
+			"-g" + sfx, g,
 			"-b" + sfx, r.VBitrate,
 			"-maxrate" + sfx, r.MaxRate,
 			"-bufsize" + sfx, r.BufSize,
@@ -245,6 +270,7 @@ func buildVideoEncoderArgs(enc Encoder, i int, r Rendition) []string {
 		return []string{
 			"-c" + sfx, string(EncoderSoftware),
 			"-preset" + sfx, "fast",
+			"-g" + sfx, g,
 			"-b" + sfx, r.VBitrate,
 			"-maxrate" + sfx, r.MaxRate,
 			"-bufsize" + sfx, r.BufSize,

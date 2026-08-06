@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -69,6 +68,7 @@ type TranscodeSession struct {
 	dir        string // absolute path to .cache/transcode/{hash}
 	srcPath    string // absolute resolved source path
 	duration   float64
+	framerate  float64
 	renditions []media.Rendition
 	hasAudio   bool
 
@@ -290,7 +290,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relP
 		return nil, fmt.Errorf("write master: %w", err)
 	}
 	for v, r := range rungs {
-		if err := writeVariantPlaylist(sessionDir, info.Duration, relPath, v, r); err != nil {
+		if err := writeVariantPlaylist(sessionDir, info.Duration, info.Framerate, relPath, v, r); err != nil {
 			return nil, fmt.Errorf("write variant playlist: %w", err)
 		}
 	}
@@ -300,6 +300,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relP
 		dir:        sessionDir,
 		srcPath:    absPath,
 		duration:   info.Duration,
+		framerate:  info.Framerate,
 		renditions: rungs,
 		hasAudio:   info.HasAudio,
 	}
@@ -529,6 +530,7 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 		Encoder:      ts.encoder,
 		Renditions:   s.renditions,
 		HasAudio:     s.hasAudio,
+		Framerate:    s.framerate,
 	})
 	if err != nil {
 		cancel()
@@ -629,8 +631,8 @@ func (ts *TranscodeService) resolveSafePath(relPath string) (string, error) {
 		return "", err
 	}
 	clean := strings.TrimLeft(relPath, "/")
-	clean = path.Clean(clean)
-	if clean == ".." || strings.HasPrefix(clean, "../") || clean == "." {
+	clean = filepath.Clean(filepath.FromSlash(clean))
+	if clean == ".." || strings.HasPrefix(clean, string(filepath.Separator)+"..") || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == "." {
 		return "", errors.New("invalid path")
 	}
 	osPath := filepath.Join(ts.dataDir, filepath.FromSlash(clean))
@@ -695,29 +697,49 @@ func writeMasterPlaylist(dir string, info *media.ProbeInfo, relPath string, rung
 // writeVariantPlaylist writes stream_{v}/playlist.m3u8 — a full VOD
 // playlist for variant v listing every segment up to the probed
 // duration. Init and segment URIs are absolute server paths.
-func writeVariantPlaylist(dir string, duration float64, relPath string, variant int, _ media.Rendition) error {
+func writeVariantPlaylist(dir string, duration, framerate float64, relPath string, variant int, _ media.Rendition) error {
 	variantDir := filepath.Join(dir, media.VariantDir(variant))
 	if err := os.MkdirAll(variantDir, 0o755); err != nil {
 		return err
 	}
-	segCount := int(math.Ceil(duration / float64(media.HLSSegmentSeconds)))
+
+	// Compute accurate segment duration from the encoder GOP. The encoder
+	// places keyframes every gopFrames frames, so the actual segment
+	// duration depends on the source framerate rather than being exactly
+	// HLSSegmentSeconds.
+	gopFrames := media.HLSSegmentSeconds * 30
+	if framerate > 0 {
+		gopFrames = int(math.Round(framerate * float64(media.HLSSegmentSeconds)))
+	}
+	if gopFrames <= 0 {
+		gopFrames = media.HLSSegmentSeconds * 30
+	}
+	actualSegDur := float64(media.HLSSegmentSeconds)
+	if framerate > 0 {
+		actualSegDur = float64(gopFrames) / framerate
+	}
+	if actualSegDur <= 0 {
+		actualSegDur = float64(media.HLSSegmentSeconds)
+	}
+
+	segCount := int(math.Ceil(duration / actualSegDur))
 	initURL := buildStreamURL(fmt.Sprintf("/api/stream/init/%d", variant), relPath)
 	var b strings.Builder
 	b.WriteString("#EXTM3U\n")
 	b.WriteString("#EXT-X-VERSION:7\n")
-	b.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", media.HLSSegmentSeconds))
+	b.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", int(math.Ceil(actualSegDur))))
 	b.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
 	b.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
 	b.WriteString(fmt.Sprintf("#EXT-X-MAP:URI=\"%s\"\n", initURL))
 	for i := 0; i < segCount; i++ {
-		segDuration := float64(media.HLSSegmentSeconds)
+		segDuration := actualSegDur
 		if i == segCount-1 {
-			remain := duration - float64(i*media.HLSSegmentSeconds)
+			remain := duration - float64(i)*actualSegDur
 			if remain > 0 && remain < segDuration {
 				segDuration = remain
 			}
 		}
-		b.WriteString(fmt.Sprintf("#EXTINF:%.3f,\n", segDuration))
+		b.WriteString(fmt.Sprintf("#EXTINF:%.6f,\n", segDuration))
 		b.WriteString(buildStreamURL(fmt.Sprintf("/api/stream/segment/%d/%d", variant, i), relPath))
 		b.WriteString("\n")
 	}

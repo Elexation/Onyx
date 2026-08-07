@@ -15,11 +15,13 @@
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import ChevronsLeftIcon from "@lucide/svelte/icons/chevrons-left";
 	import ChevronsRightIcon from "@lucide/svelte/icons/chevrons-right";
+	import DownloadIcon from "@lucide/svelte/icons/download";
+	import XIcon from "@lucide/svelte/icons/x";
 	import { fade } from "svelte/transition";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import "./media-controls.css";
 
-	let { file, onclose, url, streamBase }: { file: FileInfo; onclose: () => void; url?: string; streamBase?: string } = $props();
+	let { file, onclose, ondownload, url, streamBase, portalTarget }: { file: FileInfo; onclose: () => void; ondownload?: () => void; url?: string; streamBase?: string; portalTarget?: HTMLElement | null } = $props();
 
 	type PlaybackMode = "loading" | "native" | "transcode-required" | "no-video";
 
@@ -42,6 +44,12 @@
 	// (pointerup / Enter / blur), one write per gesture.
 	let scrubbing = $state(false);
 	let scrubTime = $state(0);
+	let seekBarHovered = $state(false);
+	let hoverPercent = $state(0);
+	let playPauseAction = $state<'play' | 'pause' | null>(null);
+	let playPauseKey = $state(0);
+	let playPauseTimer: ReturnType<typeof setTimeout> | null = null;
+	let buffering = $state(false);
 
 	// Arrow-key seek accumulates into a settle timer so held/mashed
 	// presses produce one currentTime write, not one per keydown. Held
@@ -127,11 +135,64 @@
 	});
 	const seekPercent = $derived(duration > 0 ? (displayTime / duration) * 100 : 0);
 	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
+	const hoverTime = $derived(duration > 0 ? (hoverPercent / 100) * duration : 0);
 
 	// Force the bottom bar visible while any scrub is in flight; the
 	// normal 3s auto-hide resumes once the gesture settles.
 	let controlsFocused = $state(false);
 	let qualityMenuOpen = $state(false);
+	let cogPressed = $state(false);
+	let cogHovered = $state(false);
+
+	const cogStyle = $derived.by(() => {
+		if (cogPressed) return 'background-color: rgb(255 255 255 / 0.2); color: white';
+		if (cogHovered) return 'background-color: rgb(255 255 255 / 0.1); color: white';
+		return undefined;
+	});
+
+	function pressTrack(node: HTMLElement) {
+		const getBtn = () => node.querySelector('button');
+
+		const isOverBtn = (x: number, y: number) => {
+			const b = getBtn();
+			if (!b) return false;
+			const r = b.getBoundingClientRect();
+			return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+		};
+
+		const onDown = (e: PointerEvent) => {
+			if (!isOverBtn(e.clientX, e.clientY)) return;
+			cogPressed = true;
+		};
+		const onUp = (e: PointerEvent) => {
+			if (cogPressed && qualityMenuOpen && isOverBtn(e.clientX, e.clientY)) {
+				qualityMenuOpen = false;
+			}
+			cogPressed = false;
+		};
+		const onMove = (e: PointerEvent) => {
+			const over = isOverBtn(e.clientX, e.clientY);
+			cogHovered = over;
+			if (over && qualityMenuOpen) {
+				document.documentElement.style.cursor = 'pointer';
+			} else if (document.documentElement.style.cursor === 'pointer') {
+				document.documentElement.style.cursor = '';
+			}
+		};
+
+		document.addEventListener('pointerdown', onDown, true);
+		document.addEventListener('pointerup', onUp, true);
+		document.addEventListener('pointermove', onMove);
+
+		return { destroy() {
+			document.removeEventListener('pointerdown', onDown, true);
+			document.removeEventListener('pointerup', onUp, true);
+			document.removeEventListener('pointermove', onMove);
+			if (document.documentElement.style.cursor === 'pointer') {
+				document.documentElement.style.cursor = '';
+			}
+		}};
+	}
 	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0 || controlsFocused || qualityMenuOpen);
 
 	function restorePosition() {
@@ -184,15 +245,29 @@
 		} catch { /* storage full */ }
 	}
 
+	function flashPlayPause(action: 'play' | 'pause') {
+		playPauseAction = action;
+		playPauseKey++;
+		if (playPauseTimer) clearTimeout(playPauseTimer);
+		playPauseTimer = setTimeout(() => { playPauseAction = null; }, 600);
+	}
+
 	function togglePlay() {
 		if (!videoEl || failed) return;
-		if (videoEl.paused) videoEl.play().catch(() => { failed = true; });
+		const willPlay = videoEl.paused;
+		if (willPlay) videoEl.play().catch(() => { failed = true; });
 		else videoEl.pause();
+		flashPlayPause(willPlay ? 'play' : 'pause');
 	}
 
 	function toggleMute() {
 		if (!videoEl) return;
-		videoEl.muted = !videoEl.muted;
+		if (videoEl.muted || videoEl.volume === 0) {
+			videoEl.muted = false;
+			if (videoEl.volume === 0) videoEl.volume = 0.25;
+		} else {
+			videoEl.muted = true;
+		}
 	}
 
 	let clickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -218,9 +293,17 @@
 	}
 
 	function toggleFullscreen() {
-		if (!containerEl) return;
-		if (document.fullscreenElement) document.exitFullscreen();
-		else containerEl.requestFullscreen();
+		if (document.fullscreenElement) {
+			document.exitFullscreen();
+			return;
+		}
+		if (containerEl && document.fullscreenEnabled) {
+			containerEl.requestFullscreen();
+			return;
+		}
+		if (videoEl && "webkitEnterFullscreen" in videoEl) {
+			(videoEl as any).webkitEnterFullscreen();
+		}
 	}
 
 	function queueKeySeek(delta: number, force: boolean) {
@@ -279,6 +362,69 @@
 		scrubTime = target;
 		scrubbing = false;
 		resetControlsTimer();
+	}
+
+	function touchSeek(node: HTMLElement) {
+		let barRect: DOMRect | null = null;
+		let startTouchX = 0;
+		let startTime = 0;
+
+		function onPointerDown(e: PointerEvent) {
+			if (e.pointerType === 'touch') e.preventDefault();
+		}
+
+		function onStart(e: TouchEvent) {
+			if (!duration) return;
+			e.preventDefault();
+			barRect = node.getBoundingClientRect();
+			startTouchX = e.touches[0].clientX;
+			startTime = currentTime;
+			scrubbing = true;
+			scrubTime = currentTime;
+			document.addEventListener('touchmove', onMove, { passive: false });
+			document.addEventListener('touchend', onEnd);
+		}
+
+		function onMove(e: TouchEvent) {
+			if (!scrubbing || !duration || !barRect) return;
+			e.preventDefault();
+			const deltaX = e.touches[0].clientX - startTouchX;
+			scrubTime = Math.max(0, Math.min(duration, startTime + (deltaX / barRect.width) * duration));
+		}
+
+		function onEnd() {
+			if (videoEl && scrubbing) {
+				videoEl.currentTime = scrubTime;
+				currentTime = scrubTime;
+			}
+			scrubbing = false;
+			barRect = null;
+			resetControlsTimer();
+			document.removeEventListener('touchmove', onMove);
+			document.removeEventListener('touchend', onEnd);
+		}
+
+		node.addEventListener('pointerdown', onPointerDown);
+		node.addEventListener('touchstart', onStart, { passive: false });
+
+		return {
+			destroy() {
+				node.removeEventListener('pointerdown', onPointerDown);
+				node.removeEventListener('touchstart', onStart);
+				document.removeEventListener('touchmove', onMove);
+				document.removeEventListener('touchend', onEnd);
+			}
+		};
+	}
+
+	function handleSeekBarMove(e: PointerEvent) {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		if (e.clientY < rect.top - 16 || e.clientY > rect.bottom + 16) {
+			seekBarHovered = false;
+			return;
+		}
+		hoverPercent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+		seekBarHovered = true;
 	}
 
 	function handleVolumeInput(e: Event) {
@@ -367,8 +513,11 @@
 
 	function switchToOriginal() {
 		if (!videoEl) return;
-		pendingSeek = videoEl.currentTime;
-		pendingPaused = videoEl.paused;
+		if (pendingSeek === null) {
+			pendingSeek = videoEl.currentTime;
+			pendingPaused = videoEl.paused;
+		}
+		videoEl.pause();
 		userMode = "original";
 		userPickedHeight = null;
 		selectedQuality = -1;
@@ -388,8 +537,11 @@
 			return;
 		}
 
-		pendingSeek = videoEl.currentTime;
-		pendingPaused = videoEl.paused;
+		if (pendingSeek === null) {
+			pendingSeek = videoEl.currentTime;
+			pendingPaused = videoEl.paused;
+		}
+		videoEl.pause();
 		userMode = "transcode";
 		failed = false;
 	}
@@ -405,6 +557,7 @@
 			if (controlsTimer) clearTimeout(controlsTimer);
 			if (clickTimer) clearTimeout(clickTimer);
 			if (keySeekTimer) clearTimeout(keySeekTimer);
+			if (playPauseTimer) clearTimeout(playPauseTimer);
 		};
 	});
 
@@ -549,13 +702,18 @@
 	<video
 		bind:this={videoEl}
 		class="h-full w-full object-contain"
+		playsinline
 		preload="metadata"
 		data-preview-content
 		onclick={handleVideoClick}
 		ondblclick={handleVideoDblClick}
-		onplay={() => { playing = true; resetControlsTimer(); }}
-		onpause={() => { playing = false; showControls = true; if (controlsTimer) clearTimeout(controlsTimer); }}
+		onplay={() => { playing = true; if (videoEl && videoEl.readyState < 3) buffering = true; resetControlsTimer(); }}
+		onpause={() => { playing = false; buffering = false; showControls = true; if (controlsTimer) clearTimeout(controlsTimer); }}
+		onwaiting={() => { buffering = true; }}
+		onplaying={() => { buffering = false; }}
+		oncanplay={() => { buffering = false; }}
 		ontimeupdate={handleTimeUpdate}
+		onprogress={() => { if (videoEl && videoEl.buffered.length > 0) bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1); }}
 		onloadedmetadata={() => {
 			if (videoEl) {
 				duration = videoEl.duration;
@@ -573,27 +731,15 @@
 		}}
 		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; saveVolume(); } }}
 		onended={() => { playing = false; showControls = true; clearPosition(); }}
-		onerror={() => { failed = true; }}
+		onerror={() => { if (!hlsHandle && pendingSeek === null) failed = true; }}
 	></video>
 
 	{#if failed}
-		<button class="absolute inset-0 flex items-center justify-center" onclick={onclose}>
-			<p class="text-[15px] text-white/80">Unable to play video</p>
+		<button class="absolute inset-0 flex items-center justify-center bg-black/80 outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]" onclick={onclose}>
+			<p class="text-base text-white">Unable to play video</p>
 		</button>
 	{:else}
-		{#if !playing && currentTime === 0}
-			<button
-				class="absolute inset-0 flex items-center justify-center"
-				onclick={togglePlay}
-				data-preview-content
-			>
-				<div class="flex size-16 items-center justify-center rounded-full bg-black/60 text-white">
-					<PlayIcon class="size-8 translate-x-0.5" />
-				</div>
-			</button>
-		{/if}
-
-		{#if keySeekOffset !== 0}
+{#if keySeekOffset !== 0}
 			<div
 				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 text-meta tabular-nums text-white backdrop-blur-sm"
 				transition:fade={{ duration: 120 }}
@@ -607,11 +753,29 @@
 				{/if}
 			</div>
 		{/if}
+
+		{#if buffering}
+			<div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+				<div class="buffering-spinner size-10 rounded-full border-[3px] border-white/30 border-t-white"></div>
+			</div>
+		{:else if playPauseAction}
+			{#key playPauseKey}
+				<div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+					<div class="play-pause-flash flex size-20 items-center justify-center rounded-full bg-black/60 text-white">
+						{#if playPauseAction === 'play'}
+							<PlayIcon class="size-10 translate-x-0.5" />
+						{:else}
+							<PauseIcon class="size-10" />
+						{/if}
+					</div>
+				</div>
+			{/key}
+		{/if}
 	{/if}
 
 	{#if !failed}
 	<div
-		class="absolute bottom-0 left-0 right-0 flex flex-col gap-1 bg-black/70 px-3 py-2 backdrop-blur-sm transition-opacity duration-200"
+		class="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-black/70 px-3 py-2 backdrop-blur-sm transition-opacity duration-200"
 		class:opacity-0={!controlsVisible}
 		class:pointer-events-none={!controlsVisible}
 		onclick={(e) => e.stopPropagation()}
@@ -623,16 +787,54 @@
 			}
 		}}
 	>
-		<div class="seek-bar relative h-1 w-full cursor-pointer rounded-full bg-white/20">
+		<div
+			class="seek-bar relative w-full cursor-pointer"
+			onpointermove={handleSeekBarMove}
+			onpointerleave={() => { seekBarHovered = false; }}
+		>
+			<div class="relative overflow-hidden rounded-full bg-white/20 transition-all duration-150 {seekBarHovered || scrubbing ? 'h-2.5' : 'h-1.5'}">
+				{#if seekBarHovered && !scrubbing}
+					<div
+						class="absolute left-0 top-0 h-full bg-white/50"
+						style="width: {Math.min(hoverPercent, bufferedPercent)}%"
+					></div>
+					{#if hoverPercent < bufferedPercent}
+						<div
+							class="absolute top-0 h-full bg-white/30"
+							style="left: {hoverPercent}%; width: {bufferedPercent - hoverPercent}%"
+						></div>
+					{/if}
+					{#if hoverPercent > bufferedPercent}
+						<div
+							class="absolute top-0 h-full bg-white/15"
+							style="left: {bufferedPercent}%; width: {hoverPercent - bufferedPercent}%"
+						></div>
+					{/if}
+				{:else}
+					<div
+						class="absolute left-0 top-0 h-full bg-white/30"
+						style="width: {bufferedPercent}%"
+					></div>
+				{/if}
+				<div
+					class="absolute left-0 top-0 h-full bg-accent-brand"
+					style="width: {seekPercent}%"
+				></div>
+			</div>
 			<div
-				class="absolute left-0 top-0 h-full rounded-full bg-white/30"
-				style="width: {bufferedPercent}%"
+				class="absolute top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-brand transition-[width,height] duration-150"
+				style="left: {seekPercent}%; width: {seekBarHovered || scrubbing ? 20 : 16}px; height: {seekBarHovered || scrubbing ? 20 : 16}px"
 			></div>
-			<div
-				class="absolute left-0 top-0 h-full rounded-full bg-accent-brand"
-				style="width: {seekPercent}%"
-			></div>
+			{#if seekBarHovered && !scrubbing}
+				<div
+					class="pointer-events-none absolute z-[3] -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-xs tabular-nums text-white"
+					style="left: {hoverPercent}%; bottom: calc(100% + 8px)"
+				>
+					{formatMediaTime(hoverTime)}
+				</div>
+			{/if}
 			<input
+				use:touchSeek
 				type="range"
 				min="0"
 				max={duration}
@@ -640,7 +842,7 @@
 				value={displayTime}
 				oninput={handleSeekInput}
 				onchange={handleSeekChange}
-				class="absolute inset-x-0 -top-5 h-[calc(100%+2.5rem)] w-full cursor-pointer opacity-0"
+				class="absolute inset-x-0 -top-[2.25rem] h-[calc(100%+2.25rem)] z-[2] w-full cursor-pointer opacity-0"
 			/>
 		</div>
 
@@ -650,9 +852,9 @@
 				aria-label={playing ? "Pause" : "Play"}
 			>
 				{#if playing}
-					<PauseIcon class="size-4" />
+					<PauseIcon class="size-5" />
 				{:else}
-					<PlayIcon class="size-4" />
+					<PlayIcon class="size-5" />
 				{/if}
 			</Button>
 
@@ -662,46 +864,27 @@
 
 			<div class="flex-1"></div>
 
-			<div class="flex items-center gap-1" style="--slider-track: rgb(255 255 255 / 0.2)">
-				<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
-					onclick={toggleMute}
-					aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
-				>
-					{#if muted || volume === 0}
-						<VolumeXIcon class="size-4" />
-					{:else}
-						<Volume2Icon class="size-4" />
-					{/if}
-				</Button>
-				<input
-					type="range"
-					min="0"
-					max="1"
-					step="0.05"
-					value={muted ? 0 : volume}
-					oninput={handleVolumeInput}
-					aria-label="Volume"
-					class="volume-slider h-11 w-16 cursor-pointer appearance-none rounded-full bg-transparent"
-				/>
-			</div>
-
 			{#if showQualityMenu}
 				<DropdownMenu.Root bind:open={qualityMenuOpen}>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
-							<Button
-								{...props}
-								variant="ghost"
-								size="icon-touch"
-								aria-label="Quality settings"
-								class="gap-1 text-white/80 hover:bg-transparent hover:text-white"
-							>
-								<SettingsIcon class="size-4" />
-								<span class="hidden font-mono text-[11px] sm:inline">{qualityButtonLabel}</span>
-							</Button>
+							<div use:pressTrack class="contents">
+								<Button
+									{...props}
+									onpointerdown={() => {}}
+									onclick={() => { qualityMenuOpen = !qualityMenuOpen; }}
+									variant="ghost"
+									size="icon-touch"
+									aria-label="Quality settings"
+									class="cog-button text-white/80 hover:bg-white/10 hover:text-white aria-expanded:bg-transparent aria-expanded:hover:bg-white/10"
+									style={cogStyle}
+								>
+									<SettingsIcon class="size-5 transition-transform duration-200 {qualityMenuOpen ? 'rotate-[25deg]' : ''}" />
+								</Button>
+							</div>
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="min-w-36">
+					<DropdownMenu.Content align="end" class="min-w-36" portalProps={portalTarget ? { to: portalTarget } : undefined}>
 						{#if nativeSupported}
 							<DropdownMenu.Item onclick={switchToOriginal}>
 								{#if userMode !== "transcode"}
@@ -745,11 +928,34 @@
 				</DropdownMenu.Root>
 			{/if}
 
+			<div class="flex items-center gap-1" style="--slider-track: rgb(255 255 255 / 0.2)">
+				<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
+					onclick={toggleMute}
+					aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+				>
+					{#if muted || volume === 0}
+						<VolumeXIcon class="size-5" />
+					{:else}
+						<Volume2Icon class="size-5" />
+					{/if}
+				</Button>
+				<input
+					type="range"
+					min="0"
+					max="1"
+					step="0.05"
+					value={muted ? 0 : volume}
+					oninput={handleVolumeInput}
+					aria-label="Volume"
+					class="volume-slider hidden h-11 w-16 cursor-pointer appearance-none rounded-full bg-transparent md:block"
+				/>
+			</div>
+
 			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
 				onclick={toggleFullscreen}
 				aria-label="Fullscreen"
 			>
-				<MaximizeIcon class="size-4" />
+				<MaximizeIcon class="size-5" />
 			</Button>
 		</div>
 	</div>

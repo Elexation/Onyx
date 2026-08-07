@@ -37,7 +37,12 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	}
 
 	let fatalCb: ((data: unknown) => void) | null = null;
-	const hls = new Hls();
+	let recoveryAttempts = 0;
+	let lastRecoveryAt = 0;
+	const hls = new Hls({
+		maxBufferLength: 60,
+		maxMaxBufferLength: 600,
+	});
 	hls.attachMedia(videoEl);
 	hls.on(Hls.Events.MEDIA_ATTACHED, () => {
 		hls.loadSource(src);
@@ -45,17 +50,21 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	hls.on(Hls.Events.ERROR, (_event, data) => {
 		if (!data.fatal) return;
 		console.error("[hls] fatal error", data);
-		switch (data.type) {
-			case Hls.ErrorTypes.NETWORK_ERROR:
-				hls.startLoad();
-				return;
-			case Hls.ErrorTypes.MEDIA_ERROR:
-				hls.recoverMediaError();
-				return;
-			default:
-				hls.destroy();
-				fatalCb?.(data);
+		if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+			hls.startLoad();
+			return;
 		}
+		const now = Date.now();
+		if (now - lastRecoveryAt > 3000) recoveryAttempts = 0;
+		if (recoveryAttempts < 2) {
+			lastRecoveryAt = now;
+			recoveryAttempts++;
+			if (recoveryAttempts === 2) hls.swapAudioCodec();
+			hls.recoverMediaError();
+			return;
+		}
+		hls.destroy();
+		fatalCb?.(data);
 	});
 
 	function snapshotLevels(): HlsLevel[] {

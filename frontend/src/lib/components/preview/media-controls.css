@@ -16,6 +16,7 @@
 	border-radius: 50%;
 	background: white;
 	cursor: pointer;
+	margin-top: -3px;
 }
 
 .volume-slider::-webkit-slider-runnable-track {
@@ -42,4 +43,21 @@
 .volume-slider:focus-visible {
 	outline: 2px solid var(--accent-brand);
 	outline-offset: 2px;
+}
+
+.play-pause-flash {
+	animation: play-pause-flash 500ms ease-out forwards;
+}
+
+@keyframes play-pause-flash {
+	0% { opacity: 1; transform: scale(1); }
+	100% { opacity: 0; transform: scale(1.3); }
+}
+
+.buffering-spinner {
+	animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
 }

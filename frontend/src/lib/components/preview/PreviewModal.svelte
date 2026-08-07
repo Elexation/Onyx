@@ -49,7 +49,9 @@
 
 	function handleBackdropClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
+		if (!target.isConnected) return;
 		if (target.closest("[data-preview-content]")) return;
+		if (target.closest('[data-slot="dropdown-menu-content"]')) return;
 		closeModal();
 	}
 
@@ -79,21 +81,26 @@
 	{#if type !== "pdf"}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
-			<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
+			{#if type !== "video"}
+				<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>
+			{:else}
+				<h2 id="preview-modal-title" class="sr-only">{file.name}</h2>
+				<div class="flex-1"></div>
+			{/if}
 			<div class="flex items-center gap-1">
-				<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
+				<Button variant="ghost" size="icon-touch" class={type === "video" ? "text-white hover:bg-white/10" : "text-muted-foreground"}
 					onclick={handleDownload}
 					title="Download"
 					aria-label="Download"
 				>
-					<DownloadIcon class="size-4" />
+					<DownloadIcon class={type === "video" ? "size-5" : "size-4"} />
 				</Button>
-				<Button variant="ghost" size="icon-touch" class="text-muted-foreground"
+				<Button variant="ghost" size="icon-touch" class={type === "video" ? "text-white hover:bg-white/10" : "text-muted-foreground"}
 					onclick={closeModal}
 					title="Close"
 					aria-label="Close preview"
 				>
-					<XIcon class="size-4" />
+					<XIcon class={type === "video" ? "size-5" : "size-4"} />
 				</Button>
 			</div>
 		</div>
@@ -156,7 +163,7 @@
 				{@render previewLoading()}
 			{:then mod}
 				{@const VideoPreview = mod.default}
-				<VideoPreview {file} onclose={closeModal} {url} {streamBase} />
+				<VideoPreview {file} onclose={closeModal} ondownload={handleDownload} {url} {streamBase} portalTarget={dialogEl} />
 			{:catch}
 				{@render previewError()}
 			{/await}

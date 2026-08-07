@@ -59,3 +59,15 @@ make dev-frontend
 # Production build
 make build
 ```
+
+## Data Protection
+
+`.versions/` and `.trash/` protect against accidental edits and deletions.
+They are not ransomware protection — they live on the same disk with the same
+permissions as your data.
+
+For resilience against filesystem-level threats, use host-level protections:
+
+- **ZFS/Btrfs snapshots** — read-only, inaccessible to userspace processes
+- **Pull-based offsite backups** — backup server pulls from you; compromised host can't reach the backup target
+- **S3/B2 with Object Lock** — immutable retention windows that even the account owner can't override

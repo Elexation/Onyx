@@ -35,7 +35,8 @@
 	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
 	import ShareDialog from "$lib/components/dialogs/ShareDialog.svelte";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
-	import { canPreview } from "$lib/preview.js";
+	import { canPreview, getPreviewType } from "$lib/preview.js";
+	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
 
 	const path = $derived(page.params.path ?? "");
 
@@ -241,6 +242,8 @@
 	function handleOpen(item: FileInfo) {
 		if (item.isDir) {
 			goto(`/files${item.path}`);
+		} else if (getPreviewType(item) === "audio") {
+			audioPlayer.load(item.path, item.name);
 		} else if (canPreview(item)) {
 			previewFile = item;
 			previewOpen = true;

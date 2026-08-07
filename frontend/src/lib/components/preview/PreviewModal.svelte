@@ -13,7 +13,6 @@
 		markdown: () => import("./MarkdownPreview.svelte"),
 		image: () => import("./ImagePreview.svelte"),
 		video: () => import("./VideoPreview.svelte"),
-		audio: () => import("./AudioPreview.svelte"),
 		pdf: () => import("./PdfPreview.svelte"),
 	};
 
@@ -164,15 +163,6 @@
 			{:then mod}
 				{@const VideoPreview = mod.default}
 				<VideoPreview {file} onclose={closeModal} ondownload={handleDownload} {url} {streamBase} portalTarget={dialogEl} />
-			{:catch}
-				{@render previewError()}
-			{/await}
-		{:else if type === "audio"}
-			{#await previewLoaders.audio()}
-				{@render previewLoading()}
-			{:then mod}
-				{@const AudioPreview = mod.default}
-				<AudioPreview path={file.path} {url} />
 			{:catch}
 				{@render previewError()}
 			{/await}

@@ -92,6 +92,9 @@
 	}
 
 	:focus-visible {
+		outline: none;
+	}
+	:focus-visible:is(a, button, input, select, textarea, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="checkbox"], [role="radio"], [role="switch"]) {
 		outline: 2px solid var(--accent-brand);
 		outline-offset: 2px;
 	}

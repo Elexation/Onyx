@@ -5,8 +5,10 @@
 	import Sidebar from "$lib/components/Sidebar.svelte";
 	import MobileDrawer from "$lib/components/MobileDrawer.svelte";
 	import UploadPanel from "$lib/components/UploadPanel.svelte";
+	import AudioDock from "$lib/components/AudioDock.svelte";
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
 	import { changes } from "$lib/changes";
+	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
 
 	let { children } = $props();
 	let drawerOpen = $state(false);
@@ -31,10 +33,11 @@
 		<MobileDrawer bind:open={drawerOpen}>
 			<Sidebar onNavigate={() => (drawerOpen = false)} />
 		</MobileDrawer>
-		<main class="min-w-0 flex-1 overflow-auto">
+		<main class="min-w-0 flex-1 overflow-auto" style:padding-bottom={audioPlayer.visible ? '84px' : '0px'}>
 			{@render children()}
 		</main>
 	</div>
 </div>
+<AudioDock />
 <UploadPanel />
 <Toaster theme="dark" />

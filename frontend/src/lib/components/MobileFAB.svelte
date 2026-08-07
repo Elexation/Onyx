@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
+	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
 	import PlusIcon from "@lucide/svelte/icons/plus";
 	import FolderPlusIcon from "@lucide/svelte/icons/folder-plus";
 	import FileUpIcon from "@lucide/svelte/icons/file-up";
@@ -47,7 +48,7 @@
 		{#snippet child({ props })}
 			<button
 				type="button"
-				class="fixed right-5 bottom-5 z-40 inline-flex size-14 items-center justify-center rounded-full bg-accent-brand text-accent-brand-foreground transition-[filter,transform] hover:brightness-110 active:translate-y-px md:hidden"
+				class="fixed right-5 z-40 inline-flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[filter,transform] hover:brightness-110 active:translate-y-px md:hidden {audioPlayer.visible ? 'bottom-[104px]' : 'bottom-5'}"
 				aria-label={label}
 				{...props}
 			>

@@ -5,13 +5,10 @@
 
 	let { path, url }: { path: string; url?: string } = $props();
 
-	let html = $state("");
+	let srcdoc = $state("");
 	let loading = $state(true);
 	let error = $state("");
 
-	// Above this byte size, skip Shiki tokenization (which runs on the
-	// main thread) and fall back to plaintext. ~250–500ms of work at
-	// 256KB; larger inputs would jank the modal open.
 	const HIGHLIGHT_SIZE_LIMIT = 256 * 1024;
 
 	function escapeHtml(s: string): string {
@@ -68,11 +65,24 @@
 		".patch": "diff",
 	};
 
+	const CODE_STYLES = `
+		html{color-scheme:dark}
+		*,*::before,*::after{box-sizing:border-box}
+		body{margin:0;padding:16px;background:#1e1e1e;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+		pre{margin:0;background:transparent!important}
+		code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:0.875rem;line-height:1.625}
+		.line{display:inline-block;width:100%}
+	`;
+
 	function detectLang(filename: string): string {
 		const dot = filename.lastIndexOf(".");
 		if (dot === -1) return "text";
 		const ext = filename.slice(dot).toLowerCase();
 		return langMap[ext] ?? "text";
+	}
+
+	function wrapSrcdoc(body: string, extraCss = ""): string {
+		return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${CODE_STYLES}${extraCss}</style></head><body>${body}</body></html>`;
 	}
 
 	$effect(() => {
@@ -90,13 +100,17 @@
 			const code = await res.text();
 			if (signal.aborted) return;
 			if (code.length > HIGHLIGHT_SIZE_LIMIT) {
-				html = `<pre><code>${escapeHtml(code)}</code></pre>`;
+				srcdoc = wrapSrcdoc(`<pre><code>${escapeHtml(code)}</code></pre>`, "code{color:#d4d4d4}");
 			} else {
 				const filename = p.split("/").pop() ?? p;
 				const lang = detectLang(filename);
 				const rendered = await codeToHtml(code, { lang, theme: "dark-plus" });
 				if (signal.aborted) return;
-				html = DOMPurify.sanitize(rendered);
+				const sanitized = DOMPurify.sanitize(rendered, {
+					FORBID_ATTR: ['onerror', 'onload', 'onmouseover', 'onfocus', 'onblur', 'onclick'],
+					ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel):/i,
+				});
+				srcdoc = wrapSrcdoc(sanitized);
 			}
 		} catch (e) {
 			if (signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
@@ -116,23 +130,7 @@
 		<p class="text-[15px]">{error}</p>
 	</div>
 {:else}
-	<div class="preview-text flex-1 overflow-auto rounded-lg border border-border bg-[#1e1e1e] p-4" data-preview-content>
-		{@html html}
+	<div class="flex-1 overflow-hidden rounded-lg border border-border bg-[#1e1e1e]" data-preview-content>
+		<iframe sandbox="" {srcdoc} class="h-full w-full border-0" title="Code preview"></iframe>
 	</div>
 {/if}
-
-<style>
-	.preview-text :global(pre) {
-		margin: 0;
-		background: transparent !important;
-	}
-	.preview-text :global(code) {
-		font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-		font-size: 0.875rem;
-		line-height: 1.625;
-	}
-	.preview-text :global(.line) {
-		display: inline-block;
-		width: 100%;
-	}
-</style>

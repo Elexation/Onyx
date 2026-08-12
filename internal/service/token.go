@@ -46,6 +46,9 @@ func (s *TokenService) Create(name, scope string, expiresAt *int64) (*domain.Per
 	if name == "" {
 		return nil, "", fmt.Errorf("name is required")
 	}
+	if len(name) > 255 {
+		return nil, "", fmt.Errorf("name must not exceed 255 characters")
+	}
 	if !domain.IsValidTokenScope(scope) {
 		return nil, "", fmt.Errorf("invalid scope")
 	}

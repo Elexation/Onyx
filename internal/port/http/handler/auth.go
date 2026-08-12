@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -50,6 +51,10 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, `{"error":"invalid content type"}`, http.StatusUnsupportedMediaType)
+		return
+	}
 	var body struct {
 		Password string `json:"password"`
 	}
@@ -59,6 +64,10 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 	if len([]rune(body.Password)) < 8 {
 		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
+		return
+	}
+	if len(body.Password) > 1024 {
+		http.Error(w, `{"error":"password must not exceed 1024 bytes"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -73,6 +82,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("security_event", "event", "admin_setup", "ip", h.clientIP(r))
+	h.rl.RecordSuccess(r)
 	h.setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
@@ -82,11 +92,19 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, `{"error":"invalid content type"}`, http.StatusUnsupportedMediaType)
+		return
+	}
 	var body struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if len(body.Password) > 1024 {
+		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
 
@@ -108,6 +126,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, `{"error":"invalid content type"}`, http.StatusUnsupportedMediaType)
+		return
+	}
 	var body struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
@@ -122,6 +144,10 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if len([]rune(body.NewPassword)) < 8 {
 		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
+		return
+	}
+	if len(body.CurrentPassword) > 1024 || len(body.NewPassword) > 1024 {
+		http.Error(w, `{"error":"password must not exceed 1024 bytes"}`, http.StatusBadRequest)
 		return
 	}
 

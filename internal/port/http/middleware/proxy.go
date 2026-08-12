@@ -15,14 +15,19 @@ import (
 // ignored and RemoteAddr is used.
 func ClientIP(r *http.Request, trustedProxy bool) string {
 	if trustedProxy {
-		if ip := r.Header.Get("X-Real-IP"); ip != "" {
-			return strings.TrimSpace(ip)
+		if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" && net.ParseIP(ip) != nil {
+			return ip
 		}
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			var candidate string
 			if idx := strings.LastIndex(xff, ","); idx >= 0 {
-				return strings.TrimSpace(xff[idx+1:])
+				candidate = strings.TrimSpace(xff[idx+1:])
+			} else {
+				candidate = strings.TrimSpace(xff)
 			}
-			return strings.TrimSpace(xff)
+			if candidate != "" && net.ParseIP(candidate) != nil {
+				return candidate
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

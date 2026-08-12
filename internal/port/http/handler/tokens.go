@@ -37,6 +37,10 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
+	if len(req.Name) > 255 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name must not exceed 255 characters"})
+		return
+	}
 	if !domain.IsValidTokenScope(req.Scope) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scope"})
 		return

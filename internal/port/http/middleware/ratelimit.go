@@ -38,6 +38,9 @@ func NewRateLimiter(trustedProxy bool) *RateLimiter {
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := ClientIP(r, rl.trustedProxy)
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
 
 		rl.mu.Lock()
 		a, ok := rl.attempts[ip]
@@ -83,6 +86,9 @@ func cooldownFor(failCount int) time.Duration {
 // handlers after a successful authentication.
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {
 	ip := ClientIP(r, rl.trustedProxy)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.attempts, ip)

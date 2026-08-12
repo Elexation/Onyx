@@ -224,6 +224,9 @@ func (a *AuthService) createSession(userID int64) (*domain.Session, error) {
 		return nil, fmt.Errorf("get session lifetime: %w", err)
 	}
 	dur := domain.GetDuration(lifetime)
+	if dur <= 0 {
+		dur = 720 * time.Hour
+	}
 
 	now := time.Now().Unix()
 	session := &domain.Session{

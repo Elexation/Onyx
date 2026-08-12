@@ -57,7 +57,7 @@ func (r *TokenRepo) List() ([]domain.PersonalAccessToken, error) {
 	}
 	defer rows.Close()
 
-	var tokens []domain.PersonalAccessToken
+	tokens := make([]domain.PersonalAccessToken, 0)
 	for rows.Next() {
 		var tok domain.PersonalAccessToken
 		var lastUsed, expiresAt sql.NullInt64

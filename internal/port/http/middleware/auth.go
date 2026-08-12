@@ -43,11 +43,12 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 					return
 				}
 				// Synthetic session for downstream handlers. UserID=0 and
-				// empty ID/CSRFToken are intentional — bearer-authed requests
-				// have no session identity, and no handler currently reads
-				// UserID. Handlers that require a real session (ChangePassword)
-				// are guarded by the admin-endpoint block in CheckScope.
-				synthetic := &domain.Session{}
+				// empty ID are intentional — bearer-authed requests have no
+				// session identity. CSRFToken is a non-matchable sentinel so
+				// a regression in IsBearerAuth can't bypass CSRF. Handlers
+				// that require a real session (ChangePassword) are guarded by
+				// the admin-endpoint block in CheckScope.
+				synthetic := &domain.Session{CSRFToken: "__bearer__"}
 				ctx := ContextWithSession(r.Context(), synthetic)
 				ctx = context.WithValue(ctx, authMethodKey, AuthMethodBearer)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -56,6 +57,10 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 
 			cookie, err := r.Cookie("session")
 			if err != nil {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			if len(cookie.Value) != 64 {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}

@@ -37,12 +37,20 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path is required"})
 		return
 	}
+	if len(req.Password) > 1024 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must not exceed 1024 bytes"})
+		return
+	}
 
 	var expiresIn *time.Duration
 	if req.ExpiresIn != "" {
 		d, err := time.ParseDuration(req.ExpiresIn)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid expiration duration"})
+			return
+		}
+		if d <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "expiration must be positive"})
 			return
 		}
 		expiresIn = &d

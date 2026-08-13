@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -66,17 +67,8 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if link == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
-		return
-	}
-
-	if link.HasPassword && !h.hasValidSession(r, token) {
-		resp := map[string]any{
-			"passwordRequired": true,
-			"isDir":            link.IsDir,
-		}
-		writeJSON(w, http.StatusOK, resp)
+	if link == nil || (link.HasPassword && !h.hasValidSession(r, token)) {
+		writeJSON(w, http.StatusOK, map[string]any{"passwordRequired": true})
 		return
 	}
 
@@ -98,6 +90,10 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if len(req.Password) > 1024 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password too long"})
 		return
 	}
 
@@ -136,30 +132,20 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if link == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
-		return
-	}
-
-	if link.HasPassword && !h.hasValidSession(r, token) {
+	if link == nil || (link.HasPassword && !h.hasValidSession(r, token)) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
 		return
 	}
 
 	filePath := link.FilePath
 	if link.IsDir {
-		// Extract sub-path: everything after /s/{token}/dl
 		subPath := extractSubPath(r, token)
-		if subPath == "" || subPath == "/" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify a file to download"})
-			return
-		}
-		filePath = path.Join(link.FilePath, subPath)
-		sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
-		if !strings.HasPrefix(filePath, sharePrefix) {
+		resolved, ok := resolveSharePath(link, subPath)
+		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
 		}
+		filePath = resolved
 	}
 
 	file, modTime, _, err := h.files.OpenFile(filePath)
@@ -185,18 +171,13 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if link == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
+	if link == nil || (link.HasPassword && !h.hasValidSession(r, token)) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
 		return
 	}
 
 	if !link.IsDir {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a directory share"})
-		return
-	}
-
-	if link.HasPassword && !h.hasValidSession(r, token) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
 		return
 	}
 
@@ -222,12 +203,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if link == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found or expired"})
-		return
-	}
-
-	if link.HasPassword && !h.hasValidSession(r, token) {
+	if link == nil || (link.HasPassword && !h.hasValidSession(r, token)) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password required"})
 		return
 	}
@@ -235,16 +211,12 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	filePath := link.FilePath
 	if link.IsDir {
 		subPath := extractSubPath2(r, token, "raw")
-		if subPath == "" || subPath == "/" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify a file to preview"})
-			return
-		}
-		filePath = path.Join(link.FilePath, subPath)
-		sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
-		if !strings.HasPrefix(filePath, sharePrefix) {
+		resolved, ok := resolveSharePath(link, subPath)
+		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
 		}
+		filePath = resolved
 	}
 
 	file, modTime, _, err := h.files.OpenFile(filePath)
@@ -394,7 +366,7 @@ func (h *PublicHandler) StreamMaster(w http.ResponseWriter, r *http.Request) {
 		writeFileError(w, err)
 		return
 	}
-	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"))
+	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"), filePath)
 }
 
 // StreamPlaylist handles GET /s/{token}/stream/playlist/{v}/* — variant playlist.
@@ -427,7 +399,7 @@ func (h *PublicHandler) StreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
-	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), media.VariantDir(variant), "playlist.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"))
+	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), media.VariantDir(variant), "playlist.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"), filePath)
 }
 
 // StreamInit handles GET /s/{token}/stream/init/{v}/* — fMP4 init segment.
@@ -668,21 +640,34 @@ func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
 
 // rewriteShareHLS rewrites absolute `/api/stream/…` URLs inside an m3u8
 // body to their public-share equivalent so share users can fetch the
-// downstream playlist/init/segment without admin auth. The file path
-// portion stays intact; resolveSharePath accepts it in full-path form.
-func rewriteShareHLS(content []byte, token string) []byte {
-	return bytes.ReplaceAll(content, []byte("/api/stream/"), []byte("/api/public/s/"+token+"/stream/"))
+// downstream playlist/init/segment without admin auth. It also strips the
+// internal file path (which reveals directory structure above the share
+// scope) and replaces it with just the basename.
+func rewriteShareHLS(content []byte, token, internalPath string) []byte {
+	encoded := urlEncodePath(internalPath)
+	base := "/" + url.PathEscape(path.Base(internalPath))
+	content = bytes.ReplaceAll(content, []byte(encoded), []byte(base))
+	content = bytes.ReplaceAll(content, []byte("/api/stream/"), []byte("/api/public/s/"+token+"/stream/"))
+	return content
+}
+
+func urlEncodePath(p string) string {
+	segments := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	for i, seg := range segments {
+		segments[i] = url.PathEscape(seg)
+	}
+	return "/" + strings.Join(segments, "/")
 }
 
 // servePublicHLSPlaylist reads an m3u8 playlist file, rewrites its internal
 // URLs for share-scoped access, and writes it with HLS headers.
-func servePublicHLSPlaylist(w http.ResponseWriter, path, contentType, token string) {
-	data, err := os.ReadFile(path)
+func servePublicHLSPlaylist(w http.ResponseWriter, playlistPath, contentType, token, filePath string) {
+	data, err := os.ReadFile(playlistPath)
 	if err != nil {
 		writeFileError(w, err)
 		return
 	}
-	data = rewriteShareHLS(data, token)
+	data = rewriteShareHLS(data, token, filePath)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=60")
 	w.Write(data)

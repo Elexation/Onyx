@@ -1,6 +1,7 @@
 package service
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,7 +31,7 @@ func (fsNotExistErr) Error() string { return "file does not exist" }
 
 // Is matches errors.Is(err, os.ErrNotExist).
 func (fsNotExistErr) Is(target error) bool {
-	return target.Error() == "file does not exist"
+	return target == os.ErrNotExist
 }
 
 func newShareServiceForTest(t *testing.T, exists map[string]bool) (*ShareService, *recordingEvents) {

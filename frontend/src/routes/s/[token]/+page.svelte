@@ -137,7 +137,6 @@
 			if (myGen !== navGen) return;
 			if (data.passwordRequired) {
 				passwordRequired = true;
-				isDir = data.isDir;
 				return;
 			}
 			applyData(data);

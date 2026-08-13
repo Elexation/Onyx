@@ -87,7 +87,7 @@ func (r *ShareRepo) List() ([]domain.ShareLink, error) {
 	}
 	defer rows.Close()
 
-	var links []domain.ShareLink
+	links := make([]domain.ShareLink, 0)
 	for rows.Next() {
 		var link domain.ShareLink
 		var isDir int

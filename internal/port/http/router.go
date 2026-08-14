@@ -96,8 +96,8 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Route("/versions", func(r chi.Router) {
 			r.Get("/", versionHandler.List)
 			r.Get("/count", versionHandler.Count)
-			r.Post("/{id}/restore", versionHandler.Restore)
-			r.Delete("/{id}", versionHandler.Delete)
+			r.With(trashRL.Middleware).Post("/{id}/restore", versionHandler.Restore)
+			r.With(trashRL.Middleware).Delete("/{id}", versionHandler.Delete)
 		})
 
 		r.Route("/shares", func(r chi.Router) {
@@ -149,7 +149,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	// Intercept /api/upload before Chi to avoid path mangling.
 	// OPTIONS pass through without auth (tus CORS preflight).
-	return uploadInterceptor(auth, tokens, tus, uploadCL, r)
+	return uploadInterceptor(auth, tokens, tus, uploadCL, trustedProxy, requireHTTPS, r)
 }
 
 // uploadInterceptor routes /api/upload requests directly to tusd,
@@ -157,9 +157,9 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 // concurrent in-flight upload requests per IP — each tus chunk holds
 // disk and goroutine resources for an extended period, so unbounded
 // concurrency is a DoS vector even behind admin auth.
-func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, uploadCL *middleware.ConcurrencyLimiter, next http.Handler) http.Handler {
+func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, uploadCL *middleware.ConcurrencyLimiter, trustedProxy, requireHTTPS bool, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.Auth(auth, tokens)(uploadCL.Middleware(middleware.CSRF(stripped)))
+	authed := middleware.Recovery(middleware.SecurityHeaders(trustedProxy, requireHTTPS)(middleware.Auth(auth, tokens)(uploadCL.Middleware(middleware.CSRF(stripped)))))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/upload" && !strings.HasPrefix(r.URL.Path, "/api/upload/") {
 			next.ServeHTTP(w, r)

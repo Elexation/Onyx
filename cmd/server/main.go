@@ -188,7 +188,14 @@ func main() {
 	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, eventStore, trustedProxy, requireHTTPS, port, envOverrides)
 
 	slog.Info("starting server", "port", port, "envOverrides", envOverrides)
-	if err := http.ListenAndServe(":"+port, router); err != nil {
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

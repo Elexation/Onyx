@@ -245,7 +245,7 @@ func (f *FFmpeg) ExtractPoster(ctx context.Context, srcPath, dstPath string, wid
 	cmd.Stdout = out
 	cmd.Stderr = out
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(out.String()))
+		return fmt.Errorf("ffmpeg: %w", err)
 	}
 	return nil
 }

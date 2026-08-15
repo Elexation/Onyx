@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -45,7 +47,12 @@ func (h *VersionHandler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.versions.RestoreVersion(id); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		slog.Warn("version restore failed", "id", id, "error", err)
+		if strings.Contains(err.Error(), "version not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "version not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to restore version"})
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
@@ -69,7 +76,8 @@ func (h *VersionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.versions.DeleteVersion(id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		slog.Warn("version delete failed", "id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete version"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

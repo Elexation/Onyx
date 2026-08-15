@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -335,8 +334,8 @@ func (ts *ThumbnailService) resolveSafePath(relPath string) (string, error) {
 	}
 
 	clean := strings.TrimLeft(relPath, "/")
-	clean = path.Clean(clean)
-	if clean == ".." || strings.HasPrefix(clean, "../") || clean == "." {
+	clean = filepath.Clean(filepath.FromSlash(clean))
+	if clean == ".." || strings.HasPrefix(clean, string(filepath.Separator)+"..") || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || clean == "." {
 		return "", fmt.Errorf("invalid path")
 	}
 

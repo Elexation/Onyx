@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -439,12 +440,14 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 
 // CheckConflicts returns metadata for the subset of paths that already exist in targetDir.
 func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) ([]ConflictInfo, error) {
-	var conflicts []ConflictInfo
+	conflicts := make([]ConflictInfo, 0)
 	for _, rp := range relativePaths {
-		clean := path.Clean(strings.TrimLeft(rp, "/"))
-		if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		fpClean := filepath.Clean(filepath.FromSlash(strings.TrimLeft(rp, "/")))
+		sep := string(filepath.Separator)
+		if fpClean == "" || fpClean == "." || fpClean == ".." || strings.HasPrefix(fpClean, ".."+sep) {
 			return nil, fmt.Errorf("invalid relative path: %q", rp)
 		}
+		clean := filepath.ToSlash(fpClean)
 		fullPath := path.Join(targetDir, clean)
 		info, err := s.storage.Lstat(fullPath)
 		if err != nil {
@@ -468,14 +471,17 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy string, src io.Reader) (string, error) {
 	// Reject traversal in either component before os.Root gets a chance to.
 	// Bad uploads would otherwise linger in the tus store after a 500.
-	cleanTarget := path.Clean(strings.TrimLeft(targetDir, "/"))
-	if cleanTarget == ".." || strings.HasPrefix(cleanTarget, "../") {
+	fpTarget := filepath.Clean(filepath.FromSlash(strings.TrimLeft(targetDir, "/")))
+	sep := string(filepath.Separator)
+	if fpTarget == ".." || strings.HasPrefix(fpTarget, ".."+sep) {
 		return "", fmt.Errorf("invalid target directory")
 	}
-	cleanRel := path.Clean(strings.TrimLeft(relativePath, "/"))
-	if cleanRel == "" || cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+	cleanTarget := filepath.ToSlash(fpTarget)
+	fpRel := filepath.Clean(filepath.FromSlash(strings.TrimLeft(relativePath, "/")))
+	if fpRel == "" || fpRel == "." || fpRel == ".." || strings.HasPrefix(fpRel, ".."+sep) {
 		return "", fmt.Errorf("invalid upload path")
 	}
+	cleanRel := filepath.ToSlash(fpRel)
 
 	destPath := path.Join(cleanTarget, cleanRel)
 

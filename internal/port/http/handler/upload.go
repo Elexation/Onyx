@@ -40,6 +40,9 @@ func (h *UploadHandler) CheckConflicts(w http.ResponseWriter, r *http.Request) {
 		writeFileError(w, err)
 		return
 	}
+	if conflicts == nil {
+		conflicts = []service.ConflictInfo{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"conflicts": conflicts})
 }

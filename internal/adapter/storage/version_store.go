@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -32,21 +31,23 @@ func NewVersionStore(dataDir, versionsDir string) (*VersionStore, error) {
 // safeDataPath lexically validates a data-relative path (leading slash
 // optional) and returns the absolute filesystem path under dataDir.
 func (s *VersionStore) safeDataPath(rel string) (string, error) {
-	clean := path.Clean(strings.TrimLeft(rel, "/"))
-	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+	clean := filepath.Clean(filepath.FromSlash(strings.TrimLeft(rel, "/")))
+	sep := string(filepath.Separator)
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+sep) {
 		return "", fmt.Errorf("invalid data path: %q", rel)
 	}
-	return filepath.Join(s.dataDir, filepath.FromSlash(clean)), nil
+	return filepath.Join(s.dataDir, clean), nil
 }
 
 // safeVersionsPath lexically validates a versions-relative path and returns
 // the absolute filesystem path under versionsDir.
 func (s *VersionStore) safeVersionsPath(rel string) (string, error) {
-	clean := path.Clean(strings.TrimLeft(rel, "/"))
-	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+	clean := filepath.Clean(filepath.FromSlash(strings.TrimLeft(rel, "/")))
+	sep := string(filepath.Separator)
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+sep) {
 		return "", fmt.Errorf("invalid versions path: %q", rel)
 	}
-	return filepath.Join(s.versionsDir, filepath.FromSlash(clean)), nil
+	return filepath.Join(s.versionsDir, clean), nil
 }
 
 // TestReflink probes whether the versions directory filesystem supports

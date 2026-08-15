@@ -111,7 +111,8 @@ func (h *TrashHandler) PermanentDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.trash.PermanentDelete(id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		slog.Warn("trash permanent delete failed", "id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
 		return
 	}
 
@@ -121,7 +122,8 @@ func (h *TrashHandler) PermanentDelete(w http.ResponseWriter, r *http.Request) {
 // EmptyTrash handles DELETE /api/trash
 func (h *TrashHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	if err := h.trash.EmptyTrash(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		slog.Warn("trash empty failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to empty trash"})
 		return
 	}
 

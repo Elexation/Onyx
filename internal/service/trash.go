@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -96,11 +95,12 @@ func (s *TrashService) cascadeShareDelete(p string, isDir bool) {
 // and returns the absolute filesystem path. Rejects empty/root and any path
 // that resolves to "." or contains ".." components.
 func (s *TrashService) resolveDataSubpath(relPath string) (string, error) {
-	clean := path.Clean(strings.TrimLeft(relPath, "/"))
-	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+	clean := filepath.Clean(filepath.FromSlash(strings.TrimLeft(relPath, "/")))
+	sep := string(filepath.Separator)
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+sep) {
 		return "", fmt.Errorf("invalid path")
 	}
-	return filepath.Join(s.dataDir, filepath.FromSlash(clean)), nil
+	return filepath.Join(s.dataDir, clean), nil
 }
 
 // verifyInsideDataDir resolves symlinks on absPath and returns the resolved
@@ -157,14 +157,19 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	}
 	info, err := os.Stat(resolvedSrc)
 	if err != nil {
-		return MoveToTrashResult{Path: filePath, Error: err.Error()}
+		if os.IsNotExist(err) {
+			return MoveToTrashResult{Path: filePath, Error: "not found"}
+		}
+		slog.Warn("trash: stat failed", "path", filePath, "error", err)
+		return MoveToTrashResult{Path: filePath, Error: "cannot access file"}
 	}
 
 	var size int64
 	if info.IsDir() {
 		size, err = dirSize(resolvedSrc)
 		if err != nil {
-			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("calculate size: %s", err)}
+			slog.Warn("trash: calculate size failed", "path", filePath, "error", err)
+			return MoveToTrashResult{Path: filePath, Error: "calculate size failed"}
 		}
 	} else {
 		size = info.Size()
@@ -181,15 +186,18 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 
 	if err := os.Rename(resolvedSrc, dstAbs); err != nil {
 		if !isCrossDevice(err) {
-			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("move to trash: %s", err)}
+			slog.Warn("trash: move failed", "path", filePath, "error", err)
+			return MoveToTrashResult{Path: filePath, Error: "move to trash failed"}
 		}
 		// Cross-device: copy then delete original
 		if err := copyTree(resolvedSrc, dstAbs); err != nil {
 			os.RemoveAll(dstAbs)
-			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("copy to trash: %s", err)}
+			slog.Warn("trash: cross-device copy failed", "path", filePath, "error", err)
+			return MoveToTrashResult{Path: filePath, Error: "copy to trash failed"}
 		}
 		if err := os.RemoveAll(resolvedSrc); err != nil {
-			return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("remove original after copy: %s", err)}
+			slog.Warn("trash: remove original failed", "path", filePath, "error", err)
+			return MoveToTrashResult{Path: filePath, Error: "remove original after copy failed"}
 		}
 	}
 
@@ -204,7 +212,8 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	if err := s.repo.Insert(item); err != nil {
 		// Move back on DB failure
 		os.Rename(dstAbs, resolvedSrc)
-		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("record trash item: %s", err)}
+		slog.Warn("trash: record insert failed", "path", filePath, "error", err)
+		return MoveToTrashResult{Path: filePath, Error: "record trash item failed"}
 	}
 
 	// Cascade-clean any share pointing at the trashed path. Restore does NOT
@@ -339,6 +348,9 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 		return "", fmt.Errorf("restore destination escapes data directory")
 	}
 
+	if strings.ContainsAny(item.TrashPath, "/\\") || item.TrashPath == ".." || item.TrashPath == "." || item.TrashPath == "" {
+		return "", fmt.Errorf("invalid trash path in record: %q", item.ID)
+	}
 	srcAbs := filepath.Join(s.trashDir, item.TrashPath)
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
 		if !isCrossDevice(err) {
@@ -403,6 +415,9 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 		return fmt.Errorf("trash item not found")
 	}
 
+	if strings.ContainsAny(item.TrashPath, "/\\") || item.TrashPath == ".." || item.TrashPath == "." || item.TrashPath == "" {
+		return fmt.Errorf("invalid trash path in record: %q", item.ID)
+	}
 	trashAbs := filepath.Join(s.trashDir, item.TrashPath)
 	if err := os.RemoveAll(trashAbs); err != nil {
 		return fmt.Errorf("delete from trash: %w", err)

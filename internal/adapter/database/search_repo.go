@@ -93,7 +93,7 @@ func (r *SearchRepo) Search(query string, limit int) ([]domain.SearchResult, int
 	}
 	defer rows.Close()
 
-	var results []domain.SearchResult
+	results := make([]domain.SearchResult, 0)
 	for rows.Next() {
 		var sr domain.SearchResult
 		if err := rows.Scan(&sr.Name, &sr.Path, &sr.IsDir); err != nil {
@@ -146,7 +146,7 @@ func buildFTSQuery(input string) string {
 	replacer := strings.NewReplacer(
 		`"`, "", `*`, "", `(`, "", `)`, "",
 		`+`, "", `-`, " ", `^`, "", `{`, "",
-		`}`, "", `:`, "",
+		`}`, "", `:`, "", `'`, " ",
 	)
 	cleaned := replacer.Replace(input)
 

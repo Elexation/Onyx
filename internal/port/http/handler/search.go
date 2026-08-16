@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -27,6 +28,7 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	results, total, err := h.search.Search(query, 20)
 	if err != nil {
+		slog.Warn("search failed", "query", query, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "search failed"})
 		return
 	}

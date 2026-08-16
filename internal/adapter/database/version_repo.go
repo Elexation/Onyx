@@ -187,7 +187,7 @@ func versionPathFor(filePath string) string {
 }
 
 func scanVersions(rows *sql.Rows) ([]domain.FileVersion, error) {
-	var versions []domain.FileVersion
+	versions := make([]domain.FileVersion, 0)
 	for rows.Next() {
 		var v domain.FileVersion
 		if err := rows.Scan(&v.ID, &v.FilePath, &v.VersionPath, &v.CreatedAt, &v.Size); err != nil {

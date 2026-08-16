@@ -46,6 +46,7 @@ func (s *SettingsService) Set(key, value string) error {
 }
 
 func (s *SettingsService) Update(updates map[string]string) (saved []string, errors map[string]string) {
+	saved = make([]string, 0)
 	errors = make(map[string]string)
 	for key, value := range updates {
 		if err := validateSetting(key, value); err != nil {

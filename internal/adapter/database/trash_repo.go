@@ -52,7 +52,7 @@ func (r *TrashRepo) List() ([]domain.TrashItem, error) {
 	}
 	defer rows.Close()
 
-	var items []domain.TrashItem
+	items := make([]domain.TrashItem, 0)
 	for rows.Next() {
 		var item domain.TrashItem
 		var isDir int
@@ -116,7 +116,7 @@ func (r *TrashRepo) ListExpiredBefore(unixTime int64) ([]domain.TrashItem, error
 	}
 	defer rows.Close()
 
-	var items []domain.TrashItem
+	items := make([]domain.TrashItem, 0)
 	for rows.Next() {
 		var item domain.TrashItem
 		var isDir int
@@ -138,7 +138,7 @@ func (r *TrashRepo) ListOldestFirst() ([]domain.TrashItem, error) {
 	}
 	defer rows.Close()
 
-	var items []domain.TrashItem
+	items := make([]domain.TrashItem, 0)
 	for rows.Next() {
 		var item domain.TrashItem
 		var isDir int

@@ -6,9 +6,9 @@ services:
     volumes:
       - ./config:/config
       - ./data:/srv
-      - ./.versions:/versions
-      - ./.trash:/trash
-      - ./.cache:/cache
+      - ./.versions:/.versions
+      - ./.trash:/.trash
+      - ./.cache:/.cache
     environment:
       - ONYX_DATA=/srv
       - ONYX_CONFIG=/config

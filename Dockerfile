@@ -1,6 +1,6 @@
 FROM node:22-alpine AS frontend
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* frontend/.npmrc ./
 RUN npm ci
 COPY frontend/ .
 RUN mkdir -p /app/web

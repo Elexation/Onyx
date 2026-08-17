@@ -12,3 +12,5 @@ test-results/
 *.exe
 *.png
 todo.txt
+.env
+.env.*

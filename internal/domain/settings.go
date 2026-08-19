@@ -19,7 +19,8 @@ const (
 	SettingUploadMaxSize = "upload.max_size"
 	SettingPlaybackDefaultQualityCeiling = "playback.default_quality_ceiling"
 
-	SettingServerListenPort = "server.listen_port"
+	SettingServerListenPort  = "server.listen_port"
+	SettingServerTLSEnabled = "server.tls_enabled"
 )
 
 var Defaults = map[string]string{
@@ -36,7 +37,8 @@ var Defaults = map[string]string{
 	SettingUploadMaxSize:       "0",     // 0 = unlimited
 	SettingPlaybackDefaultQualityCeiling: "1080", // pixel height; 0 = unlimited
 
-	SettingServerListenPort: "8080",
+	SettingServerListenPort:  "8080",
+	SettingServerTLSEnabled: "false",
 }
 
 func GetBool(value string) bool {

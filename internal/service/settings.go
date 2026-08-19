@@ -71,7 +71,7 @@ func validateSetting(key, value string) error {
 	}
 
 	switch key {
-	case domain.SettingTrashEnabled, domain.SettingVersionsEnabled, domain.SettingSharesEnabled:
+	case domain.SettingTrashEnabled, domain.SettingVersionsEnabled, domain.SettingSharesEnabled, domain.SettingServerTLSEnabled:
 		if value != "true" && value != "false" {
 			return fmt.Errorf("must be true or false")
 		}

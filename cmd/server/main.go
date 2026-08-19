@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +54,12 @@ func main() {
 	settingsService.SetEvents(eventStore)
 
 	port, envOverrides := resolveListenPort(settingsService)
+
+	tlsEnabled, certFile, keyFile, tlsOverrides := resolveTLS(settingsService, configDir)
+	for k, v := range tlsOverrides {
+		envOverrides[k] = v
+	}
+	manualCert := os.Getenv("ONYX_TLS_CERT") != ""
 
 	userRepo := database.NewUserRepo(db)
 	sessionRepo := database.NewSessionRepo(db)
@@ -185,9 +192,9 @@ func main() {
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
-	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, eventStore, trustedProxy, requireHTTPS, port, envOverrides)
+	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, eventStore, trustedProxy, requireHTTPS, tlsEnabled, port, envOverrides)
 
-	slog.Info("starting server", "port", port, "envOverrides", envOverrides)
+	slog.Info("starting server", "port", port, "tls", tlsEnabled, "envOverrides", envOverrides)
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           router,
@@ -195,9 +202,34 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+
+	if tlsEnabled {
+		if !manualCert {
+			if err := ensureSelfSignedCert(certFile, keyFile); err != nil {
+				slog.Error("TLS cert generation failed", "error", err)
+				os.Exit(1)
+			}
+		}
+		tlsCfg, err := buildTLSConfig(certFile, keyFile)
+		if err != nil {
+			slog.Error("TLS config failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("TLS enabled", "cert", certFile, "fingerprint", certFingerprint(certFile))
+		ln, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			slog.Error("listen failed", "error", err)
+			os.Exit(1)
+		}
+		if err := srv.Serve(newTLSRedirectListener(ln, tlsCfg, port)); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := srv.ListenAndServe(); err != nil {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
 	}
 }
 

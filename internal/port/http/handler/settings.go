@@ -14,15 +14,17 @@ type SettingsHandler struct {
 	shares           *service.ShareService
 	versions         *service.VersionService
 	activeListenPort string
+	activeTLS        bool
 	envOverrides     map[string]string
 }
 
-func NewSettingsHandler(settings *service.SettingsService, shares *service.ShareService, versions *service.VersionService, activeListenPort string, envOverrides map[string]string) *SettingsHandler {
+func NewSettingsHandler(settings *service.SettingsService, shares *service.ShareService, versions *service.VersionService, activeListenPort string, activeTLS bool, envOverrides map[string]string) *SettingsHandler {
 	return &SettingsHandler{
 		settings:         settings,
 		shares:           shares,
 		versions:         versions,
 		activeListenPort: activeListenPort,
+		activeTLS:        activeTLS,
 		envOverrides:     envOverrides,
 	}
 }
@@ -38,6 +40,7 @@ func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		"meta": map[string]any{
 			"envOverrides":     h.envOverrides,
 			"activeListenPort": h.activeListenPort,
+			"activeTLS":        h.activeTLS,
 		},
 	})
 }

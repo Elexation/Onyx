@@ -3,6 +3,7 @@ import { request } from "$lib/api";
 export type SettingsMeta = {
 	envOverrides: Record<string, string>;
 	activeListenPort: string;
+	activeTLS: boolean;
 };
 
 export type SettingsResponse = {

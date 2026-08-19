@@ -118,7 +118,7 @@
 
 	let section = $state<SectionKey>("versioning");
 	let settings = $state<Record<string, string>>({});
-	let meta = $state<SettingsMeta>({ envOverrides: {}, activeListenPort: "8080" });
+	let meta = $state<SettingsMeta>({ envOverrides: {}, activeListenPort: "8080", activeTLS: false });
 	let loading = $state(true);
 
 	let currentPassword = $state("");
@@ -227,7 +227,7 @@
 				const result = await updateSettings({ [key]: value });
 				if (result.errors && Object.keys(result.errors).length > 0) {
 					toast.error(Object.values(result.errors)[0]);
-				} else if (key === "server.listen_port") {
+				} else if (key === "server.listen_port" || key === "server.tls_enabled") {
 					toast.success("Saved — restart server to apply");
 				} else {
 					toast.success("Saved");
@@ -943,15 +943,25 @@
 					{@const isLocked = !!lockReason}
 					{@const configuredPort = settings["server.listen_port"] ?? "8080"}
 					{@const activePort = meta.activeListenPort}
-					{@const restartPending = !isLocked && configuredPort !== activePort}
+					{@const portRestartPending = !isLocked && configuredPort !== activePort}
 
-					{#if restartPending}
+					{@const tlsLockReason = meta.envOverrides["server.tls_enabled"]}
+					{@const tlsLocked = !!tlsLockReason}
+					{@const configuredTLS = settings["server.tls_enabled"] === "true"}
+					{@const activeTLS = meta.activeTLS}
+					{@const tlsRestartPending = !tlsLocked && configuredTLS !== activeTLS}
+
+					{#if portRestartPending || tlsRestartPending}
 						<div class="mb-5 rounded-lg border border-border-2 bg-muted/30 px-4 py-3 text-meta">
 							<span class="font-medium text-foreground">Restart pending</span>
 							<span class="text-muted-foreground">
-								— currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
-								will switch to <span class="font-mono tabular-nums text-foreground">:{configuredPort}</span>
-								on next restart.
+								{#if portRestartPending}
+									— currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
+									will switch to <span class="font-mono tabular-nums text-foreground">:{configuredPort}</span>
+									on next restart.
+								{:else}
+									— TLS {configuredTLS ? "enabled" : "disabled"} in settings, will take effect on next restart.
+								{/if}
 							</span>
 						</div>
 					{/if}
@@ -978,6 +988,23 @@
 								: "Port the server binds to. Range 1024–65535. Takes effect after restart. If you get locked out, set the ONYX_PORT environment variable and restart.",
 						listenPortInput,
 						"listen-port",
+					)}
+
+					{#snippet tlsSwitch()}
+						<Switch
+							id="tls-enabled"
+							checked={tlsLocked ? activeTLS : configuredTLS}
+							disabled={tlsLocked}
+							onCheckedChange={(checked) => save("server.tls_enabled", checked ? "true" : "false")}
+						/>
+					{/snippet}
+					{@render row(
+						"Enable TLS (HTTPS)",
+						tlsLockReason === "ONYX_TLS"
+							? "Locked — set by ONYX_TLS environment variable. Unset and restart to use this field."
+							: "Serve HTTPS directly with a self-signed certificate. Auto-generated on first enable. Takes effect after restart.",
+						tlsSwitch,
+						"tls-enabled",
 					)}
 				{/if}
 			{/if}

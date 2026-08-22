@@ -1,6 +1,7 @@
 services:
   onyx:
     build: .
+    container_name: onyx
     ports:
       - "${ONYX_PORT:-8080}:8080"
     volumes:
@@ -12,6 +13,10 @@ services:
     environment:
       - ONYX_DATA=/srv
       - ONYX_CONFIG=/config
+      # Run as this UID:GID (default 1000:1000). The entrypoint ensures
+      # all mounted directories are owned by this user before starting.
+      # - PUID=1000
+      # - PGID=1000
       # Hardware-accelerated video transcoding. Values: auto (default —
       # probes NVENC / QSV / VAAPI / AMF in that order), nvenc, qsv,
       # vaapi, amf, or none (force libx264). Unavailable forced encoders
@@ -20,7 +25,12 @@ services:
       # Caps the highest ABR rung produced per transcode. Values: 480,
       # 720, 1080, 1440, 2160. Defaults to 2160.
       # - ONYX_MAX_TRANSCODE_HEIGHT=2160
-    user: "1000:1000"
+      # Enable built-in TLS (HTTPS). Auto-generates a self-signed cert
+      # in /config on first run. Set to true and restart.
+      # - ONYX_TLS=true
+      # Optional: use your own cert/key instead of auto-generated.
+      # - ONYX_TLS_CERT=/config/custom.crt
+      # - ONYX_TLS_KEY=/config/custom.key
     restart: unless-stopped
     # --- GPU passthrough (uncomment the block matching your hardware) ---
     #
@@ -39,8 +49,3 @@ services:
     # group_add:
     #   - "989"   # host 'render' group gid; check with `getent group render`
     #
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3

@@ -16,9 +16,15 @@ COPY --from=frontend /app/web/csp_hash.go ./web/csp_hash.go
 RUN CGO_ENABLED=0 go build -o /onyx ./cmd/server
 
 FROM alpine:3.21
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg su-exec
 COPY --from=backend /onyx /onyx
-RUN addgroup -S onyx && adduser -S onyx -G onyx
-USER onyx
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 8080
-CMD ["/onyx"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+	CMD if [ "$ONYX_TLS" = "true" ]; then \
+		wget --no-verbose --no-check-certificate --tries=1 --spider https://localhost:8080/api/health; \
+	else \
+		wget --no-verbose --tries=1 --spider http://localhost:8080/api/health; \
+	fi || exit 1
+ENTRYPOINT ["/entrypoint.sh"]

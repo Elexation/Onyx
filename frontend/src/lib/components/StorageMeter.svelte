@@ -39,7 +39,7 @@
 </script>
 
 <div class="mt-auto flex flex-col gap-1.5 border-t border-border pt-[14px]">
-	<div class="flex items-center justify-between text-xs text-muted-foreground">
+	<div class="flex flex-col gap-0.5 text-xs text-muted-foreground">
 		<span class="inline-flex items-center gap-1.5">
 			<HardDriveIcon class="size-[13px]" strokeWidth={2} />
 			Storage

@@ -16,6 +16,50 @@ Open `http://localhost:8080`. To use a different port:
 ONYX_PORT=3000 docker compose up -d
 ```
 
+## Environment Variables
+
+### Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ONYX_PORT` | `8080` | Port the server listens on. In Docker, also set the host-side port mapping. |
+| `ONYX_HTTPS` | `false` | Enable built-in HTTPS. Auto-generates a self-signed cert on first run. |
+| `ONYX_TLS_CERT` | *(auto)* | Path to a custom TLS certificate. Must be set with `ONYX_TLS_KEY`. |
+| `ONYX_TLS_KEY` | *(auto)* | Path to a custom TLS private key. Must be set with `ONYX_TLS_CERT`. |
+| `ONYX_DOMAIN` | *(unset)* | Canonical hostname. Requests with a different `Host` header (e.g. an IP address) are 301-redirected to this domain. |
+| `ONYX_HTTPS_REDIRECT` | `false` | Start a separate HTTP listener that redirects to HTTPS. Requires `ONYX_HTTPS=true`. |
+| `ONYX_HTTPS_REDIRECT_PORT` | `80` | Port for the HTTP redirect listener. Map it in `ports:` (e.g. `"80:80"`). |
+| `ONYX_TRUSTED_PROXY` | `false` | Trust `X-Forwarded-Proto` and `X-Real-IP` headers. Enable when behind a reverse proxy (nginx, Caddy, Traefik). Also omits the internal port from domain redirects. |
+| `ONYX_REQUIRE_HTTPS` | `false` | Force `Secure` flag on cookies and emit HSTS headers regardless of connection type. Use when TLS is terminated at the proxy, not by Onyx. |
+
+### Storage
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ONYX_DATA` | `data` | Root directory for user files. |
+| `ONYX_CONFIG` | `config` | Directory for the database and TLS certificates. |
+| `ONYX_CACHE` | `.cache` | Directory for thumbnails, transcode output, and upload staging. |
+
+### Transcoding
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ONYX_HWACCEL` | `auto` | Hardware encoder preference: `auto`, `nvenc`, `qsv`, `vaapi`, `amf`, or `none` (software). |
+| `ONYX_MAX_TRANSCODE_HEIGHT` | `2160` | Cap the highest ABR rung. One of `480`, `720`, `1080`, `1440`, `2160`. |
+
+### Docker
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PUID` | `1000` | UID the server process runs as inside the container. |
+| `PGID` | `1000` | GID the server process runs as inside the container. |
+
+### Advanced
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ONYX_VERSION_RETENTION_INTERVAL` | `24h` | How often the version retention sweep runs. |
+
 ## Hardware video acceleration
 
 Onyx transcodes non-browser-native video on demand into an HLS ABR ladder
@@ -24,16 +68,8 @@ probes the host for hardware encoders on startup and uses the first one
 that works; when none are available it falls back to libx264.
 
 Supported encoders: NVIDIA NVENC, Intel Quick Sync (QSV), Linux VAAPI,
-AMD AMF.
-
-Environment variables:
-
-- `ONYX_HWACCEL` — `auto` (default), `nvenc`, `qsv`, `vaapi`, `amf`, or
-  `none` to force software. Unavailable forced encoders fall back to
-  software with a warning in the logs.
-- `ONYX_MAX_TRANSCODE_HEIGHT` — caps the highest rung produced. One of
-  `480`, `720`, `1080`, `1440`, `2160` (default). Lowering this saves
-  CPU/GPU for hosts that will never serve 4K.
+AMD AMF. See `ONYX_HWACCEL` and `ONYX_MAX_TRANSCODE_HEIGHT` in the
+environment variables table above.
 
 GPU passthrough in Docker is commented out in `docker-compose.yml`;
 uncomment the block matching your hardware. NVIDIA needs the

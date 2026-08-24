@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { setup } from "$lib/auth.svelte.js";
+	import { request } from "$lib/api.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import * as Card from "$lib/components/ui/card/index.js";
 	import { Input } from "$lib/components/ui/input/index.js";
@@ -28,11 +27,10 @@
 
 		loading = true;
 		try {
-			await setup(password);
-			await goto("/login");
+			await request("POST", "/api/auth/setup", { password });
+			window.location.href = "/files";
 		} catch (err) {
 			error = err instanceof Error ? err.message : "Setup failed";
-		} finally {
 			loading = false;
 		}
 	}

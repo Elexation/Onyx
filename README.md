@@ -64,17 +64,35 @@ ONYX_PORT=3000 docker compose up -d
 
 Onyx transcodes non-browser-native video on demand into an HLS ABR ladder
 (2160p/1440p/1080p/720p/480p, capped by source height). By default it
-probes the host for hardware encoders on startup and uses the first one
-that works; when none are available it falls back to libx264.
+probes the host for hardware encoders on startup and uses the best one
+available; when none are found it falls back to libx264 (software).
 
-Supported encoders: NVIDIA NVENC, Intel Quick Sync (QSV), Linux VAAPI,
-AMD AMF. See `ONYX_HWACCEL` and `ONYX_MAX_TRANSCODE_HEIGHT` in the
-environment variables table above.
+If the GPU isn't ready at startup (common after a reboot — the GPU driver
+may initialize after the container starts), Onyx re-probes every 30 seconds
+for up to 5 minutes. When a hardware encoder becomes available, it
+upgrades automatically — no restart needed.
 
-GPU passthrough in Docker is commented out in `docker-compose.yml`;
-uncomment the block matching your hardware. NVIDIA needs the
-nvidia-container-toolkit; Intel/AMD need `/dev/dri/renderD128` exposed
-to the container with the host `render` group GID.
+Encoder priority: NVENC > QSV > VAAPI > AMF > libx264.
+
+### NVIDIA (NVENC)
+
+1. Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host
+2. Register the runtime with Docker:
+   ```bash
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   ```
+3. Uncomment the NVIDIA block in `docker-compose.yml`
+
+### Intel (QSV) / AMD (VAAPI/AMF)
+
+Uncomment the Intel/AMD block in `docker-compose.yml`. Replace the group
+GID with your host's `render` group (`getent group render`).
+
+### Configuration
+
+See `ONYX_HWACCEL` and `ONYX_MAX_TRANSCODE_HEIGHT` in the environment
+variables table above.
 
 ## Development
 

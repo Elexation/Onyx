@@ -109,8 +109,10 @@ type TranscodeService struct {
 	realRoot  string
 	cacheRoot string
 
-	encoder   media.Encoder
-	maxHeight int
+	encoderMu   sync.RWMutex
+	encoder     media.Encoder
+	hwaccelPref string
+	maxHeight   int
 
 	mu       sync.Mutex
 	sessions map[string]*TranscodeSession
@@ -158,20 +160,27 @@ func NewTranscodeService(s *storage.LocalStorage, probe *ProbeService, dataDir, 
 		"max_height", maxHeight,
 	)
 	ts := &TranscodeService{
-		storage:   s,
-		probe:     probe,
-		ffmpeg:    media.Detect(),
-		dataDir:   absDataDir,
-		realRoot:  realRoot,
-		cacheRoot: absCacheRoot,
-		encoder:   encoder,
-		maxHeight: maxHeight,
-		sessions:  make(map[string]*TranscodeSession),
-		sema:      make(chan struct{}, limit),
-		stopCh:    make(chan struct{}),
+		storage:     s,
+		probe:       probe,
+		ffmpeg:      media.Detect(),
+		dataDir:     absDataDir,
+		realRoot:    realRoot,
+		cacheRoot:   absCacheRoot,
+		encoder:     encoder,
+		hwaccelPref: hwaccelPref,
+		maxHeight:   maxHeight,
+		sessions:    make(map[string]*TranscodeSession),
+		sema:        make(chan struct{}, limit),
+		stopCh:      make(chan struct{}),
 	}
 	ts.wg.Add(1)
 	go ts.cleanupLoop()
+
+	if ts.shouldReprobe() {
+		ts.wg.Add(1)
+		go ts.reprobeLoop()
+	}
+
 	return ts, nil
 }
 
@@ -179,7 +188,12 @@ func NewTranscodeService(s *storage.LocalStorage, probe *ProbeService, dataDir, 
 func (ts *TranscodeService) HasFFmpeg() bool { return ts.ffmpeg.Available() }
 
 // Encoder returns the encoder currently selected for transcoding.
-func (ts *TranscodeService) Encoder() media.Encoder { return ts.encoder }
+// Thread-safe; may change during the re-probe window.
+func (ts *TranscodeService) Encoder() media.Encoder {
+	ts.encoderMu.RLock()
+	defer ts.encoderMu.RUnlock()
+	return ts.encoder
+}
 
 // Ensure resolves relPath, starts a session if one does not exist yet,
 // and returns it after master and per-variant playlists are written.
@@ -219,8 +233,9 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 		return nil, fmt.Errorf("unknown width")
 	}
 
+	encoder := ts.Encoder()
 	rungs := media.SelectRungs(info.Height, ts.maxHeight)
-	hash := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, ts.encoder)
+	hash := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, encoder)
 
 	ts.mu.Lock()
 	if existing, ok := ts.sessions[hash]; ok {
@@ -268,7 +283,7 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 		"duration", info.Duration,
 		"source_height", info.Height,
 		"rungs", len(rungs),
-		"encoder", ts.encoder,
+		"encoder", encoder,
 	)
 	return session, nil
 }
@@ -527,7 +542,7 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 		SrcPath:      s.srcPath,
 		OutDir:       s.dir,
 		StartSegment: fromSegment,
-		Encoder:      ts.encoder,
+		Encoder:      ts.Encoder(),
 		Renditions:   s.renditions,
 		HasAudio:     s.hasAudio,
 		Framerate:    s.framerate,
@@ -851,4 +866,99 @@ func (ts *TranscodeService) sweepCache() {
 	if removed > 0 {
 		slog.Info("transcode cleanup: swept stale cache entries", "count", removed)
 	}
+}
+
+const (
+	reprobeInterval = 30 * time.Second
+	reprobeWindow   = 5 * time.Minute
+)
+
+// shouldReprobe returns true if the background re-probe goroutine
+// should be started based on the current encoder and preference.
+func (ts *TranscodeService) shouldReprobe() bool {
+	pref := strings.ToLower(strings.TrimSpace(ts.hwaccelPref))
+	switch pref {
+	case "none", "software", "libx264":
+		return false
+	case "", "auto":
+		return media.EncoderPriority(ts.encoder) > 0
+	default:
+		return ts.encoder == media.EncoderSoftware
+	}
+}
+
+// reprobeLoop periodically re-probes for hardware encoders that
+// weren't available at startup (e.g. GPU driver still initializing).
+// Stops when a satisfactory encoder is found or the window expires.
+func (ts *TranscodeService) reprobeLoop() {
+	defer ts.wg.Done()
+
+	slog.Info("hwaccel re-probe: started", "current", ts.Encoder(),
+		"preference", ts.hwaccelPref, "window", reprobeWindow)
+
+	ticker := time.NewTicker(reprobeInterval)
+	defer ticker.Stop()
+
+	deadline := time.NewTimer(reprobeWindow)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case <-ts.stopCh:
+			return
+		case <-deadline.C:
+			slog.Info("hwaccel re-probe: window expired", "encoder", ts.Encoder())
+			return
+		case <-ticker.C:
+			if ts.reprobe() {
+				return
+			}
+		}
+	}
+}
+
+// reprobe runs a single probe cycle and upgrades the encoder if a
+// better one is now available. Returns true if re-probing should stop.
+func (ts *TranscodeService) reprobe() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	probe := media.RunProbe(ctx, ts.ffmpeg, true)
+	current := ts.Encoder()
+	pref := strings.ToLower(strings.TrimSpace(ts.hwaccelPref))
+
+	switch pref {
+	case "", "auto":
+		if len(probe.Available) == 0 {
+			return false
+		}
+		best := probe.Available[0]
+		if media.EncoderPriority(best) >= media.EncoderPriority(current) {
+			return false
+		}
+		slog.Info("hwaccel re-probe: upgrading encoder", "from", current, "to", best)
+		ts.setEncoder(best)
+		return media.EncoderPriority(best) == 0
+
+	default:
+		wanted, ok := media.EncoderFromPref(pref)
+		if !ok {
+			return true
+		}
+		for _, enc := range probe.Available {
+			if enc == wanted {
+				slog.Info("hwaccel re-probe: forced encoder now available",
+					"from", current, "to", wanted)
+				ts.setEncoder(wanted)
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func (ts *TranscodeService) setEncoder(e media.Encoder) {
+	ts.encoderMu.Lock()
+	defer ts.encoderMu.Unlock()
+	ts.encoder = e
 }

@@ -33,24 +33,38 @@ type Probe struct {
 	Available []Encoder
 }
 
-// RunStartupProbe enumerates hardware encoders available on this host.
-// Runs `ffmpeg -hide_banner -encoders` to discover which encoders are
-// linked into the ffmpeg binary, then runs a short test encode for
-// each candidate. Encoders that are listed but fail the test (driver
-// mismatch, missing device node, permission denied) are logged at
-// WARN once and excluded from Available; successes are logged at INFO
-// once.
+// RunStartupProbe enumerates hardware encoders available on this host
+// with full diagnostic logging.
+func RunStartupProbe(ctx context.Context, f *FFmpeg) Probe {
+	return RunProbe(ctx, f, false)
+}
+
+// RunProbe enumerates hardware encoders available on this host. Runs
+// `ffmpeg -hide_banner -encoders` to discover which encoders are linked
+// into the ffmpeg binary, then runs a short test encode for each
+// candidate. Encoders that are listed but fail the test (driver
+// mismatch, missing device node, permission denied) are excluded from
+// Available.
+//
+// When quiet is false (startup), per-encoder failures are logged at
+// WARN and successes at INFO. When quiet is true (background
+// re-probe), only the final result is logged to avoid noise from
+// expected transient failures.
 //
 // Software libx264 is always usable, is not part of the returned list,
 // and Select falls back to it when no hardware encoder matches.
-func RunStartupProbe(ctx context.Context, f *FFmpeg) Probe {
+func RunProbe(ctx context.Context, f *FFmpeg, quiet bool) Probe {
 	if f == nil || f.ffmpegPath == "" {
-		slog.Info("hwaccel probe skipped: ffmpeg not available")
+		if !quiet {
+			slog.Info("hwaccel probe skipped: ffmpeg not available")
+		}
 		return Probe{}
 	}
 	listed, err := listEncoders(ctx, f.ffmpegPath)
 	if err != nil {
-		slog.Warn("hwaccel probe: -encoders listing failed", "error", err)
+		if !quiet {
+			slog.Warn("hwaccel probe: -encoders listing failed", "error", err)
+		}
 		return Probe{}
 	}
 	var available []Encoder
@@ -59,17 +73,50 @@ func RunStartupProbe(ctx context.Context, f *FFmpeg) Probe {
 			continue
 		}
 		if err := testEncode(ctx, f.ffmpegPath, enc); err != nil {
-			slog.Warn("hwaccel probe: encoder failed test encode",
-				"encoder", enc, "error", err)
+			if !quiet {
+				slog.Warn("hwaccel probe: encoder failed test encode",
+					"encoder", enc, "error", err)
+			}
 			continue
 		}
-		slog.Info("hwaccel probe: encoder available", "encoder", enc)
+		if !quiet {
+			slog.Info("hwaccel probe: encoder available", "encoder", enc)
+		}
 		available = append(available, enc)
 	}
-	if len(available) == 0 {
+	if len(available) == 0 && !quiet {
 		slog.Info("hwaccel probe: no hardware encoders available, will use libx264")
 	}
 	return Probe{Available: available}
+}
+
+// EncoderPriority returns the preference rank of an encoder. Lower is
+// better: 0 = NVENC (best), len(probeOrder) = software (worst).
+func EncoderPriority(e Encoder) int {
+	for i, enc := range probeOrder {
+		if enc == e {
+			return i
+		}
+	}
+	return len(probeOrder)
+}
+
+// EncoderFromPref maps an ONYX_HWACCEL preference string to the
+// corresponding Encoder constant. Returns false for "auto", "none",
+// "software", and unknown values.
+func EncoderFromPref(pref string) (Encoder, bool) {
+	switch strings.ToLower(strings.TrimSpace(pref)) {
+	case "nvenc", "h264_nvenc":
+		return EncoderNVENC, true
+	case "qsv", "h264_qsv":
+		return EncoderQSV, true
+	case "vaapi", "h264_vaapi":
+		return EncoderVAAPI, true
+	case "amf", "h264_amf":
+		return EncoderAMF, true
+	default:
+		return "", false
+	}
 }
 
 // Select returns the encoder to use given an ONYX_HWACCEL preference.

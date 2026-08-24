@@ -41,17 +41,17 @@ services:
       # Map the redirect port in `ports:` (e.g. "80:80").
       # - ONYX_HTTPS_REDIRECT=true
       # - ONYX_HTTPS_REDIRECT_PORT=80
-    restart: unless-stopped
+    restart: always
     # --- GPU passthrough (uncomment the block matching your hardware) ---
     #
-    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu, video]
+    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host.
+    # One-time setup:
+    #   sudo nvidia-ctk runtime configure --runtime=docker
+    #   sudo systemctl restart docker
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     #
     # Intel QSV or AMD VAAPI/AMF — pass the DRM render node through:
     # devices:

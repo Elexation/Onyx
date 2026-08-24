@@ -25,12 +25,22 @@ services:
       # Caps the highest ABR rung produced per transcode. Values: 480,
       # 720, 1080, 1440, 2160. Defaults to 2160.
       # - ONYX_MAX_TRANSCODE_HEIGHT=2160
-      # Enable built-in TLS (HTTPS). Auto-generates a self-signed cert
+      # Enable built-in HTTPS. Auto-generates a self-signed cert
       # in /config on first run. Set to true and restart.
-      # - ONYX_TLS=true
+      # - ONYX_HTTPS=true
       # Optional: use your own cert/key instead of auto-generated.
       # - ONYX_TLS_CERT=/config/custom.crt
       # - ONYX_TLS_KEY=/config/custom.key
+      # Trust reverse proxy headers (X-Forwarded-Proto, X-Real-IP).
+      # Required when running behind nginx, Caddy, Traefik, etc.
+      # - ONYX_TRUSTED_PROXY=true
+      # Canonical domain — redirects requests with a different Host
+      # header (e.g. IP address) to this hostname via 301.
+      # - ONYX_DOMAIN=onyx.example.com
+      # Separate HTTP→HTTPS redirect listener. Requires ONYX_HTTPS=true.
+      # Map the redirect port in `ports:` (e.g. "80:80").
+      # - ONYX_HTTPS_REDIRECT=true
+      # - ONYX_HTTPS_REDIRECT_PORT=80
     restart: unless-stopped
     # --- GPU passthrough (uncomment the block matching your hardware) ---
     #

@@ -1000,8 +1000,8 @@
 					{/snippet}
 					{@render row(
 						"Enable TLS (HTTPS)",
-						tlsLockReason === "ONYX_TLS"
-							? "Locked — set by ONYX_TLS environment variable. Unset and restart to use this field."
+						tlsLockReason === "ONYX_HTTPS"
+							? "Locked — set by ONYX_HTTPS environment variable. Unset and restart to use this field."
 							: "Serve HTTPS directly with a self-signed certificate. Auto-generated on first enable. Takes effect after restart.",
 						tlsSwitch,
 						"tls-enabled",

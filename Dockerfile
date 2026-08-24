@@ -22,7 +22,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-	CMD if [ "$ONYX_TLS" = "true" ]; then \
+	CMD if [ "$ONYX_HTTPS" = "true" ] || [ "$ONYX_TLS" = "true" ]; then \
 		wget --no-verbose --no-check-certificate --tries=1 --spider https://localhost:8080/api/health; \
 	else \
 		wget --no-verbose --tries=1 --spider http://localhost:8080/api/health; \

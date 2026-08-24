@@ -18,6 +18,7 @@ import (
 	"github.com/Elexation/onyx/internal/adapter/upload"
 	"github.com/Elexation/onyx/internal/domain"
 	server "github.com/Elexation/onyx/internal/port/http"
+	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -192,15 +193,48 @@ func main() {
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
+
+	canonicalDomain := os.Getenv("ONYX_DOMAIN")
+	if canonicalDomain != "" {
+		if strings.Contains(canonicalDomain, "://") || strings.Contains(canonicalDomain, "/") || strings.Contains(canonicalDomain, ":") {
+			slog.Error("ONYX_DOMAIN must be a bare hostname (e.g. onyx.example.com)")
+			os.Exit(1)
+		}
+	}
+
+	httpsRedirect := os.Getenv("ONYX_HTTPS_REDIRECT") == "true"
+	httpsRedirectPort := env("ONYX_HTTPS_REDIRECT_PORT", "80")
+	if httpsRedirect {
+		if !tlsEnabled {
+			slog.Warn("ONYX_HTTPS_REDIRECT=true has no effect without HTTPS enabled (ONYX_HTTPS=true), skipping")
+			httpsRedirect = false
+		} else {
+			n, err := strconv.Atoi(httpsRedirectPort)
+			if err != nil || n < 1 || n > 65535 {
+				slog.Error("ONYX_HTTPS_REDIRECT_PORT must be a valid port (1-65535)", "value", httpsRedirectPort)
+				os.Exit(1)
+			}
+		}
+	}
+
 	router := server.NewRouter(authService, fileService, settingsService, trashService, versionService, tusHandler, searchService, shareService, tokenService, thumbService, probeService, transcodeService, eventStore, trustedProxy, requireHTTPS, tlsEnabled, port, envOverrides)
 
-	slog.Info("starting server", "port", port, "tls", tlsEnabled, "envOverrides", envOverrides)
+	var handler http.Handler = router
+	if canonicalDomain != "" {
+		handler = middleware.DomainCanon(canonicalDomain, tlsEnabled, trustedProxy, port)(handler)
+	}
+
+	slog.Info("starting server", "port", port, "tls", tlsEnabled, "domain", canonicalDomain, "envOverrides", envOverrides)
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           router,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
+	}
+
+	if httpsRedirect {
+		go startHTTPRedirectListener(httpsRedirectPort, port, canonicalDomain, trustedProxy)
 	}
 
 	if tlsEnabled {
@@ -221,7 +255,7 @@ func main() {
 			slog.Error("listen failed", "error", err)
 			os.Exit(1)
 		}
-		if err := srv.Serve(newTLSRedirectListener(ln, tlsCfg, port)); err != nil {
+		if err := srv.Serve(newTLSRedirectListener(ln, tlsCfg, port, canonicalDomain, trustedProxy)); err != nil {
 			slog.Error("server failed", "error", err)
 			os.Exit(1)
 		}

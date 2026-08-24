@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -27,9 +28,13 @@ import (
 func resolveTLS(settings *service.SettingsService, configDir string) (enabled bool, certFile, keyFile string, envOverrides map[string]string) {
 	envOverrides = map[string]string{}
 
-	if v := os.Getenv("ONYX_TLS"); v != "" {
+	if v := os.Getenv("ONYX_HTTPS"); v != "" {
 		enabled = v == "true"
-		envOverrides[domain.SettingServerTLSEnabled] = "ONYX_TLS"
+		envOverrides[domain.SettingServerTLSEnabled] = "ONYX_HTTPS"
+	} else if v := os.Getenv("ONYX_TLS"); v != "" {
+		slog.Warn("ONYX_TLS is deprecated, use ONYX_HTTPS instead")
+		enabled = v == "true"
+		envOverrides[domain.SettingServerTLSEnabled] = "ONYX_HTTPS"
 	} else {
 		v, err := settings.Get(domain.SettingServerTLSEnabled)
 		if err == nil {
@@ -147,12 +152,14 @@ func buildTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 
 type tlsRedirectListener struct {
 	net.Listener
-	tlsCfg *tls.Config
-	port   string
+	tlsCfg          *tls.Config
+	port            string
+	canonicalDomain string
+	trustedProxy    bool
 }
 
-func newTLSRedirectListener(ln net.Listener, cfg *tls.Config, port string) net.Listener {
-	return &tlsRedirectListener{Listener: ln, tlsCfg: cfg, port: port}
+func newTLSRedirectListener(ln net.Listener, cfg *tls.Config, port, canonicalDomain string, trustedProxy bool) net.Listener {
+	return &tlsRedirectListener{Listener: ln, tlsCfg: cfg, port: port, canonicalDomain: canonicalDomain, trustedProxy: trustedProxy}
 }
 
 func (l *tlsRedirectListener) Accept() (net.Conn, error) {
@@ -176,11 +183,11 @@ func (l *tlsRedirectListener) Accept() (net.Conn, error) {
 			return tls.Server(pc, l.tlsCfg), nil
 		}
 
-		go redirectHTTP(pc, l.port)
+		go redirectHTTP(pc, l.port, l.canonicalDomain, l.trustedProxy)
 	}
 }
 
-func redirectHTTP(conn net.Conn, port string) {
+func redirectHTTP(conn net.Conn, port, canonicalDomain string, trustedProxy bool) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
@@ -196,8 +203,16 @@ func redirectHTTP(conn net.Conn, port string) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
+	if canonicalDomain != "" {
+		host = canonicalDomain
+	}
 
-	target := "https://" + net.JoinHostPort(host, port) + req.URL.RequestURI()
+	var target string
+	if trustedProxy || port == "443" {
+		target = "https://" + host + req.URL.RequestURI()
+	} else {
+		target = "https://" + net.JoinHostPort(host, port) + req.URL.RequestURI()
+	}
 	body := "Redirecting to " + target + "\n"
 	fmt.Fprintf(conn, "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", target, len(body), body)
 }

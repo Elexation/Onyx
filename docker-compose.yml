@@ -42,10 +42,10 @@ services:
       # - ONYX_HTTPS_REDIRECT=true
       # - ONYX_HTTPS_REDIRECT_PORT=80
     restart: always
-    # --- GPU passthrough (uncomment the block matching your hardware) ---
+    # --- GPU passthrough (uncomment the section matching your hardware) ---
     #
-    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host.
-    # One-time setup:
+    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host:
+    #   sudo apt install nvidia-container-toolkit
     #   sudo nvidia-ctk runtime configure --runtime=docker
     #   sudo systemctl restart docker
     # runtime: nvidia
@@ -53,9 +53,7 @@ services:
     #   - NVIDIA_VISIBLE_DEVICES=all
     #   - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     #
-    # Intel QSV or AMD VAAPI/AMF — pass the DRM render node through:
+    # Intel (VAAPI/QSV) or AMD (VAAPI/AMF) — just pass through /dev/dri:
     # devices:
-    #   - /dev/dri/renderD128:/dev/dri/renderD128
-    # group_add:
-    #   - "989"   # host 'render' group gid; check with `getent group render`
+    #   - /dev/dri:/dev/dri
     #

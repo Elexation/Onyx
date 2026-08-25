@@ -15,16 +15,23 @@ COPY --from=frontend /app/frontend/build ./web/build
 COPY --from=frontend /app/web/csp_hash.go ./web/csp_hash.go
 RUN CGO_ENABLED=0 go build -o /onyx ./cmd/server
 
-FROM alpine:3.21
-RUN apk add --no-cache ffmpeg su-exec
+FROM debian:bookworm-slim
+RUN sed -i 's/Components: main/Components: main non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources && \
+	apt-get update && apt-get install -y --no-install-recommends \
+	ffmpeg \
+	intel-media-va-driver-non-free \
+	mesa-va-drivers \
+	gosu \
+	curl \
+	&& rm -rf /var/lib/apt/lists/*
 COPY --from=backend /onyx /onyx
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 	CMD if [ "$ONYX_HTTPS" = "true" ] || [ "$ONYX_TLS" = "true" ]; then \
-		wget --no-verbose --no-check-certificate --tries=1 --spider https://localhost:8080/api/health; \
+		curl -fsk https://localhost:8080/api/health; \
 	else \
-		wget --no-verbose --tries=1 --spider http://localhost:8080/api/health; \
+		curl -fs http://localhost:8080/api/health; \
 	fi || exit 1
 ENTRYPOINT ["/entrypoint.sh"]

@@ -6,6 +6,8 @@ Go backend, SvelteKit frontend, SQLite storage. Dark mode only. Ships as a singl
 
 ## Quick Start
 
+### Docker Compose (recommended)
+
 ```bash
 docker compose up -d
 ```
@@ -14,6 +16,23 @@ Open `http://localhost:8080`. To use a different port:
 
 ```bash
 ONYX_PORT=3000 docker compose up -d
+```
+
+### Docker Run
+
+```bash
+docker run -d \
+  --name onyx \
+  -p 8080:8080 \
+  -v ./config:/config \
+  -v ./data:/srv \
+  -v ./.versions:/.versions \
+  -v ./.trash:/.trash \
+  -v ./.cache:/.cache \
+  -e ONYX_DATA=/srv \
+  -e ONYX_CONFIG=/config \
+  --restart always \
+  onyx:latest
 ```
 
 ## Environment Variables
@@ -60,38 +79,76 @@ ONYX_PORT=3000 docker compose up -d
 |----------|---------|-------------|
 | `ONYX_VERSION_RETENTION_INTERVAL` | `24h` | How often the version retention sweep runs. |
 
-## Hardware video acceleration
+## Hardware Video Acceleration
 
 Onyx transcodes non-browser-native video on demand into an HLS ABR ladder
 (2160p/1440p/1080p/720p/480p, capped by source height). By default it
-probes the host for hardware encoders on startup and uses the best one
-available; when none are found it falls back to libx264 (software).
+probes for hardware encoders on startup and uses the best available;
+when none are found it falls back to libx264 (software).
 
-If the GPU isn't ready at startup (common after a reboot — the GPU driver
-may initialize after the container starts), Onyx re-probes every 30 seconds
-for up to 5 minutes. When a hardware encoder becomes available, it
-upgrades automatically — no restart needed.
+If the GPU isn't ready at startup (common after a reboot — the driver may
+initialize after the container starts), Onyx re-probes every 30 seconds
+for up to 5 minutes and upgrades automatically — no restart needed.
 
-Encoder priority: NVENC > QSV > VAAPI > AMF > libx264.
+Encoder priority: **NVENC > QSV > VAAPI > AMF > libx264**.
 
-### NVIDIA (NVENC)
+### Intel / AMD
 
-1. Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host
-2. Register the runtime with Docker:
-   ```bash
-   sudo nvidia-ctk runtime configure --runtime=docker
-   sudo systemctl restart docker
-   ```
-3. Uncomment the NVIDIA block in `docker-compose.yml`
+Add one line to your compose file:
 
-### Intel (QSV) / AMD (VAAPI/AMF)
+```yaml
+devices:
+  - /dev/dri:/dev/dri
+```
 
-Uncomment the Intel/AMD block in `docker-compose.yml`. Replace the group
-GID with your host's `render` group (`getent group render`).
+Or with `docker run`:
+
+```bash
+docker run -d --device /dev/dri:/dev/dri ... onyx:latest
+```
+
+No host-side driver installation needed for most systems — the kernel
+module (i915 for Intel, amdgpu for AMD) is auto-loaded, and the container
+bundles the userspace VA-API drivers.
+
+### NVIDIA
+
+One-time host setup:
+
+```bash
+sudo apt install nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Then add to your compose file:
+
+```yaml
+runtime: nvidia
+environment:
+  - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+```
+
+Or with `docker run`:
+
+```bash
+docker run -d --runtime=nvidia \
+  -e NVIDIA_VISIBLE_DEVICES=all \
+  -e NVIDIA_DRIVER_CAPABILITIES=video,compute,utility \
+  ... onyx:latest
+```
+
+### Both GPUs
+
+If your system has both (e.g. NVIDIA discrete + Intel iGPU), combine both
+sections. Onyx will prefer NVENC (faster) and fall back to VAAPI if the
+NVIDIA runtime isn't available.
 
 ### Configuration
 
-See `ONYX_HWACCEL` and `ONYX_MAX_TRANSCODE_HEIGHT` in the environment
+Set `ONYX_HWACCEL` to force a specific encoder (`nvenc`, `qsv`, `vaapi`,
+`amf`, `none`) or leave it as `auto` (default). See the environment
 variables table above.
 
 ## Development

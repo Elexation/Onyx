@@ -10,6 +10,7 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import AlertCircleIcon from "@lucide/svelte/icons/alert-circle";
 	import FolderIcon from "@lucide/svelte/icons/folder";
+	import CancelUploadDialog from "$lib/components/dialogs/CancelUploadDialog.svelte";
 
 	interface DisplayEntry {
 		type: "file" | "directory";
@@ -26,72 +27,78 @@
 
 	const displayItems = $derived.by((): DisplayEntry[] => {
 		const entries: DisplayEntry[] = [];
-		const seenGroups = new Set<string>();
-
-		for (const item of uploadState.items) {
-			if (item.group) {
-				if (seenGroups.has(item.group)) continue;
-				seenGroups.add(item.group);
-
-				const groupItems = uploadState.items.filter((i) => i.group === item.group);
-				const meta = uploadState.groupMeta[item.group];
-				const totalSize = groupItems.reduce((s, i) => s + i.size, 0);
-				const totalUploaded = groupItems.reduce((s, i) => s + i.bytesUploaded, 0);
-				const completed = groupItems.filter((i) => i.status === "complete").length;
-				const allComplete = completed === groupItems.length;
-				const hasError = groupItems.some((i) => i.status === "error");
-				const hasUploading = groupItems.some((i) => i.status === "uploading");
-
-				entries.push({
-					type: "directory",
-					id: item.group,
-					name: meta?.name ?? "Directory",
-					size: totalSize,
-					bytesUploaded: totalUploaded,
-					progress: totalSize > 0 ? Math.round((totalUploaded / totalSize) * 100) : 0,
-					status: allComplete ? "complete" : hasError ? "error" : hasUploading ? "uploading" : "pending",
-					fileCount: groupItems.length,
-					completedCount: completed,
-				});
-			} else {
-				entries.push({
-					type: "file",
-					id: item.id,
-					name: item.name,
-					size: item.size,
-					bytesUploaded: item.bytesUploaded,
-					progress: item.progress,
-					status: item.status,
-					error: item.error,
-				});
-			}
+		for (const g of uploadState.groups) {
+			const finished = g.completedCount + g.errorCount;
+			const status =
+				finished >= g.fileCount
+					? g.errorCount > 0
+						? "error"
+						: "complete"
+					: g.bytesUploaded > 0
+						? "uploading"
+						: "pending";
+			entries.push({
+				type: "directory",
+				id: g.id,
+				name: g.name,
+				size: g.totalBytes,
+				bytesUploaded: g.bytesUploaded,
+				progress: g.totalBytes > 0 ? Math.round((g.bytesUploaded / g.totalBytes) * 100) : 0,
+				status,
+				fileCount: g.fileCount,
+				completedCount: g.completedCount,
+			});
 		}
-
+		for (const item of uploadState.looseItems) {
+			entries.push({
+				type: "file",
+				id: item.id,
+				name: item.name,
+				size: item.size,
+				bytesUploaded: item.bytesUploaded,
+				progress: item.progress,
+				status: item.status,
+				error: item.error,
+			});
+		}
 		return entries;
 	});
 
 	const DETAIL_THRESHOLD = 20;
 
+	// File-level totals for the header — a group contributes all its files, not
+	// the single row it renders as.
+	const totalFileCount = $derived(
+		uploadState.looseItems.length + uploadState.groups.reduce((s, g) => s + g.fileCount, 0),
+	);
+	const totalCompleteCount = $derived(
+		uploadState.looseItems.filter((i) => i.status === "complete").length +
+			uploadState.groups.reduce((s, g) => s + g.completedCount, 0),
+	);
+	const totalErrorCount = $derived(
+		uploadState.looseItems.filter((i) => i.status === "error").length +
+			uploadState.groups.reduce((s, g) => s + g.errorCount, 0),
+	);
+
 	const errorEntries = $derived(displayItems.filter((i) => i.status === "error"));
-	const errorCount = $derived(errorEntries.length);
-	const completedCount = $derived(displayItems.filter((i) => i.status === "complete").length);
 	const isLargeBatch = $derived(displayItems.length > DETAIL_THRESHOLD);
 	const isStalled = $derived(
 		uploadState.activeCount > 0 && uploadState.speed < 1024 && uploadState.totalProgress > 0,
 	);
 
-	const singleGroupName = $derived.by(() => {
-		const groups = new Set<string>();
-		for (const item of uploadState.items) {
-			if (item.group) groups.add(item.group);
-			else return null;
-		}
-		if (groups.size === 1) {
-			const groupId = [...groups][0]!;
-			return uploadState.groupMeta[groupId]?.name ?? null;
-		}
-		return null;
+	// While uploading with throughput but no ETA yet, the rate is still warming up
+	// (see ETA_WARMUP_SAMPLES in uppy.ts) — show "estimating…" instead of a number.
+	const etaText = $derived.by(() => {
+		if (uploadState.eta !== null) return formatEta(uploadState.eta);
+		if (uploadState.activeCount > 0 && uploadState.speed > 0) return "estimating…";
+		return "";
 	});
+
+	const singleGroupName = $derived(
+		uploadState.groups.length === 1 && uploadState.looseItems.length === 0
+			? uploadState.groups[0].name
+			: null,
+	);
 
 	function formatSize(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -107,18 +114,23 @@
 		return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 	}
 
+	// Coarse buckets, not exact seconds — the underlying ETA twitches with every
+	// burst of small-file completions, so rounding to friendly units (like Windows)
+	// keeps the displayed number from dancing.
 	function formatEta(seconds: number | null): string {
 		if (seconds === null || seconds <= 0) return "";
 		if (seconds > 86400) return "calculating...";
-		if (seconds < 60) return `${Math.ceil(seconds)}s left`;
+		if (seconds < 60) {
+			const s = Math.max(5, Math.round(seconds / 5) * 5);
+			return `${s}s left`;
+		}
 		if (seconds < 3600) {
-			const m = Math.floor(seconds / 60);
-			const s = Math.ceil(seconds % 60);
-			return `${m}m ${s}s left`;
+			const m = Math.max(1, Math.round(seconds / 60));
+			return `${m}m left`;
 		}
 		const h = Math.floor(seconds / 3600);
-		const m = Math.ceil((seconds % 3600) / 60);
-		return `${h}h ${m}m left`;
+		const m = Math.round((seconds % 3600) / 60);
+		return m > 0 ? `${h}h ${m}m left` : `${h}h left`;
 	}
 
 	function handleCancel(entry: DisplayEntry) {
@@ -128,12 +140,49 @@
 			cancelUpload(entry.id);
 		}
 	}
+
+	// Cancelling a long upload is a one-click way to throw away a lot of work, so
+	// gate the cancel-all paths behind an inline confirm.
+	let confirmingCancel = $state(false);
+
+	function requestCancelAll() {
+		confirmingCancel = true;
+	}
+
+	function confirmCancelAll() {
+		confirmingCancel = false;
+		cancelAll();
+	}
+
+	$effect(() => {
+		if (!uploadState.hasItems && !uploadState.preparing && !uploadState.scanning) {
+			confirmingCancel = false;
+		}
+	});
 </script>
 
-{#if uploadState.hasItems}
+{#if uploadState.hasItems || uploadState.preparing || uploadState.scanning}
 	<div
 		class="fixed right-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card {audioPlayer.visible ? 'bottom-[168px] md:bottom-[100px]' : 'bottom-[84px] md:bottom-4'}"
 	>
+		<!-- Preparing: enumeration/enqueue phase, before items exist -->
+		{#if uploadState.preparing || uploadState.scanning}
+			<div class="flex items-center gap-2.5 px-3 py-2.5 {uploadState.hasItems ? 'border-b border-border' : ''}">
+				<div class="size-4 animate-spin rounded-full border-2 border-muted-foreground/40 border-t-accent-brand"></div>
+				<span class="flex-1 text-sm font-medium">{uploadState.hasItems ? "Adding files…" : "Preparing upload…"}</span>
+				<Button
+					variant="destructive"
+					size="icon-sm"
+					onclick={() => requestCancelAll()}
+					title="Cancel"
+					aria-label="Cancel upload"
+				>
+					<XIcon class="size-4" />
+				</Button>
+			</div>
+		{/if}
+
+		{#if uploadState.hasItems}
 		<!-- Header -->
 		<button
 			class="flex w-full items-center justify-between px-3 py-2.5 hover:bg-muted"
@@ -141,12 +190,12 @@
 		>
 			<span class="text-sm font-medium">
 				{#if uploadState.isComplete}
-					{#if errorCount > 0 && completedCount === 0}
-						{errorCount} upload{errorCount !== 1 ? "s" : ""} failed
-					{:else if errorCount > 0}
-						{completedCount} complete · {errorCount} failed
+					{#if totalErrorCount > 0 && totalCompleteCount === 0}
+						{totalErrorCount} upload{totalErrorCount !== 1 ? "s" : ""} failed
+					{:else if totalErrorCount > 0}
+						{totalCompleteCount} complete · {totalErrorCount} failed
 					{:else}
-						{uploadState.items.length} upload{uploadState.items.length !== 1 ? "s" : ""} complete
+						{totalFileCount} upload{totalFileCount !== 1 ? "s" : ""} complete
 					{/if}
 				{:else}
 					{#if uploadState.totalProgress >= 100}
@@ -163,8 +212,8 @@
 						{:else if uploadState.speed > 0}
 							<span class="text-muted-foreground">
 								· {formatSpeed(uploadState.speed)}
-								{#if uploadState.eta !== null}
-									· {formatEta(uploadState.eta)}
+								{#if etaText}
+									· {etaText}
 								{/if}
 							</span>
 						{/if}
@@ -184,13 +233,13 @@
 					</Button>
 				{:else}
 					<Button
-						variant="ghost"
-						size="icon-xs"
-						onclick={(e) => { e.stopPropagation(); cancelAll(); }}
+						variant="destructive"
+						size="icon-sm"
+						onclick={(e) => { e.stopPropagation(); requestCancelAll(); }}
 						title="Cancel all"
 						aria-label="Cancel all uploads"
 					>
-						<XIcon class="size-3.5" />
+						<XIcon class="size-4" />
 					</Button>
 				{/if}
 				{#if uploadState.minimized}
@@ -217,14 +266,14 @@
 				<!-- Summary view for large batches -->
 				<div class="border-t border-border px-3 py-2">
 					<div class="text-xs text-muted-foreground">
-						{completedCount} of {displayItems.length} items complete
+						{totalCompleteCount} of {totalFileCount} items complete
 					</div>
 					{#if uploadState.activeCount > 0 && uploadState.speed > 0}
 						<div class="font-mono text-[11px] text-muted-foreground">
 							{formatSize(uploadState.totalBytesUploaded)} / {formatSize(uploadState.totalBytes)}
 							· {formatSpeed(uploadState.speed)}
-							{#if uploadState.eta !== null}
-								· {formatEta(uploadState.eta)}
+							{#if etaText}
+								· {etaText}
 							{/if}
 						</div>
 					{/if}
@@ -320,7 +369,9 @@
 									>
 										<RotateCwIcon class="size-3" />
 									</Button>
-								{:else if entry.status !== "complete"}
+								{:else if entry.status !== "complete" && displayItems.length > 1}
+									<!-- With a single entry the top-right X already cancels it; a
+									     per-row X would be redundant. -->
 									<Button
 										variant="ghost"
 										size="icon-xs"
@@ -350,5 +401,13 @@
 				</div>
 			{/if}
 		{/if}
+		{/if}
 	</div>
+{/if}
+
+{#if confirmingCancel && !uploadState.isComplete}
+	<CancelUploadDialog
+		onconfirm={() => confirmCancelAll()}
+		oncancel={() => (confirmingCancel = false)}
+	/>
 {/if}

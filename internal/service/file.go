@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/storage"
@@ -39,10 +40,52 @@ type FileService struct {
 	indexer  *Indexer
 	shares   ShareRewriter
 	events   EventRecorder
+	// Per-destination finalize locks. Finalize runs concurrently (one tus
+	// request goroutine per file) and the Exists→resolve-conflict→WriteFile
+	// sequence is non-atomic, so two finalizes of the SAME destination could
+	// both pass the exists check (or pick the same keepBoth name) and clobber
+	// each other. Keying the lock by destination keeps distinct paths — the
+	// common folder-upload case — fully parallel.
+	finalizeMu    sync.Mutex
+	finalizeLocks map[string]*finalizeLock
+}
+
+type finalizeLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// ErrUploadConflict is returned by CompleteUpload when the destination already
+// exists and the client supplied no conflict strategy. Exposed so the upload
+// handler can map it to a sanitized client-facing error.
+var ErrUploadConflict = errors.New("file already exists")
+
+// lockFinalize acquires the finalize lock for dest, creating it on first use.
+func (s *FileService) lockFinalize(dest string) *finalizeLock {
+	s.finalizeMu.Lock()
+	l := s.finalizeLocks[dest]
+	if l == nil {
+		l = &finalizeLock{}
+		s.finalizeLocks[dest] = l
+	}
+	l.refs++
+	s.finalizeMu.Unlock()
+	l.mu.Lock()
+	return l
+}
+
+func (s *FileService) unlockFinalize(dest string, l *finalizeLock) {
+	l.mu.Unlock()
+	s.finalizeMu.Lock()
+	l.refs--
+	if l.refs == 0 {
+		delete(s.finalizeLocks, dest)
+	}
+	s.finalizeMu.Unlock()
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
-	return &FileService{storage: storage}
+	return &FileService{storage: storage, finalizeLocks: make(map[string]*finalizeLock)}
 }
 
 func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
@@ -485,6 +528,12 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 
 	destPath := path.Join(cleanTarget, cleanRel)
 
+	// Serialize same-destination finalizes for the whole check→resolve→write
+	// window. Lock key is the original destPath (evaluated now, before any
+	// keepBoth rename), so the defer releases the right entry.
+	l := s.lockFinalize(destPath)
+	defer s.unlockFinalize(destPath, l)
+
 	exists, err := s.storage.Exists(destPath)
 	if err != nil {
 		return "", fmt.Errorf("check existing: %w", err)
@@ -508,7 +557,7 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 				return "", fmt.Errorf("unique name: %w", err)
 			}
 		default:
-			return "", fmt.Errorf("file already exists: %s", destPath)
+			return "", ErrUploadConflict
 		}
 	}
 

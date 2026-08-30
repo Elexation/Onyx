@@ -2,7 +2,7 @@
 	import { untrack } from "svelte";
 	import { page } from "$app/state";
 	import { goto, replaceState } from "$app/navigation";
-	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move } from "$lib/api/files.js";
+	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move, mkdir } from "$lib/api/files.js";
 	import { checkConflicts } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
@@ -32,6 +32,12 @@
 	import DeleteDialog from "$lib/components/dialogs/DeleteDialog.svelte";
 	import MoveDialog from "$lib/components/dialogs/MoveDialog.svelte";
 	import ConflictDialog, { type ConflictPair } from "$lib/components/dialogs/ConflictDialog.svelte";
+	import FolderConflictDialog, {
+		type FolderConflictPair,
+		type FolderResolution,
+	} from "$lib/components/dialogs/FolderConflictDialog.svelte";
+	import LargeUploadDialog from "$lib/components/dialogs/LargeUploadDialog.svelte";
+	import { uploadState } from "$lib/stores/upload.svelte.js";
 	import VersionHistoryDialog from "$lib/components/dialogs/VersionHistoryDialog.svelte";
 	import ShareDialog from "$lib/components/dialogs/ShareDialog.svelte";
 	import PreviewModal from "$lib/components/preview/PreviewModal.svelte";
@@ -90,7 +96,16 @@
 	// Upload state
 	let conflictOpen = $state(false);
 	let conflictPairs = $state<ConflictPair[]>([]);
+	let folderConflictOpen = $state(false);
+	let folderConflictPairs = $state<FolderConflictPair[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
+	let pendingEmptyDirs = $state<string[]>([]);
+	// Warn before uploading folders with very large file counts — holding/uploading
+	// tens of thousands of files at once is slow and memory-heavy in the browser.
+	const LARGE_UPLOAD_THRESHOLD = 5000;
+	let largeUploadOpen = $state(false);
+	let largeUploadCount = $state(0);
+	let largeUploadBytes = $state(0);
 
 	function handleShareSelected() {
 		if (selection.count !== 1) return;
@@ -387,40 +402,184 @@
 	}
 
 	// Upload handling
-	async function handleUpload(files: File[]) {
-		if (conflictOpen) return;
-		const targetDir = path || "/";
-		const relativePaths = files.map(
-			(f) => (f as any).webkitRelativePath || (f as any).relativePath || f.name,
-		);
+	const relOf = (f: File) =>
+		(f as any).webkitRelativePath || (f as any).relativePath || f.name;
+	const topOf = (rel: string) => {
+		const i = rel.indexOf("/");
+		return i === -1 ? rel : rel.slice(0, i);
+	};
 
+	// Recreate empty (and empty nested) folders that the file walk discards.
+	// Expands each to its full ancestor chain so single-level mkdir can build
+	// nested empties in order; already-existing dirs are a harmless no-op.
+	async function createEmptyDirs(targetDir: string, emptyDirs: string[]) {
+		const toCreate = new Set<string>();
+		for (const d of emptyDirs) {
+			const segs = d.split("/");
+			for (let i = 1; i <= segs.length; i++) toCreate.add(segs.slice(0, i).join("/"));
+		}
+		const ordered = [...toCreate].sort((a, b) => a.split("/").length - b.split("/").length);
+		for (const rel of ordered) {
+			const full = targetDir === "/" ? `/${rel}` : `${targetDir}/${rel}`;
+			try {
+				await mkdir(full);
+			} catch {
+				// Already exists, or created by a sibling file write — ignore.
+			}
+		}
+	}
+
+	async function uniqueFolderName(targetDir: string, base: string): Promise<string> {
+		for (let n = 1; n < 1000; n++) {
+			const candidate = `${base} (${n})`;
+			try {
+				const { conflicts } = await checkConflicts(targetDir, [candidate]);
+				if (conflicts.length === 0) return candidate;
+			} catch {
+				return candidate;
+			}
+		}
+		return `${base} (${Date.now()})`;
+	}
+
+	// Shared folder-upload path: create (renamed) empty dirs and enqueue files,
+	// honoring per-folder skip/merge/keep-both decisions.
+	async function applyFolderUpload(
+		targetDir: string,
+		files: File[],
+		emptyDirs: string[],
+		strategyByTop: Record<string, string>,
+		folderRenames: Record<string, string>,
+		skip: Set<string>,
+	) {
+		const dirsToCreate: string[] = [];
+		for (const d of emptyDirs) {
+			const top = topOf(d);
+			if (skip.has(top)) continue;
+			const newTop = folderRenames[top] ?? top;
+			dirsToCreate.push(newTop !== top ? newTop + d.slice(top.length) : d);
+		}
+		if (dirsToCreate.length > 0) await createEmptyDirs(targetDir, dirsToCreate);
+
+		const toUpload = files.filter((f) => {
+			const rel = relOf(f);
+			const top = rel.includes("/") ? topOf(rel) : null;
+			return !(top && skip.has(top));
+		});
+		if (toUpload.length > 0) {
+			await addFiles(toUpload, targetDir, { strategyByTop, folderRenames });
+			startUpload().catch(() => {});
+		}
+	}
+
+	async function handleUpload(
+		files: File[],
+		emptyDirs: string[] = [],
+		opts: { confirmedLarge?: boolean } = {},
+	) {
+		if (conflictOpen || folderConflictOpen || largeUploadOpen) return;
+		if (uploadState.preparing) return;
+
+		// Gate very large drops behind a confirmation before any heavy work.
+		if (!opts.confirmedLarge && files.length > LARGE_UPLOAD_THRESHOLD) {
+			pendingUploadFiles = files;
+			pendingEmptyDirs = emptyDirs;
+			largeUploadCount = files.length;
+			largeUploadBytes = files.reduce((sum, f) => sum + f.size, 0);
+			largeUploadOpen = true;
+			return;
+		}
+
+		uploadState.preparing = true;
 		try {
-			const { conflicts } = await checkConflicts(targetDir, relativePaths);
-			if (conflicts.length > 0) {
-				const incomingByPath = new Map<string, File>();
-				files.forEach((f, i) => incomingByPath.set(relativePaths[i], f));
-				pendingUploadFiles = files;
-				conflictPairs = conflicts.map((c) => {
-					const f = incomingByPath.get(c.path);
-					return {
-						path: c.path,
-						existing: { size: c.size, modTime: c.modTime },
-						incoming: {
-							size: f?.size ?? 0,
-							modTime: Math.floor((f?.lastModified ?? 0) / 1000),
-						},
-					};
-				});
-				conflictOpen = true;
-			} else {
+			const targetDir = path || "/";
+
+			// Top-level folder names across both files and empty dirs.
+			const topCounts = new Map<string, number>();
+			for (const f of files) {
+				const rel = relOf(f);
+				if (rel.includes("/")) {
+					const t = topOf(rel);
+					topCounts.set(t, (topCounts.get(t) ?? 0) + 1);
+				}
+			}
+			for (const d of emptyDirs) {
+				const t = topOf(d);
+				if (!topCounts.has(t)) topCounts.set(t, 0);
+			}
+
+			// Folder drop → resolve conflicts at the folder level (one prompt per
+			// top-level folder). Avoids the 500-path cap on per-file checks.
+			if (topCounts.size > 0) {
+				let conflicts: { path: string; size: number; modTime: number }[] = [];
+				try {
+					conflicts = (await checkConflicts(targetDir, [...topCounts.keys()])).conflicts;
+				} catch {
+					conflicts = [];
+				}
+				if (conflicts.length > 0) {
+					pendingUploadFiles = files;
+					pendingEmptyDirs = emptyDirs;
+					folderConflictPairs = conflicts.map((c) => ({
+						name: c.path,
+						existing: { modTime: c.modTime },
+						incoming: { fileCount: topCounts.get(c.path) ?? 0 },
+					}));
+					folderConflictOpen = true;
+					return;
+				}
+				await applyFolderUpload(targetDir, files, emptyDirs, {}, {}, new Set());
+				return;
+			}
+
+			// Loose files only → existing per-file conflict flow.
+			if (files.length === 0) return;
+			const relativePaths = files.map(relOf);
+			try {
+				const { conflicts } = await checkConflicts(targetDir, relativePaths);
+				if (conflicts.length > 0) {
+					const incomingByPath = new Map<string, File>();
+					files.forEach((f, i) => incomingByPath.set(relativePaths[i], f));
+					pendingUploadFiles = files;
+					conflictPairs = conflicts.map((c) => {
+						const f = incomingByPath.get(c.path);
+						return {
+							path: c.path,
+							existing: { size: c.size, modTime: c.modTime },
+							incoming: {
+								size: f?.size ?? 0,
+								modTime: Math.floor((f?.lastModified ?? 0) / 1000),
+							},
+						};
+					});
+					conflictOpen = true;
+				} else {
+					await addFiles(files, targetDir);
+					startUpload().catch(() => {});
+				}
+			} catch {
+				// If conflict check fails, upload anyway without conflict resolution
 				await addFiles(files, targetDir);
 				startUpload().catch(() => {});
 			}
-		} catch {
-			// If conflict check fails, upload anyway without conflict resolution
-			await addFiles(files, targetDir);
-			startUpload().catch(() => {});
+		} finally {
+			uploadState.preparing = false;
 		}
+	}
+
+	function handleLargeUploadConfirm() {
+		largeUploadOpen = false;
+		const files = pendingUploadFiles;
+		const emptyDirs = pendingEmptyDirs;
+		pendingUploadFiles = [];
+		pendingEmptyDirs = [];
+		handleUpload(files, emptyDirs, { confirmedLarge: true });
+	}
+
+	function handleLargeUploadCancel() {
+		largeUploadOpen = false;
+		pendingUploadFiles = [];
+		pendingEmptyDirs = [];
 	}
 
 	async function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
@@ -428,8 +587,37 @@
 		const targetDir = path || "/";
 		const filesToUpload = pendingUploadFiles;
 		pendingUploadFiles = [];
-		await addFiles(filesToUpload, targetDir, resolutions);
-		startUpload().catch(() => {});
+		uploadState.preparing = true;
+		try {
+			await addFiles(filesToUpload, targetDir, { resolutions });
+			startUpload().catch(() => {});
+		} finally {
+			uploadState.preparing = false;
+		}
+	}
+
+	async function handleFolderConflictResolve(resolutions: Record<string, FolderResolution>) {
+		folderConflictOpen = false;
+		const targetDir = path || "/";
+		const files = pendingUploadFiles;
+		const emptyDirs = pendingEmptyDirs;
+		pendingUploadFiles = [];
+		pendingEmptyDirs = [];
+
+		uploadState.preparing = true;
+		try {
+			const strategyByTop: Record<string, string> = {};
+			const folderRenames: Record<string, string> = {};
+			const skip = new Set<string>();
+			for (const [name, res] of Object.entries(resolutions)) {
+				if (res === "skip") skip.add(name);
+				else if (res === "merge") strategyByTop[name] = "replace";
+				else if (res === "keepBoth") folderRenames[name] = await uniqueFolderName(targetDir, name);
+			}
+			await applyFolderUpload(targetDir, files, emptyDirs, strategyByTop, folderRenames, skip);
+		} finally {
+			uploadState.preparing = false;
+		}
 	}
 
 	// Live updates: refetch this directory's listing when the server emits
@@ -457,6 +645,16 @@
 			if (isInDir(p.parentPath)) {
 				scheduleRefetch();
 				return;
+			}
+			// Folder uploads finalize files into a subdirectory (e.g. /Dir/sub),
+			// so their parentPath is never this dir — but a new top-level entry
+			// still appears here. Refetch on any create anywhere in our subtree.
+			if (p.kind === "create" && typeof p.parentPath === "string") {
+				const prefix = dir === "/" ? "/" : dir + "/";
+				if (p.parentPath.startsWith(prefix)) {
+					scheduleRefetch();
+					return;
+				}
 			}
 			const affected = (p.kind === "move" || p.kind === "rename") ? p.oldPath : p.path;
 			if (affected && (affected === dir || dir.startsWith(affected + "/"))) {
@@ -681,6 +879,22 @@
 	<ConflictDialog
 		conflicts={conflictPairs}
 		onresolve={handleConflictResolve}
+	/>
+{/if}
+
+{#if folderConflictOpen}
+	<FolderConflictDialog
+		conflicts={folderConflictPairs}
+		onresolve={handleFolderConflictResolve}
+	/>
+{/if}
+
+{#if largeUploadOpen}
+	<LargeUploadDialog
+		fileCount={largeUploadCount}
+		totalBytes={largeUploadBytes}
+		onconfirm={handleLargeUploadConfirm}
+		oncancel={handleLargeUploadCancel}
 	/>
 {/if}
 

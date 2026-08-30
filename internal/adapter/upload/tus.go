@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,11 +18,17 @@ import (
 	"github.com/Elexation/onyx/internal/service"
 )
 
+// Client-facing finalize errors. tusd writes the error message verbatim into
+// the response body, so these stay generic — details go to slog only.
+var (
+	errUploadConflict = tusd.NewError("ERR_UPLOAD_CONFLICT", "file already exists", http.StatusUnprocessableEntity)
+	errFinalizeFailed = tusd.NewError("ERR_FINALIZE_FAILED", "could not finalize upload", http.StatusInternalServerError)
+)
+
 // TusHandler wraps tusd to provide resumable file uploads.
 type TusHandler struct {
 	handler  *tusd.Handler
 	storedir string
-	files    *service.FileService
 	settings *service.SettingsService
 }
 
@@ -40,9 +47,55 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 	locker.UseIn(composer)
 
 	h, err := tusd.NewHandler(tusd.Config{
-		BasePath:              basePath,
-		StoreComposer:         composer,
-		NotifyCompleteUploads: true,
+		BasePath:      basePath,
+		StoreComposer: composer,
+		// Finalize synchronously, in the request goroutine, before the 204 is
+		// returned. This runs up to the client's concurrency wide (not serialized
+		// through one channel consumer) and lets a finalize failure propagate to
+		// the client as an upload error instead of being silently swallowed.
+		PreFinishResponseCallback: func(hook tusd.HookEvent) (tusd.HTTPResponse, error) {
+			meta := hook.Upload.MetaData
+			uploadID := hook.Upload.ID
+			filename := meta["name"]
+			targetDir := meta["targetDir"]
+			strategy := meta["conflictStrategy"]
+
+			// For folder uploads, relativePath includes subdirectory structure.
+			relativePath := meta["relativePath"]
+			if relativePath == "" {
+				relativePath = filename
+			}
+
+			tusFile := filepath.Join(storeDir, uploadID)
+			src, err := os.Open(tusFile)
+			if err != nil {
+				slog.Error("open completed upload", "id", uploadID, "error", err)
+				return tusd.HTTPResponse{}, errFinalizeFailed
+			}
+
+			finalPath, ferr := files.CompleteUpload(targetDir, relativePath, strategy, src)
+			src.Close()
+
+			// Cleanup of the tus temp file is left to the client's terminate
+			// (DELETE), which @uppy/tus always sends once it sees the 204 and
+			// removes the file from its queue. Removing it here too would race
+			// that DELETE and make it 404. The 24h sweep (cleanupStaleUploads)
+			// is the backstop if the client never sends it.
+			if ferr != nil {
+				slog.Error("finalize upload", "id", uploadID, "file", filename, "error", ferr)
+				// Sanitized errors only — raw ferr text (paths, syscall detail)
+				// would be written verbatim into the response body by tusd.
+				// Conflict gets a non-retryable 422 (NOT 409/5xx — tus clients
+				// auto-retry those, and a conflict never resolves by retrying).
+				if errors.Is(ferr, service.ErrUploadConflict) {
+					return tusd.HTTPResponse{}, errUploadConflict
+				}
+				return tusd.HTTPResponse{}, errFinalizeFailed
+			}
+
+			slog.Info("upload complete", "file", finalPath)
+			return tusd.HTTPResponse{}, nil
+		},
 		PreUploadCreateCallback: func(hook tusd.HookEvent) (tusd.HTTPResponse, tusd.FileInfoChanges, error) {
 			meta := hook.Upload.MetaData
 			if meta["name"] == "" {
@@ -73,11 +126,9 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 	th := &TusHandler{
 		handler:  h,
 		storedir: storeDir,
-		files:    files,
 		settings: settings,
 	}
 
-	go th.processCompletedUploads()
 	go th.cleanupStaleUploads()
 
 	return th, nil
@@ -85,47 +136,6 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 
 func (t *TusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.handler.ServeHTTP(w, r)
-}
-
-// processCompletedUploads drains the CompleteUploads channel and moves
-// finished files to their target directory in the data root.
-func (t *TusHandler) processCompletedUploads() {
-	for event := range t.handler.CompleteUploads {
-		meta := event.Upload.MetaData
-		uploadID := event.Upload.ID
-		filename := meta["name"]
-		targetDir := meta["targetDir"]
-		strategy := meta["conflictStrategy"]
-
-		// For folder uploads, relativePath includes subdirectory structure
-		relativePath := meta["relativePath"]
-		if relativePath == "" {
-			relativePath = filename
-		}
-
-		tusFile := filepath.Join(t.storedir, uploadID)
-		src, err := os.Open(tusFile)
-		if err != nil {
-			slog.Error("open completed upload", "id", uploadID, "error", err)
-			continue
-		}
-
-		finalPath, err := t.files.CompleteUpload(targetDir, relativePath, strategy, src)
-		src.Close()
-
-		// Always clean up tus files. On finalize failure the partial data is
-		// useless to retry — tusd has no resume token at this point — so leaving
-		// it on disk only delays the inevitable until the 24h sweep.
-		os.Remove(tusFile)
-		os.Remove(tusFile + ".info")
-
-		if err != nil {
-			slog.Error("finalize upload", "id", uploadID, "file", filename, "error", err)
-			continue
-		}
-
-		slog.Info("upload complete", "file", finalPath)
-	}
 }
 
 // cleanupStaleUploads removes incomplete uploads older than 24 hours.

@@ -9,6 +9,7 @@
 	import { Toaster } from "$lib/components/ui/sonner/index.js";
 	import { changes } from "$lib/changes";
 	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
+	import { uploadState } from "$lib/stores/upload.svelte.js";
 
 	let { children } = $props();
 	let drawerOpen = $state(false);
@@ -24,6 +25,21 @@
 	$effect(() => {
 		page.url.pathname;
 		drawerOpen = false;
+	});
+
+	// Warn before a full page reload / tab close while an upload is preparing or
+	// in flight — a real unload tears down the module-level Uppy instance,
+	// aborting active transfers and leaving folders partially uploaded. In-app
+	// navigation is unaffected (the instance survives route changes).
+	$effect(() => {
+		const handler = (e: BeforeUnloadEvent) => {
+			if (uploadState.preparing || uploadState.scanning || uploadState.activeCount > 0) {
+				e.preventDefault();
+				e.returnValue = "";
+			}
+		};
+		window.addEventListener("beforeunload", handler);
+		return () => window.removeEventListener("beforeunload", handler);
 	});
 </script>
 

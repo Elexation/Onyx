@@ -28,6 +28,7 @@ const (
 	segmentPollInterval  = 100 * time.Millisecond
 	forwardSeekTolerance = 10 // restart if N > currentStartSegment + this
 	restartDebounce      = 2 * time.Second
+	fastFailThreshold    = 3 * time.Second
 	cacheExpiry          = 24 * time.Hour
 	cleanupInterval      = 1 * time.Hour
 
@@ -79,6 +80,7 @@ type TranscodeSession struct {
 	cancel       context.CancelFunc
 	runDone      chan struct{} // closed when the current ffmpeg goroutine exits
 	startedAt    time.Time
+	evicted      bool // set by evictIfOverCap; blocks software-fallback respawn
 
 	// lastUsed is updated under TranscodeService.mu on every Ensure-hit and
 	// GetSegment call. Eviction targets the oldest lastUsed when the session
@@ -119,6 +121,8 @@ type TranscodeService struct {
 	sema     chan struct{}
 
 	initFlight sync.Map // hash → *transcodeInflight
+
+	reprobing atomic.Bool
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -177,6 +181,7 @@ func NewTranscodeService(s *storage.LocalStorage, probe *ProbeService, dataDir, 
 	go ts.cleanupLoop()
 
 	if ts.shouldReprobe() {
+		ts.reprobing.Store(true)
 		ts.wg.Add(1)
 		go ts.reprobeLoop()
 	}
@@ -370,6 +375,7 @@ func (ts *TranscodeService) evictIfOverCap() {
 	ts.mu.Unlock()
 
 	oldest.mu.Lock()
+	oldest.evicted = true
 	cancel := oldest.cancel
 	done := oldest.runDone
 	oldest.mu.Unlock()
@@ -538,11 +544,12 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	enc := ts.Encoder()
 	cmd, err := ts.ffmpeg.BuildHLSCommand(ctx, media.HLSOptions{
 		SrcPath:      s.srcPath,
 		OutDir:       s.dir,
 		StartSegment: fromSegment,
-		Encoder:      ts.Encoder(),
+		Encoder:      enc,
 		Renditions:   s.renditions,
 		HasAudio:     s.hasAudio,
 		Framerate:    s.framerate,
@@ -566,18 +573,54 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 	s.runDone = done
 	s.startSegment = fromSegment
 
-	go ts.waitFFmpeg(cmd, s, done, fromSegment, stderrBuf)
+	go ts.waitFFmpeg(cmd, s, done, fromSegment, stderrBuf, enc)
 
 	return nil
 }
 
-// waitFFmpeg reaps the process and releases the semaphore slot.
-func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer) {
+// waitFFmpeg reaps the process, releases the semaphore slot, and — when
+// the process failed under a hardware encoder — falls back to software
+// and triggers a background re-probe.
+func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder) {
+	startTime := s.startedAt
 	err := cmd.Wait()
 	<-ts.sema
-	close(done)
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		stderr := ts.redactPaths(stderrBuf.String())
+		elapsed := time.Since(startTime)
+
+		if encoder != media.EncoderSoftware {
+			if elapsed < fastFailThreshold {
+				slog.Warn("ffmpeg GPU encoder fast failure, falling back to software",
+					"hash", s.hash,
+					"from_segment", fromSegment,
+					"elapsed", elapsed,
+					"encoder", encoder,
+					"stderr", stderr,
+				)
+			} else {
+				slog.Warn("ffmpeg GPU encoder failed mid-transcode, falling back to software",
+					"hash", s.hash,
+					"from_segment", fromSegment,
+					"elapsed", elapsed,
+					"encoder", encoder,
+					"stderr", stderr,
+				)
+			}
+			ts.setEncoder(media.EncoderSoftware)
+			// Order is load-bearing. triggerReprobe's wg.Add must precede
+			// close(done): Shutdown unblocks from <-done and reaches wg.Wait,
+			// so an Add after the close races a returned Wait (panic).
+			// close(done) must precede retryWithSoftware: a concurrent
+			// seek-restart holds s.mu inside startFFmpegLocked waiting on
+			// <-s.runDone (this done) — taking s.mu before closing deadlocks.
+			ts.triggerReprobe()
+			close(done)
+			ts.retryWithSoftware(s, done, fromSegment)
+			return
+		}
+
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			slog.Warn("ffmpeg exited with error",
 				"hash", s.hash,
@@ -585,12 +628,76 @@ func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done 
 				"exit_code", exitErr.ExitCode(),
 				"stderr", stderr,
 			)
-			return
+		} else {
+			slog.Warn("ffmpeg wait error", "hash", s.hash, "error", err, "stderr", stderr)
 		}
-		slog.Warn("ffmpeg wait error", "hash", s.hash, "error", err, "stderr", stderr)
+		close(done)
 		return
 	}
+
 	slog.Debug("ffmpeg finished", "hash", s.hash, "from_segment", fromSegment)
+	close(done)
+}
+
+// retryWithSoftware attempts to restart ffmpeg with the software encoder
+// for a session whose hardware-encoder run failed. oldDone is the
+// already-closed done channel from the failed run, used to detect whether
+// a concurrent restart already happened.
+func (ts *TranscodeService) retryWithSoftware(s *TranscodeSession, oldDone chan struct{}, fromSegment int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Bail once shutdown has begun: Shutdown may have already snapshotted
+	// this session's cancel/runDone, so a process spawned now would never
+	// be cancelled or waited on. stopCh closes before Shutdown takes s.mu,
+	// so this check under s.mu cannot miss it.
+	select {
+	case <-ts.stopCh:
+		return
+	default:
+	}
+
+	// Bail if the session was evicted: a process spawned now would write
+	// into a cache dir eviction is concurrently removing, with no owner
+	// left to cancel it.
+	if s.evicted {
+		return
+	}
+
+	if s.runDone != oldDone {
+		return
+	}
+
+	if err := ts.startFFmpegLocked(s, fromSegment); err != nil {
+		slog.Error("ffmpeg software fallback retry failed",
+			"hash", s.hash,
+			"from_segment", fromSegment,
+			"error", err,
+		)
+	} else {
+		slog.Info("ffmpeg software fallback retry started",
+			"hash", s.hash,
+			"from_segment", fromSegment,
+		)
+	}
+}
+
+// triggerReprobe starts a new reprobeLoop goroutine if one is not
+// already running and the current configuration warrants re-probing.
+func (ts *TranscodeService) triggerReprobe() {
+	if !ts.shouldReprobe() {
+		return
+	}
+	select {
+	case <-ts.stopCh:
+		return
+	default:
+	}
+	if !ts.reprobing.CompareAndSwap(false, true) {
+		return
+	}
+	ts.wg.Add(1)
+	go ts.reprobeLoop()
 }
 
 // redactPaths replaces the data-dir absolute prefix with a placeholder so
@@ -891,6 +998,7 @@ func (ts *TranscodeService) shouldReprobe() bool {
 // weren't available at startup (e.g. GPU driver still initializing).
 // Stops when a satisfactory encoder is found or the window expires.
 func (ts *TranscodeService) reprobeLoop() {
+	defer ts.reprobing.Store(false)
 	defer ts.wg.Done()
 
 	slog.Info("hwaccel re-probe: started", "current", ts.Encoder(),

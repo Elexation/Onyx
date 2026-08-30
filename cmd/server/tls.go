@@ -145,7 +145,10 @@ func buildTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 		return nil, fmt.Errorf("load TLS cert/key: %w", err)
 	}
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
+		// Advertise HTTP/2 via ALPN — the custom TLS listener (srv.Serve, not
+		// ServeTLS) skips Go's automatic h2 wiring; non-h2 clients fall back to http/1.1.
+		NextProtos:   []string{"h2", "http/1.1"},
 		Certificates: []tls.Certificate{cert},
 	}, nil
 }

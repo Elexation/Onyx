@@ -17,6 +17,8 @@
 	import ChevronsRightIcon from "@lucide/svelte/icons/chevrons-right";
 	import DownloadIcon from "@lucide/svelte/icons/download";
 	import XIcon from "@lucide/svelte/icons/x";
+	import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 	import { fade } from "svelte/transition";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import "./media-controls.css";
@@ -735,9 +737,23 @@
 	></video>
 
 	{#if failed}
-		<button class="absolute inset-0 flex items-center justify-center bg-black/80 outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]" onclick={onclose}>
-			<p class="text-base text-white">Unable to play video</p>
-		</button>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="absolute inset-0 flex items-center justify-center bg-black/80" onclick={onclose}>
+			<div class="flex flex-col items-center gap-3" onclick={(e) => e.stopPropagation()}>
+				<TriangleAlertIcon class="size-8 text-muted-foreground" />
+				<p class="text-base text-white">Video playback failed</p>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="mt-1 gap-2 px-4 text-meta text-white/80 hover:bg-white/10 hover:text-white"
+					onclick={() => { failed = false; }}
+				>
+					<RotateCcwIcon class="size-3.5" />
+					Try again
+				</Button>
+			</div>
+		</div>
 	{:else}
 {#if keySeekOffset !== 0}
 			<div

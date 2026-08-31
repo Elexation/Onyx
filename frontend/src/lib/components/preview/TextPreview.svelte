@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { getPreviewUrl } from "$lib/preview.js";
-	import { codeToHtml } from "shiki";
+	import { bundledLanguages, bundledThemes } from "shiki";
+	import { createBundledHighlighter, createSingletonShorthands } from "shiki/core";
+	import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 	import DOMPurify from "dompurify";
+
+	const { codeToHtml } = createSingletonShorthands(
+		createBundledHighlighter({
+			langs: bundledLanguages,
+			themes: bundledThemes,
+			engine: () => createJavaScriptRegexEngine({ forgiving: true }),
+		}),
+	);
 
 	let { path, url }: { path: string; url?: string } = $props();
 

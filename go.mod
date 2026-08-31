@@ -2,13 +2,15 @@ module github.com/Elexation/onyx
 
 go 1.26.0
 
+toolchain go1.26.4
+
 require (
 	github.com/KarpelesLab/reflink v1.0.2
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/ncruces/go-sqlite3 v0.33.2
 	github.com/tus/tusd/v2 v2.9.2
 	golang.org/x/crypto v0.49.0
-	golang.org/x/image v0.39.0
+	golang.org/x/image v0.41.0
 	golang.org/x/sys v0.42.0
 )
 

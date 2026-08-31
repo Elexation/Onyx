@@ -237,6 +237,15 @@ func (ts *ThumbnailService) worker() {
 }
 
 func (ts *ThumbnailService) run(job thumbJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("thumbnail: panic during generation", "path", job.relPath, "size", job.size, "panic", r)
+			if markerErr := ts.store.WriteFailMarker(job.failDst); markerErr != nil {
+				slog.Warn("thumbnail: fail marker write", "error", markerErr)
+			}
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

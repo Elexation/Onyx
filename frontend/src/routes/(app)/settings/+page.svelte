@@ -29,6 +29,7 @@
 	import ShieldIcon from "@lucide/svelte/icons/shield";
 	import KeyRoundIcon from "@lucide/svelte/icons/key-round";
 	import ServerIcon from "@lucide/svelte/icons/server";
+	import InfoIcon from "@lucide/svelte/icons/info";
 	import XIcon from "@lucide/svelte/icons/x";
 	import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -51,7 +52,8 @@
 		| "playback"
 		| "security"
 		| "tokens"
-		| "advanced";
+		| "advanced"
+		| "about";
 
 	const sections: { key: SectionKey; label: string; icon: IconComponent; desc: string }[] = [
 		{
@@ -101,6 +103,12 @@
 			label: "Advanced",
 			icon: ServerIcon,
 			desc: "Server configuration that takes effect on restart.",
+		},
+		{
+			key: "about",
+			label: "About",
+			icon: InfoIcon,
+			desc: "License, copyright, and source.",
 		},
 	];
 
@@ -1006,6 +1014,42 @@
 						tlsSwitch,
 						"tls-enabled",
 					)}
+				{/if}
+
+				{#if section === "about"}
+					<div class="space-y-5 border-t border-border pt-5 text-sm">
+						<p class="leading-relaxed text-foreground-dim">
+							A single-admin, self-hosted file browser. Dark mode only, shipped as a single Go binary.
+						</p>
+						<dl class="space-y-3">
+							<div>
+								<dt class="text-xs text-muted-foreground">License</dt>
+								<dd class="mt-0.5 font-medium">
+									GNU Affero General Public License v3.0 (AGPL-3.0-only)
+								</dd>
+							</div>
+							<div>
+								<dt class="text-xs text-muted-foreground">Copyright</dt>
+								<dd class="mt-0.5 font-medium">&copy; 2026 Elexation</dd>
+							</div>
+							<div>
+								<dt class="text-xs text-muted-foreground">Source</dt>
+								<dd class="mt-0.5">
+									<a
+										href="https://github.com/Elexation/Onyx"
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-accent-brand hover:underline">github.com/Elexation/Onyx</a
+									>
+								</dd>
+							</div>
+						</dl>
+						<p class="text-xs leading-relaxed text-muted-foreground">
+							Onyx is network-served under the AGPL. You are entitled to the complete source
+							code of this instance, and any modified version deployed over a network must make
+							its source available under the same license.
+						</p>
+					</div>
 				{/if}
 			{/if}
 		</div>

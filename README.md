@@ -182,3 +182,11 @@ For resilience against filesystem-level threats, use host-level protections:
 - **ZFS/Btrfs snapshots** — read-only, inaccessible to userspace processes
 - **Pull-based offsite backups** — backup server pulls from you; compromised host can't reach the backup target
 - **S3/B2 with Object Lock** — immutable retention windows that even the account owner can't override
+
+## License
+
+Onyx is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0-only). See [LICENSE](LICENSE) for the full text.
+
+Copyright (C) 2026 Elexation
+
+Onyx is network-served software, so the AGPL requires that anyone interacting with a modified instance over a network be able to obtain its source. The canonical source is available at <https://github.com/Elexation/Onyx>.

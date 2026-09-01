@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -163,16 +164,17 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// filepath-based cleaning so `..\..\x` is normalized on Windows too;
+	// defense-in-depth (os.Root is authoritative), mirrors resolveSafePath.
+	sep := string(filepath.Separator)
 	for i, p := range paths {
-		cleaned := path.Clean(p)
-		if cleaned == "/" || cleaned == "." || cleaned == "" {
+		fpClean := filepath.Clean(filepath.FromSlash(strings.TrimLeft(p, "/")))
+		if fpClean == "" || fpClean == "." || fpClean == ".." ||
+			strings.HasPrefix(fpClean, ".."+sep) || strings.HasPrefix(fpClean, sep+"..") {
 			http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
 			return
 		}
-		if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") {
-			http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
-			return
-		}
+		cleaned := "/" + filepath.ToSlash(fpClean)
 		paths[i] = cleaned
 		if _, err := h.files.GetFileInfo(cleaned); err != nil {
 			writeFileError(w, err)

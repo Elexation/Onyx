@@ -447,15 +447,24 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 }
 
 func (s *TrashService) EmptyTrash() error {
-	items, err := s.repo.DeleteAll()
+	items, err := s.repo.List()
 	if err != nil {
-		return fmt.Errorf("empty trash records: %w", err)
+		return fmt.Errorf("list trash items: %w", err)
 	}
 
 	for _, item := range items {
+		if strings.ContainsAny(item.TrashPath, "/\\") || item.TrashPath == ".." || item.TrashPath == "." || item.TrashPath == "" {
+			slog.Warn("empty trash: invalid trash path in record", "id", item.ID)
+			continue
+		}
 		trashAbs := filepath.Join(s.trashDir, item.TrashPath)
 		if err := os.RemoveAll(trashAbs); err != nil {
-			slog.Warn("failed to delete trash file", "path", item.TrashPath, "error", err)
+			// Record stays so the blob remains visible and purgeable.
+			slog.Warn("empty trash: delete blob failed", "path", item.TrashPath, "error", err)
+			continue
+		}
+		if err := s.repo.Delete(item.ID); err != nil {
+			slog.Warn("empty trash: remove record failed", "id", item.ID, "error", err)
 		}
 		if s.versions != nil && !item.IsDir {
 			if err := s.versions.DeleteAllVersions(item.OriginalPath); err != nil {

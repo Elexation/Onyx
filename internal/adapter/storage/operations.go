@@ -52,6 +52,13 @@ func (s *LocalStorage) Move(paths []string, destination string) []OpResult {
 		name := path.Base(p)
 		dst := path.Join(destination, name)
 
+		// os.Rename silently replaces an existing destination; fail the item
+		// instead. SameFile allows no-op moves into the current parent.
+		if _, statErr := s.root.Lstat(dst); statErr == nil && !s.SameFile(p, dst) {
+			results[i] = OpResult{Path: "/" + p, Error: "a file or directory already exists at /" + dst}
+			continue
+		}
+
 		err := s.root.Rename(p, dst)
 		if err != nil && isCrossDevice(err) {
 			// Cross-device: copy then delete original
@@ -80,6 +87,12 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 
 	for i, p := range paths {
 		p = cleanPath(p)
+		// Copying a tree into itself recurses unboundedly (copyDir creates
+		// dst before reading src), so reject self-containment up front.
+		if p == "." || destination == p || strings.HasPrefix(destination, p+"/") {
+			results[i] = OpResult{Path: "/" + p, Error: "cannot copy a directory into itself"}
+			continue
+		}
 		name := path.Base(p)
 		dst := path.Join(destination, name)
 		dst, err := s.uniqueName(dst)
@@ -169,7 +182,8 @@ func (s *LocalStorage) copyOne(src, dst string) error {
 	return s.copyFile(src, dst)
 }
 
-// copyFile streams a single file from src to dst.
+// copyFile streams a single file from src to dst via WriteFile, keeping
+// the atomic temp+rename write invariant.
 func (s *LocalStorage) copyFile(src, dst string) error {
 	srcFile, err := s.root.Open(src)
 	if err != nil {
@@ -177,17 +191,7 @@ func (s *LocalStorage) copyFile(src, dst string) error {
 	}
 	defer srcFile.Close()
 
-	dstFile, err := s.root.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("create destination: %w", err)
-	}
-	defer dstFile.Close()
-
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return fmt.Errorf("copy data: %w", err)
-	}
-
-	return nil
+	return s.WriteFile(dst, srcFile)
 }
 
 // copyDir recursively copies a directory tree from src to dst.

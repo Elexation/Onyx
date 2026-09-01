@@ -269,6 +269,9 @@ func (s *FileService) Rename(filePath, newName string) error {
 	if strings.ContainsAny(newName, "/\\") {
 		return fmt.Errorf("new name must not contain path separators")
 	}
+	if newName == "." || newName == ".." {
+		return fmt.Errorf("new name must not be . or ..")
+	}
 
 	// Check source exists
 	info, err := s.storage.Stat(filePath)
@@ -552,9 +555,27 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 				}
 			}
 		case "keepBoth":
-			destPath, err = s.storage.UniqueName(destPath)
-			if err != nil {
-				return "", fmt.Errorf("unique name: %w", err)
+			// The resolved unique name is a different lock key than destPath,
+			// so a concurrent upload targeting that exact name could clobber
+			// it. Lock the resolved name too and re-check before claiming it.
+			for {
+				unique, err := s.storage.UniqueName(destPath)
+				if err != nil {
+					return "", fmt.Errorf("unique name: %w", err)
+				}
+				lu := s.lockFinalize(unique)
+				taken, err := s.storage.Exists(unique)
+				if err != nil {
+					s.unlockFinalize(unique, lu)
+					return "", fmt.Errorf("check existing: %w", err)
+				}
+				if taken {
+					s.unlockFinalize(unique, lu)
+					continue
+				}
+				defer s.unlockFinalize(unique, lu)
+				destPath = unique
+				break
 			}
 		default:
 			return "", ErrUploadConflict

@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
@@ -122,11 +123,12 @@ func (a *AuthService) Login(password string) (*domain.Session, error) {
 }
 
 func (a *AuthService) Logout(sessionID string) error {
-	return a.sessions.Delete(sessionID)
+	return a.sessions.Delete(hashSessionID(sessionID))
 }
 
 func (a *AuthService) ValidateSession(sessionID string) (*domain.Session, error) {
-	session, err := a.sessions.GetByID(sessionID)
+	hashed := hashSessionID(sessionID)
+	session, err := a.sessions.GetByID(hashed)
 	if err != nil {
 		return nil, err
 	}
@@ -136,17 +138,18 @@ func (a *AuthService) ValidateSession(sessionID string) (*domain.Session, error)
 
 	now := time.Now().Unix()
 	if session.ExpiresAt < now {
-		a.sessions.Delete(sessionID)
+		a.sessions.Delete(hashed)
 		return nil, nil
 	}
 
 	// Throttle last_active_at updates to once per minute
 	if now-session.LastActiveAt > 60 {
-		if err := a.sessions.UpdateLastActive(sessionID); err != nil {
+		if err := a.sessions.UpdateLastActive(hashed); err != nil {
 			slog.Warn("failed to update session activity", "error", err)
 		}
 	}
 
+	session.ID = sessionID // hand back the raw id; the hash never leaves the repo boundary
 	return session, nil
 }
 
@@ -201,7 +204,7 @@ func (a *AuthService) ChangePassword(currentPassword, newPassword string) (*doma
 	// Deletes the caller's previous session along with all others (anything
 	// not equal to newSession.ID). Not ignoring this error is the whole point
 	// of post-change invalidation.
-	if _, err := a.sessions.DeleteOtherSessions(user.ID, newSession.ID); err != nil {
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, hashSessionID(newSession.ID)); err != nil {
 		return nil, fmt.Errorf("invalidate other sessions: %w", err)
 	}
 
@@ -238,10 +241,21 @@ func (a *AuthService) createSession(userID int64) (*domain.Session, error) {
 		ExpiresAt:    now + int64(dur.Seconds()),
 	}
 
-	if err := a.sessions.Create(session); err != nil {
+	// The DB row keys on sha256(id); the raw id exists only in the cookie,
+	// mirroring PAT storage. CSRF token stays plaintext (inert without the id).
+	stored := *session
+	stored.ID = hashSessionID(session.ID)
+	if err := a.sessions.Create(&stored); err != nil {
 		return nil, err
 	}
 	return session, nil
+}
+
+// hashSessionID returns the hex sha256 of a raw session id. Session ids are
+// bearer credentials; only the hash is stored at rest (mirrors PATs).
+func hashSessionID(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
 }
 
 func hashPassword(password string) (string, error) {

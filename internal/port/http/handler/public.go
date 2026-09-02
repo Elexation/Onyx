@@ -99,7 +99,8 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	// Collapse non-existent token and wrong password into a single 403 to
 	// avoid an existence oracle that lets brute force enumerate valid tokens.
-	if link == nil || pwHash == nil || !h.shares.CheckPassword(*pwHash, req.Password) {
+	// CheckPassword burns argon2 work either way to keep timing uniform.
+	if !h.shares.CheckPassword(link, pwHash, req.Password) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}
@@ -158,6 +159,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	h.shares.RecordAccess(link.ID)
 
 	name := path.Base(filePath)
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", name))
 	http.ServeContent(w, r, name, modTime, file)
 }
@@ -184,6 +186,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	h.shares.RecordAccess(link.ID)
 
 	zipName := path.Base(link.FilePath) + ".zip"
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
@@ -235,6 +238,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", contentDisposition("inline", name))
 	http.ServeContent(w, r, name, modTime, file)

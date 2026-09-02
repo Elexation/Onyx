@@ -182,8 +182,15 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 	return link, pwHash, nil
 }
 
-func (s *ShareService) CheckPassword(pwHash, password string) bool {
-	return verifyPassword(password, pwHash)
+// CheckPassword reports whether password matches the share's stored hash.
+// When the link is missing or passwordless it burns the same argon2 work
+// against a throwaway hash, so Verify latency cannot reveal token existence.
+func (s *ShareService) CheckPassword(link *domain.ShareLink, pwHash *string, password string) bool {
+	if link == nil || pwHash == nil {
+		verifyPassword(password, dummyHash)
+		return false
+	}
+	return verifyPassword(password, *pwHash)
 }
 
 func (s *ShareService) List() ([]domain.ShareLink, error) {

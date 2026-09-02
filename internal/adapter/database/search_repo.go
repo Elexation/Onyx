@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -139,26 +140,24 @@ func (r *SearchRepo) UpdatePathPrefix(oldPrefix, newPrefix string) error {
 	return err
 }
 
-// buildFTSQuery sanitizes user input and builds an FTS5 prefix query.
-// "report doc" becomes "report* doc*" for prefix matching.
+// buildFTSQuery builds an FTS5 prefix query from user input. Each token is
+// emitted as a quoted prefix phrase ("report.pdf"*) so filename punctuation
+// and bare AND/OR/NOT match literally instead of raising FTS5 syntax errors.
 func buildFTSQuery(input string) string {
-	// Strip FTS5 special characters
-	replacer := strings.NewReplacer(
-		`"`, "", `*`, "", `(`, "", `)`, "",
-		`+`, "", `-`, " ", `^`, "", `{`, "",
-		`}`, "", `:`, "", `'`, " ",
-	)
-	cleaned := replacer.Replace(input)
+	// "-" must become a space, not be stripped: the unicode61 tokenizer
+	// indexes "my-file" as "my","file", so the query must split the same way.
+	cleaned := strings.ReplaceAll(input, "-", " ")
 
 	tokens := strings.Fields(cleaned)
-	if len(tokens) == 0 {
-		return ""
+	out := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		// All-punctuation tokens tokenize to an empty phrase; skip them.
+		if !strings.ContainsFunc(t, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			continue
+		}
+		out = append(out, `"`+strings.ReplaceAll(t, `"`, `""`)+`"*`)
 	}
-
-	for i, t := range tokens {
-		tokens[i] = t + "*"
-	}
-	return strings.Join(tokens, " ")
+	return strings.Join(out, " ")
 }
 
 // escapeLike escapes SQL LIKE metacharacters so the value is matched

@@ -77,7 +77,11 @@ func (h *VersionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.versions.DeleteVersion(id); err != nil {
 		slog.Warn("version delete failed", "id", id, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete version"})
+		if strings.Contains(err.Error(), "version not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "version not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete version"})
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

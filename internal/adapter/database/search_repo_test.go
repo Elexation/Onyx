@@ -49,6 +49,49 @@ func TestEscapeLike(t *testing.T) {
 	}
 }
 
+func TestSearch_FilenamePunctuation(t *testing.T) {
+	repo, _ := openTestDB(t)
+	now := time.Now().Unix()
+
+	repo.Upsert("report.pdf", "/docs/report.pdf", false, 100, now)
+	repo.Upsert("my-file.txt", "/docs/my-file.txt", false, 100, now)
+	repo.Upsert("a,b.txt", "/docs/a,b.txt", false, 100, now)
+
+	tests := []struct {
+		query string
+		want  string // path expected in results; "" = only assert no error
+	}{
+		{"report.pdf", "/docs/report.pdf"},
+		{"report", "/docs/report.pdf"},
+		{"my-file", "/docs/my-file.txt"},
+		{"a,b", "/docs/a,b.txt"},
+		{"(report)", "/docs/report.pdf"},
+		{"AND", ""},
+		{"NOT report", ""},
+		{"...", ""},
+		{`"`, ""},
+	}
+	for _, tt := range tests {
+		results, _, err := repo.Search(tt.query, 10)
+		if err != nil {
+			t.Errorf("Search(%q) returned error: %v", tt.query, err)
+			continue
+		}
+		if tt.want == "" {
+			continue
+		}
+		found := false
+		for _, r := range results {
+			if r.Path == tt.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("Search(%q): expected %s in results, got %v", tt.query, tt.want, results)
+		}
+	}
+}
+
 func TestDeleteTree_PercentInPath(t *testing.T) {
 	repo, db := openTestDB(t)
 	now := time.Now().Unix()

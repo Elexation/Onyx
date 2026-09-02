@@ -15,6 +15,7 @@ import (
 // All inputs come from trusted server code, not user input.
 type VersionStore struct {
 	dataDir     string
+	realDataDir string
 	versionsDir string
 }
 
@@ -22,8 +23,13 @@ func NewVersionStore(dataDir, versionsDir string) (*VersionStore, error) {
 	if err := os.MkdirAll(versionsDir, 0755); err != nil {
 		return nil, fmt.Errorf("create versions directory: %w", err)
 	}
+	realDataDir, err := filepath.EvalSymlinks(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
 	return &VersionStore{
 		dataDir:     dataDir,
+		realDataDir: realDataDir,
 		versionsDir: versionsDir,
 	}, nil
 }
@@ -115,6 +121,17 @@ func (s *VersionStore) RestoreVersion(filePath, versionRel string) error {
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0755); err != nil {
 		return fmt.Errorf("create data parent dir: %w", err)
+	}
+
+	// Post-MkdirAll symlink resolution: defense-in-depth against a
+	// symlink-in-ancestor escape, mirroring trash restore containment.
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(dstAbs))
+	if err != nil {
+		return fmt.Errorf("resolve restore parent: %w", err)
+	}
+	root := s.realDataDir + string(filepath.Separator)
+	if resolvedParent != s.realDataDir && !strings.HasPrefix(resolvedParent, root) {
+		return fmt.Errorf("restore destination escapes data directory")
 	}
 
 	// reflink.Auto requires the destination to not exist; remove first.

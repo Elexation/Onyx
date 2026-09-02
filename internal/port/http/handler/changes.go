@@ -15,6 +15,7 @@ import (
 const (
 	ssePollInterval      = 500 * time.Millisecond
 	sseHeartbeatInterval = 30 * time.Second
+	sseWriteTimeout      = 10 * time.Second // per-write deadline; a non-reading client must not wedge the goroutine
 	sseRetryMs           = 5000
 )
 
@@ -67,10 +68,13 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		cursor = latest
 	}
 
+	rc := http.NewResponseController(w)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 	if _, err := fmt.Fprintf(w, "retry: %d\n\n", sseRetryMs); err != nil {
 		return
 	}
@@ -87,6 +91,7 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-heartbeat.C:
+			_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 			if _, err := fmt.Fprintf(w, ": heartbeat\n\n"); err != nil {
 				return
 			}
@@ -98,6 +103,7 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 			needsFlush := false
 
 			if minID > 0 && cursor < minID-1 {

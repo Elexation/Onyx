@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -159,35 +160,91 @@ type tlsRedirectListener struct {
 	port            string
 	canonicalDomain string
 	trustedProxy    bool
+
+	conns     chan net.Conn
+	errs      chan error
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
 func newTLSRedirectListener(ln net.Listener, cfg *tls.Config, port, canonicalDomain string, trustedProxy bool) net.Listener {
-	return &tlsRedirectListener{Listener: ln, tlsCfg: cfg, port: port, canonicalDomain: canonicalDomain, trustedProxy: trustedProxy}
+	l := &tlsRedirectListener{
+		Listener:        ln,
+		tlsCfg:          cfg,
+		port:            port,
+		canonicalDomain: canonicalDomain,
+		trustedProxy:    trustedProxy,
+		conns:           make(chan net.Conn),
+		errs:            make(chan error, 1),
+		closed:          make(chan struct{}),
+	}
+	go l.acceptLoop()
+	return l
 }
 
-func (l *tlsRedirectListener) Accept() (net.Conn, error) {
+// acceptLoop accepts raw connections and hands each to its own dispatch
+// goroutine, so one stalled client cannot head-of-line block the accept
+// path for everyone else.
+func (l *tlsRedirectListener) acceptLoop() {
 	for {
 		conn, err := l.Listener.Accept()
 		if err != nil {
-			return nil, err
+			select {
+			case l.errs <- err:
+			case <-l.closed:
+				return
+			}
+			// http.Server.Serve backs off and retries on temporary errors
+			// (e.g. EMFILE); keep accepting so its retry finds a live loop.
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				continue
+			}
+			return
 		}
-
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		var buf [1]byte
-		if _, err := io.ReadFull(conn, buf[:]); err != nil {
-			conn.Close()
-			continue
-		}
-		conn.SetReadDeadline(time.Time{})
-
-		pc := newPrefixConn(conn, buf[:])
-
-		if buf[0] == 0x16 {
-			return tls.Server(pc, l.tlsCfg), nil
-		}
-
-		go redirectHTTP(pc, l.port, l.canonicalDomain, l.trustedProxy)
+		go l.dispatch(conn)
 	}
+}
+
+// dispatch reads the first byte (bounded by a 5s deadline) to decide
+// between TLS (0x16 handshake record) and plaintext HTTP, then either
+// queues the TLS conn for Accept or answers the HTTP redirect inline.
+func (l *tlsRedirectListener) dispatch(conn net.Conn) {
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var buf [1]byte
+	if _, err := io.ReadFull(conn, buf[:]); err != nil {
+		conn.Close()
+		return
+	}
+	conn.SetReadDeadline(time.Time{})
+
+	pc := newPrefixConn(conn, buf[:])
+
+	if buf[0] != 0x16 {
+		redirectHTTP(pc, l.port, l.canonicalDomain, l.trustedProxy)
+		return
+	}
+
+	select {
+	case l.conns <- tls.Server(pc, l.tlsCfg):
+	case <-l.closed:
+		conn.Close()
+	}
+}
+
+func (l *tlsRedirectListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.conns:
+		return conn, nil
+	case err := <-l.errs:
+		return nil, err
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *tlsRedirectListener) Close() error {
+	l.closeOnce.Do(func() { close(l.closed) })
+	return l.Listener.Close()
 }
 
 func redirectHTTP(conn net.Conn, port, canonicalDomain string, trustedProxy bool) {

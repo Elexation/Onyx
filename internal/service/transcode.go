@@ -29,6 +29,7 @@ const (
 	forwardSeekTolerance = 10 // restart if N > currentStartSegment + this
 	restartDebounce      = 2 * time.Second
 	fastFailThreshold    = 3 * time.Second
+	fallbackSlotTimeout  = 10 * time.Second // bounds the software-retry slot wait (holds session.mu)
 	cacheExpiry          = 24 * time.Hour
 	cleanupInterval      = 1 * time.Hour
 
@@ -326,7 +327,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relP
 	}
 
 	session.mu.Lock()
-	if err := ts.startFFmpegLocked(session, 0); err != nil {
+	if err := ts.startFFmpegLocked(ctx, session, 0); err != nil {
 		session.mu.Unlock()
 		return nil, err
 	}
@@ -449,7 +450,7 @@ func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant
 			slog.Info("security_event", "event", "transcode_restart_debounced", "hash", hash, "seg", segNum)
 			return nil, ErrSegmentTimeout
 		}
-		if err := ts.startFFmpegLocked(session, segNum); err != nil {
+		if err := ts.startFFmpegLocked(ctx, session, segNum); err != nil {
 			session.mu.Unlock()
 			return nil, fmt.Errorf("seek restart: %w", err)
 		}
@@ -526,8 +527,10 @@ func (ts *TranscodeService) Shutdown() {
 }
 
 // startFFmpegLocked kills the current ffmpeg if any, then starts a new
-// one from fromSegment. Caller must hold session.mu.
-func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment int) error {
+// one from fromSegment. Caller must hold session.mu. ctx bounds only the
+// concurrency-slot wait; the spawned ffmpeg runs under its own context
+// since it must outlive the caller's request.
+func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeSession, fromSegment int) error {
 	s.startedAt = time.Now()
 	if s.cancel != nil {
 		s.cancel()
@@ -540,12 +543,16 @@ func (ts *TranscodeService) startFFmpegLocked(s *TranscodeSession, fromSegment i
 	case ts.sema <- struct{}{}:
 	default:
 		slog.Info("transcode: waiting for concurrency slot", "hash", s.hash)
-		ts.sema <- struct{}{}
+		select {
+		case ts.sema <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(context.Background())
 	enc := ts.Encoder()
-	cmd, err := ts.ffmpeg.BuildHLSCommand(ctx, media.HLSOptions{
+	cmd, err := ts.ffmpeg.BuildHLSCommand(runCtx, media.HLSOptions{
 		SrcPath:      s.srcPath,
 		OutDir:       s.dir,
 		StartSegment: fromSegment,
@@ -668,7 +675,9 @@ func (ts *TranscodeService) retryWithSoftware(s *TranscodeSession, oldDone chan 
 		return
 	}
 
-	if err := ts.startFFmpegLocked(s, fromSegment); err != nil {
+	slotCtx, cancel := context.WithTimeout(context.Background(), fallbackSlotTimeout)
+	defer cancel()
+	if err := ts.startFFmpegLocked(slotCtx, s, fromSegment); err != nil {
 		slog.Error("ffmpeg software fallback retry failed",
 			"hash", s.hash,
 			"from_segment", fromSegment,

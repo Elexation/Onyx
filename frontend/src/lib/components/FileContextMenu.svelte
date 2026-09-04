@@ -5,7 +5,7 @@
 	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import { viewport } from "$lib/stores/viewport.svelte.js";
-	import { getDownloadUrl } from "$lib/api/files.js";
+	import { getDownloadUrl, getZipDownloadUrl } from "$lib/api/files.js";
 	import EyeIcon from "@lucide/svelte/icons/eye";
 	import PencilIcon from "@lucide/svelte/icons/pencil";
 	import CopyIcon from "@lucide/svelte/icons/copy";
@@ -58,10 +58,17 @@
 	}
 
 	function handleDownload() {
-		if (!item || item.isDir) return;
+		if (!item) return;
+		const multi = selection.has(item.path) && selection.count > 1;
 		const a = document.createElement("a");
-		a.href = getDownloadUrl(item.path);
-		a.download = item.name;
+		if (multi) {
+			a.href = getZipDownloadUrl([...selection.items]);
+			a.download = "";
+		} else {
+			if (item.isDir) return;
+			a.href = getDownloadUrl(item.path);
+			a.download = item.name;
+		}
 		a.target = "_blank";
 		document.body.appendChild(a);
 		a.click();

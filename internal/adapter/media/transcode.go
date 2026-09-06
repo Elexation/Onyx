@@ -154,7 +154,7 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 				"-map", "a:0",
 				fmt.Sprintf("-c:a:%d", i), "aac",
 				fmt.Sprintf("-b:a:%d", i), "192k",
-				fmt.Sprintf("-ac:%d", i), "2",
+				fmt.Sprintf("-ac:a:%d", i), "2",
 			)
 		}
 	}

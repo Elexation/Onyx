@@ -66,14 +66,16 @@ func (f *FFmpeg) Available() bool {
 }
 
 // ProbeInfo describes the first video stream of a media file.
+// AudioCodec is the first audio stream's codec name, empty when none.
 type ProbeInfo struct {
-	Codec     string  `json:"codec"`
-	Width     int     `json:"width"`
-	Height    int     `json:"height"`
-	Duration  float64 `json:"duration"`
-	Bitrate   int64   `json:"bitrate"`
-	Framerate float64 `json:"framerate"`
-	HasAudio  bool    `json:"hasAudio"`
+	Codec      string  `json:"codec"`
+	Width      int     `json:"width"`
+	Height     int     `json:"height"`
+	Duration   float64 `json:"duration"`
+	Bitrate    int64   `json:"bitrate"`
+	Framerate  float64 `json:"framerate"`
+	HasAudio   bool    `json:"hasAudio"`
+	AudioCodec string  `json:"audioCodec"`
 }
 
 // ErrNoVideoStream is returned when ffprobe succeeds but the file has no
@@ -129,10 +131,13 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 		return nil, fmt.Errorf("parse ffprobe json: %w", err)
 	}
 
+	// first audio stream = ffmpeg's a:0, the one BuildHLSCommand maps
 	var hasAudio bool
+	var audioCodec string
 	for _, s := range raw.Streams {
-		if s.CodecType == "audio" {
+		if s.CodecType == "audio" && !hasAudio {
 			hasAudio = true
+			audioCodec = s.CodecName
 		}
 	}
 	for _, s := range raw.Streams {
@@ -140,11 +145,12 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 			continue
 		}
 		info := &ProbeInfo{
-			Codec:     s.CodecName,
-			Width:     s.Width,
-			Height:    s.Height,
-			Framerate: parseFraction(s.RFrameRate),
-			HasAudio:  hasAudio,
+			Codec:      s.CodecName,
+			Width:      s.Width,
+			Height:     s.Height,
+			Framerate:  parseFraction(s.RFrameRate),
+			HasAudio:   hasAudio,
+			AudioCodec: audioCodec,
 		}
 		if d, err := strconv.ParseFloat(s.Duration, 64); err == nil && d > 0 {
 			info.Duration = d

@@ -307,7 +307,7 @@ func servePublicCachedFile(w http.ResponseWriter, path, contentType string) {
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
 }
 
@@ -339,12 +339,13 @@ func (h *PublicHandler) StreamInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, infoResponse{
 		Codec:          info.Codec,
+		AudioCodec:     info.AudioCodec,
 		Width:          info.Width,
 		Height:         info.Height,
 		Duration:       info.Duration,
 		Bitrate:        info.Bitrate,
 		Framerate:      info.Framerate,
-		NeedsTranscode: needsTranscode(info.Codec),
+		NeedsTranscode: needsTranscode(info.Codec, info.AudioCodec),
 	})
 }
 
@@ -493,7 +494,7 @@ func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
 }
 
@@ -673,6 +674,6 @@ func servePublicHLSPlaylist(w http.ResponseWriter, playlistPath, contentType, to
 	}
 	data = rewriteShareHLS(data, token, filePath)
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
 }

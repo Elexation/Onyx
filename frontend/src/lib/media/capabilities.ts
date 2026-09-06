@@ -2,6 +2,7 @@ import { encodeFilePath } from "$lib/utils";
 
 export type ProbeInfo = {
 	codec: string;
+	audioCodec: string;
 	width: number;
 	height: number;
 	duration: number;
@@ -49,18 +50,49 @@ function contentTypeFor(codec: string): string | null {
 	return null;
 }
 
+// audioContentTypeFor builds a MIME+codecs string for the audio track.
+// Returns null for codecs browsers can't decode (ac3, eac3, dts, truehd, …)
+// so playback falls through to the HLS transcode, which re-encodes to AAC.
+function audioContentTypeFor(codec: string): string | null {
+	switch (codec) {
+		case "aac":
+			return 'audio/mp4; codecs="mp4a.40.2"';
+		case "mp3":
+			return "audio/mpeg";
+		case "opus":
+			return 'audio/webm; codecs="opus"';
+		case "vorbis":
+			return 'audio/webm; codecs="vorbis"';
+		case "flac":
+			return "audio/flac";
+	}
+	return null;
+}
+
 // Fallback decision when navigator.mediaCapabilities is unavailable.
-// Covers the historically-safe native-playback set.
+// Covers the historically-safe native-playback set. "" = no audio stream.
 const FALLBACK_NATIVE_CODECS = new Set(["h264", "vp8", "vp9"]);
+const FALLBACK_NATIVE_AUDIO = new Set(["", "aac", "mp3", "opus", "vorbis", "flac"]);
 
 export async function canPlayNative(info: ProbeInfo): Promise<boolean> {
+	const audioCodec = info.audioCodec ?? "";
+	const fallback = () =>
+		FALLBACK_NATIVE_CODECS.has(info.codec) && FALLBACK_NATIVE_AUDIO.has(audioCodec);
+
 	const mc = (navigator as Navigator & { mediaCapabilities?: MediaCapabilities }).mediaCapabilities;
 	if (!mc || typeof mc.decodingInfo !== "function") {
-		return FALLBACK_NATIVE_CODECS.has(info.codec);
+		return fallback();
 	}
 
 	const contentType = contentTypeFor(info.codec);
 	if (!contentType) return false;
+
+	let audio: AudioConfiguration | undefined;
+	if (audioCodec) {
+		const audioContentType = audioContentTypeFor(audioCodec);
+		if (!audioContentType) return false;
+		audio = { contentType: audioContentType };
+	}
 
 	try {
 		const result = await mc.decodingInfo({
@@ -72,9 +104,10 @@ export async function canPlayNative(info: ProbeInfo): Promise<boolean> {
 				bitrate: info.bitrate || 5_000_000,
 				framerate: info.framerate || 30,
 			},
+			...(audio ? { audio } : {}),
 		});
 		return result.supported && result.smooth;
 	} catch {
-		return FALLBACK_NATIVE_CODECS.has(info.codec);
+		return fallback();
 	}
 }

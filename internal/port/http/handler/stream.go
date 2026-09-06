@@ -28,8 +28,10 @@ func NewStreamHandler(probe *service.ProbeService, transcode *service.TranscodeS
 }
 
 // infoResponse is the JSON returned by GET /api/stream/info/*.
+// AudioCodec is empty when the file has no audio stream.
 type infoResponse struct {
 	Codec          string  `json:"codec"`
+	AudioCodec     string  `json:"audioCodec"`
 	Width          int     `json:"width"`
 	Height         int     `json:"height"`
 	Duration       float64 `json:"duration"`
@@ -62,20 +64,27 @@ func (h *StreamHandler) Info(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, infoResponse{
 		Codec:          info.Codec,
+		AudioCodec:     info.AudioCodec,
 		Width:          info.Width,
 		Height:         info.Height,
 		Duration:       info.Duration,
 		Bitrate:        info.Bitrate,
 		Framerate:      info.Framerate,
-		NeedsTranscode: needsTranscode(info.Codec),
+		NeedsTranscode: needsTranscode(info.Codec, info.AudioCodec),
 	})
 }
 
 // needsTranscode is an advisory hint. The frontend makes the final decision
-// via MediaCapabilities since codec support is browser-specific.
-func needsTranscode(codec string) bool {
+// via MediaCapabilities since codec support is browser-specific. Both the
+// video and audio codec must be browser-safe; empty audioCodec = no audio.
+func needsTranscode(codec, audioCodec string) bool {
 	switch codec {
 	case "h264", "vp8", "vp9":
+	default:
+		return true
+	}
+	switch audioCodec {
+	case "", "aac", "mp3", "opus", "vorbis", "flac":
 		return false
 	}
 	return true
@@ -206,7 +215,7 @@ func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
 }
 
@@ -256,7 +265,7 @@ func (h *StreamHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "private, max-age=60")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
 }
 

@@ -15,7 +15,7 @@ COPY --from=frontend /app/frontend/build ./web/build
 COPY --from=frontend /app/web/csp_hash.go ./web/csp_hash.go
 RUN CGO_ENABLED=0 go build -o /onyx ./cmd/server
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN sed -i 's/Components: main/Components: main non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources && \
 	apt-get update && apt-get install -y --no-install-recommends \
 	ffmpeg \

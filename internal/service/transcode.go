@@ -33,6 +33,13 @@ const (
 	cacheExpiry          = 24 * time.Hour
 	cleanupInterval      = 1 * time.Hour
 
+	// idleStopAfter stops a session's ffmpeg after this long with no
+	// segment requests. Hardware encodes finish well inside the window,
+	// so in practice only software runs nobody is watching get reaped;
+	// the session stays registered and resumes on the next request.
+	idleStopAfter     = 5 * time.Minute
+	idleCheckInterval = 1 * time.Minute
+
 	// maxSessions caps the in-memory session map. Without this, a public-share
 	// holder iterating an IsDir share over many distinct videos can register
 	// one session per file forever (sweepCache only removes inactive on-disk
@@ -67,6 +74,7 @@ var ErrSegmentOutOfRange = errors.New("segment out of range")
 // our ffmpeg always has every rung at the same input timestamp.
 type TranscodeSession struct {
 	hash       string
+	srcKey     string // path+mtime+size+cap, no encoder; one live session per source across encoder flips
 	dir        string // absolute path to .cache/transcode/{hash}
 	srcPath    string // absolute resolved source path
 	duration   float64
@@ -242,17 +250,20 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 	encoder := ts.Encoder()
 	rungs := media.SelectRungs(info.Height, ts.maxHeight)
 	hash := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, encoder)
+	srcKey := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, "")
 
 	ts.mu.Lock()
-	if existing, ok := ts.sessions[hash]; ok {
+	if existing := ts.findSessionLocked(hash, srcKey); existing != nil {
 		existing.lastUsed = time.Now()
 		ts.mu.Unlock()
 		return existing, nil
 	}
 	ts.mu.Unlock()
 
+	// single-flight on source identity, not hash: an encoder flip between
+	// two concurrent Ensures must not race two sessions for one file
 	entry := &transcodeInflight{done: make(chan struct{})}
-	if existing, loaded := ts.initFlight.LoadOrStore(hash, entry); loaded {
+	if existing, loaded := ts.initFlight.LoadOrStore(srcKey, entry); loaded {
 		e := existing.(*transcodeInflight)
 		select {
 		case <-e.done:
@@ -264,11 +275,11 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 
 	defer func() {
 		close(entry.done)
-		ts.initFlight.Delete(hash)
+		ts.initFlight.Delete(srcKey)
 	}()
 
 	ts.mu.Lock()
-	if existing, ok := ts.sessions[hash]; ok {
+	if existing := ts.findSessionLocked(hash, srcKey); existing != nil {
 		existing.lastUsed = time.Now()
 		ts.mu.Unlock()
 		entry.session = existing
@@ -276,7 +287,7 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 	}
 	ts.mu.Unlock()
 
-	session, err := ts.initSession(ctx, hash, absPath, relPath, info, rungs)
+	session, err := ts.initSession(ctx, hash, srcKey, absPath, relPath, info, rungs)
 	entry.session = session
 	entry.err = err
 	if err != nil {
@@ -294,10 +305,30 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 	return session, nil
 }
 
+// findSessionLocked returns the session for hash, or a live session for the
+// same source registered under a different encoder key; a mid-play encoder
+// flip must reuse the running session, not start a duplicate transcode.
+// Caller holds ts.mu.
+func (ts *TranscodeService) findSessionLocked(hash, srcKey string) *TranscodeSession {
+	if s, ok := ts.sessions[hash]; ok {
+		return s
+	}
+	for _, s := range ts.sessions {
+		if s.srcKey == srcKey {
+			return s
+		}
+	}
+	return nil
+}
+
 // initSession creates directories, writes playlists, starts ffmpeg, and
 // registers the session. Called only by the single-flight winner.
-func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relPath string, info *media.ProbeInfo, rungs []media.Rendition) (*TranscodeSession, error) {
+func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPath, relPath string, info *media.ProbeInfo, rungs []media.Rendition) (*TranscodeSession, error) {
 	sessionDir := filepath.Join(ts.cacheRoot, hash)
+	// stale segments from a killed prior run don't match a fresh run's timeline
+	if err := os.RemoveAll(sessionDir); err != nil {
+		return nil, fmt.Errorf("clear session dir: %w", err)
+	}
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create session dir: %w", err)
 	}
@@ -318,6 +349,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, absPath, relP
 
 	session := &TranscodeSession{
 		hash:       hash,
+		srcKey:     srcKey,
 		dir:        sessionDir,
 		srcPath:    absPath,
 		duration:   info.Duration,
@@ -437,7 +469,17 @@ func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant
 	}
 
 	session.mu.Lock()
-	needRestart := segNum < session.startSegment || segNum > session.startSegment+forwardSeekTolerance
+	// a segment missing on disk while no ffmpeg is running (idle stop,
+	// crashed run) never appears without a restart, even inside the window
+	runExited := false
+	if session.runDone != nil {
+		select {
+		case <-session.runDone:
+			runExited = true
+		default:
+		}
+	}
+	needRestart := segNum < session.startSegment || segNum > session.startSegment+forwardSeekTolerance || runExited
 	if needRestart {
 		// Debounce: if the current ffmpeg just started, refuse the restart
 		// rather than killing and respawning it. Prevents out-of-window
@@ -537,6 +579,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	}
 	if s.runDone != nil {
 		<-s.runDone
+		ts.trimPartialTail(s)
 	}
 
 	select {
@@ -580,7 +623,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	s.runDone = done
 	s.startSegment = fromSegment
 
-	go ts.waitFFmpeg(cmd, s, done, fromSegment, stderrBuf, enc)
+	go ts.waitFFmpeg(runCtx, cmd, s, done, fromSegment, stderrBuf, enc)
 
 	return nil
 }
@@ -588,12 +631,16 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 // waitFFmpeg reaps the process, releases the semaphore slot, and — when
 // the process failed under a hardware encoder — falls back to software
 // and triggers a background re-probe.
-func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder) {
+func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder) {
 	startTime := s.startedAt
 	err := cmd.Wait()
 	<-ts.sema
 
-	if err != nil && !errors.Is(err, context.Canceled) {
+	// a CommandContext kill surfaces as *ExitError ("signal: killed"), never
+	// context.Canceled; runCtx is the only reliable intentional-kill signal.
+	// Misreading a seek-restart kill as a failure would flip the encoder to
+	// software on every restart under a hardware encoder.
+	if err != nil && runCtx.Err() == nil {
 		stderr := ts.redactPaths(stderrBuf.String())
 		elapsed := time.Since(startTime)
 
@@ -642,7 +689,11 @@ func (ts *TranscodeService) waitFFmpeg(cmd *exec.Cmd, s *TranscodeSession, done 
 		return
 	}
 
-	slog.Debug("ffmpeg finished", "hash", s.hash, "from_segment", fromSegment)
+	if runCtx.Err() != nil {
+		slog.Debug("ffmpeg canceled", "hash", s.hash, "from_segment", fromSegment)
+	} else {
+		slog.Debug("ffmpeg finished", "hash", s.hash, "from_segment", fromSegment)
+	}
 	close(done)
 }
 
@@ -926,12 +977,89 @@ func (ts *TranscodeService) cleanupLoop() {
 	ts.sweepCache()
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
+	idleTicker := time.NewTicker(idleCheckInterval)
+	defer idleTicker.Stop()
 	for {
 		select {
 		case <-ts.stopCh:
 			return
 		case <-ticker.C:
 			ts.sweepCache()
+		case <-idleTicker.C:
+			ts.stopIdleSessions()
+		}
+	}
+}
+
+// stopIdleSessions cancels the ffmpeg run of every session idle for longer
+// than idleStopAfter. The session and its on-disk segments are kept; the
+// next request resumes encoding where needed via GetSegment's dead-run
+// restart, and segments already produced keep serving from disk.
+func (ts *TranscodeService) stopIdleSessions() {
+	cutoff := time.Now().Add(-idleStopAfter)
+	ts.mu.Lock()
+	var idle []*TranscodeSession
+	for _, s := range ts.sessions {
+		if s.lastUsed.Before(cutoff) {
+			idle = append(idle, s)
+		}
+	}
+	ts.mu.Unlock()
+
+	for _, s := range idle {
+		ts.mu.Lock()
+		stillIdle := s.lastUsed.Before(cutoff)
+		ts.mu.Unlock()
+		if !stillIdle {
+			continue
+		}
+		s.mu.Lock()
+		cancel, done := s.cancel, s.runDone
+		s.mu.Unlock()
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+			continue
+		default:
+		}
+		if cancel != nil {
+			cancel()
+		}
+		<-done
+		s.mu.Lock()
+		// a concurrent seek restart may have swapped in a new run; only
+		// trim when this session is still on the run we just stopped
+		if s.runDone == done {
+			ts.trimPartialTail(s)
+			slog.Info("transcode idle: ffmpeg stopped", "hash", s.hash)
+		}
+		s.mu.Unlock()
+	}
+}
+
+// trimPartialTail deletes the highest-numbered segment in each variant dir.
+// A killed ffmpeg can leave its in-progress segment truncated but
+// size-stable, which readIfStable would serve as valid media. Caller holds
+// s.mu with no run in flight.
+func (ts *TranscodeService) trimPartialTail(s *TranscodeSession) {
+	for v := range s.renditions {
+		dir := filepath.Join(s.dir, media.VariantDir(v))
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		// data%06d.m4s zero-padding makes lexicographic order numeric
+		var maxName string
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "data") && strings.HasSuffix(name, ".m4s") && name > maxName {
+				maxName = name
+			}
+		}
+		if maxName != "" {
+			os.Remove(filepath.Join(dir, maxName))
 		}
 	}
 }

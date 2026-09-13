@@ -22,6 +22,8 @@ export interface UploadGroup {
 	errorCount: number;
 	totalBytes: number;
 	bytesUploaded: number;
+	// Groups render as one row, so they keep a single reason for the whole folder.
+	lastError?: string;
 }
 
 // Non-reactive per-file bookkeeping. The aggregate fields above are kept in sync
@@ -82,6 +84,13 @@ class UploadState {
 		return this.groupsById.get(groupId);
 	}
 
+	// Single decrement path so lastError never outlives the failures it describes
+	// and a re-failure cannot resurface the previous reason.
+	private decErrorCount(g: UploadGroup) {
+		g.errorCount--;
+		if (g.errorCount <= 0) g.lastError = undefined;
+	}
+
 	addGroup(groupId: string, name: string, targetDir: string) {
 		this.groups.push({
 			id: groupId,
@@ -92,6 +101,7 @@ class UploadState {
 			errorCount: 0,
 			totalBytes: 0,
 			bytesUploaded: 0,
+			lastError: undefined,
 		});
 		this.reindexGroups();
 	}
@@ -162,7 +172,7 @@ class UploadState {
 			this.activeCount++;
 			if (fi.group) {
 				const g = this.groupsById.get(fi.group);
-				if (g) g.errorCount--;
+				if (g) this.decErrorCount(g);
 			}
 		}
 		this.totalBytesUploaded += delta;
@@ -201,7 +211,7 @@ class UploadState {
 			const g = this.groupsById.get(fi.group);
 			if (g) {
 				g.completedCount++;
-				if (wasError) g.errorCount--;
+				if (wasError) this.decErrorCount(g);
 				g.bytesUploaded += delta;
 			}
 		} else {
@@ -224,7 +234,11 @@ class UploadState {
 		if (wasActive) this.activeCount--;
 		if (fi.group) {
 			const g = this.groupsById.get(fi.group);
-			if (g) g.errorCount++;
+			if (g) {
+				g.errorCount++;
+				// First failure wins: one blocked parent fails every file under it.
+				g.lastError ??= error;
+			}
 		} else {
 			const item = this.looseItem(id);
 			if (item) {
@@ -244,7 +258,7 @@ class UploadState {
 			const g = this.groupsById.get(fi.group);
 			if (g) {
 				g.bytesUploaded -= fi.bytes;
-				g.errorCount--;
+				this.decErrorCount(g);
 			}
 		} else {
 			const item = this.looseItem(id);
@@ -276,7 +290,7 @@ class UploadState {
 				g.totalBytes -= fi.size;
 				g.bytesUploaded -= fi.bytes;
 				if (fi.status === "complete") g.completedCount--;
-				else if (fi.status === "error") g.errorCount--;
+				else if (fi.status === "error") this.decErrorCount(g);
 				if (g.fileCount <= 0) {
 					this.groups = this.groups.filter((x) => x.id !== g.id);
 					this.reindexGroups();

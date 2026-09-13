@@ -2,6 +2,7 @@ import { request } from "$lib/api";
 
 export type ConflictInfo = {
 	path: string;
+	isDir: boolean;
 	size: number;
 	modTime: number;
 };

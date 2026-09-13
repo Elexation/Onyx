@@ -244,7 +244,11 @@
 				const { conflicts } = await checkRestoreConflicts([id]);
 				if (conflicts.length > 0) {
 					const c = conflicts[0];
-					conflictPair = { path: c.path, existing: c.existing, incoming: c.restoring };
+					conflictPair = {
+						path: c.path,
+						existing: { ...c.existing, isDir: c.existingIsDir },
+						incoming: { ...c.restoring, isDir: c.isDir },
+					};
 				}
 			} catch {
 				return "failed";
@@ -287,8 +291,8 @@
 		if (conflicts.length > 0) {
 			const pairs: ConflictPair[] = conflicts.map((c) => ({
 				path: c.path,
-				existing: c.existing,
-				incoming: c.restoring,
+				existing: { ...c.existing, isDir: c.existingIsDir },
+				incoming: { ...c.restoring, isDir: c.isDir },
 			}));
 			resolutions = await awaitConflictResolution(pairs);
 		}

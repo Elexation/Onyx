@@ -1,8 +1,11 @@
 <script lang="ts" module>
+	// size is null when it carries no meaning, e.g. the raw inode size of a
+	// folder the server did not walk. Rendered as "Folder" instead.
+	export type ConflictSide = { size: number | null; modTime: number; isDir: boolean };
 	export type ConflictPair = {
 		path: string;
-		existing: { size: number; modTime: number };
-		incoming: { size: number; modTime: number };
+		existing: ConflictSide;
+		incoming: ConflictSide;
 	};
 </script>
 
@@ -42,6 +45,16 @@
 	const remaining = $derived(total - index);
 	const hasMany = $derived(total > 1);
 
+	const mismatched = (p: ConflictPair) => p.existing.isDir !== p.incoming.isDir;
+
+	// Replacing a folder with a file is a hard 422 at finalize, so don't offer
+	// it. Restores may replace either way: the occupant goes to trash first.
+	const blockedByType = $derived.by(() => {
+		if (kind === "restore") return false;
+		if (applyToAll) return conflicts.slice(index).some(mismatched);
+		return !!current && mismatched(current);
+	});
+
 	function choose(action: Resolution) {
 		if (applyToAll) {
 			for (let i = index; i < conflicts.length; i++) {
@@ -58,6 +71,25 @@
 		}
 	}
 </script>
+
+<!-- Declared outside AlertDialog.Content: a snippet placed directly inside a
+	component is passed to it as a prop instead of staying local. -->
+{#snippet pane(label: string, side: ConflictSide)}
+	<div class="rounded-lg border border-border bg-muted p-3">
+		<div class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+			{label}
+		</div>
+		<div class="flex items-center gap-2.5">
+			<FileIcon name={currentName} isDir={side.isDir} class="size-7 shrink-0" />
+			<div class="min-w-0">
+				<div class="truncate text-meta font-medium">{currentName}{side.isDir ? "/" : ""}</div>
+				<div class="font-mono text-xs text-muted-foreground">
+					{side.size === null ? "Folder" : formatFileSize(side.size)} · {formatDate(side.modTime)}
+				</div>
+			</div>
+		</div>
+	</div>
+{/snippet}
 
 <AlertDialog.Root open={true}>
 	<AlertDialog.Content
@@ -77,39 +109,17 @@
 
 		{#if current}
 			<div class="mt-1 grid grid-cols-2 gap-2.5">
-				<div class="rounded-lg border border-border bg-muted p-3">
-					<div
-						class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
-					>
-						Existing
-					</div>
-					<div class="flex items-center gap-2.5">
-						<FileIcon name={currentName} class="size-7 shrink-0" />
-						<div class="min-w-0">
-							<div class="truncate text-meta font-medium">{currentName}</div>
-							<div class="font-mono text-xs text-muted-foreground">
-								{formatFileSize(current.existing.size)} · {formatDate(current.existing.modTime)}
-							</div>
-						</div>
-					</div>
-				</div>
-				<div class="rounded-lg border border-border bg-muted p-3">
-					<div
-						class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
-					>
-						{incomingLabel}
-					</div>
-					<div class="flex items-center gap-2.5">
-						<FileIcon name={currentName} class="size-7 shrink-0" />
-						<div class="min-w-0">
-							<div class="truncate text-meta font-medium">{currentName}</div>
-							<div class="font-mono text-xs text-muted-foreground">
-								{formatFileSize(current.incoming.size)} · {formatDate(current.incoming.modTime)}
-							</div>
-						</div>
-					</div>
-				</div>
+				{@render pane("Existing", current.existing)}
+				{@render pane(incomingLabel, current.incoming)}
 			</div>
+		{/if}
+
+		{#if blockedByType}
+			<p class="text-xs text-muted-foreground">
+				{applyToAll
+					? "Replace isn't available: some remaining conflicts are folders."
+					: "Replace isn't available: a folder with this name already exists."}
+			</p>
 		{/if}
 
 		{#if hasMany}
@@ -124,7 +134,9 @@
 		<AlertDialog.Footer>
 			<Button variant="outline" size="sm" onclick={() => choose("skip")}>Skip</Button>
 			<Button variant="outline" size="sm" onclick={() => choose("keepBoth")}>Keep both</Button>
-			<Button size="sm" onclick={() => choose("replace")}>Replace</Button>
+			{#if !blockedByType}
+				<Button size="sm" onclick={() => choose("replace")}>Replace</Button>
+			{/if}
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

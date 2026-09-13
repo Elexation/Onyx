@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	export type FolderConflictPair = {
 		name: string;
-		existing: { modTime: number };
+		existing: { modTime: number; isDir: boolean };
 		incoming: { fileCount: number };
 	};
 	export type FolderResolution = "merge" | "keepBoth" | "skip";
@@ -12,6 +12,7 @@
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FolderIcon from "@lucide/svelte/icons/folder";
+	import FileIcon from "@lucide/svelte/icons/file";
 	import { formatDate } from "$lib/utils/format";
 	import DialogCallout from "./DialogCallout.svelte";
 
@@ -31,6 +32,15 @@
 	const total = $derived(conflicts.length);
 	const remaining = $derived(total - index);
 	const hasMany = $derived(total > 1);
+
+	const existingIsFile = $derived(!!current && !current.existing.isDir);
+
+	// Merging into a file cannot work: every file in the folder would fail
+	// finalize with a blocked path. Only rename or skip are left.
+	const blockedByFile = $derived.by(() => {
+		if (applyToAll) return conflicts.slice(index).some((c) => !c.existing.isDir);
+		return existingIsFile;
+	});
 
 	function choose(action: FolderResolution) {
 		if (applyToAll) {
@@ -52,10 +62,16 @@
 <AlertDialog.Root open={true}>
 	<AlertDialog.Content escapeKeydownBehavior="ignore" interactOutsideBehavior="ignore">
 		<AlertDialog.Header>
-			<AlertDialog.Title>A folder with this name already exists</AlertDialog.Title>
+			<AlertDialog.Title>
+				{existingIsFile
+					? "A file with this name already exists"
+					: "A folder with this name already exists"}
+			</AlertDialog.Title>
 			<AlertDialog.Description>
 				{#if hasMany}
 					Folder conflict {index + 1} of {total}. Choose how to resolve, or apply to all.
+				{:else if existingIsFile}
+					A file is using this name, so the folder cannot be merged into it.
 				{:else}
 					Choose how to upload into the existing folder.
 				{/if}
@@ -63,17 +79,20 @@
 		</AlertDialog.Header>
 
 		{#if current}
-			<DialogCallout icon={FolderIcon}>
-				<div class="truncate text-meta font-medium">{current.name}/</div>
+			<DialogCallout icon={existingIsFile ? FileIcon : FolderIcon}>
+				<div class="truncate text-meta font-medium">{current.name}{existingIsFile ? "" : "/"}</div>
 				<div class="font-mono text-xs text-muted-foreground">
-					existing · modified {formatDate(current.existing.modTime)} · uploading {current
-						.incoming.fileCount}
+					existing {existingIsFile ? "file" : "folder"} · modified {formatDate(
+						current.existing.modTime,
+					)} · uploading {current.incoming.fileCount}
 					{current.incoming.fileCount === 1 ? "file" : "files"}
 				</div>
 			</DialogCallout>
 
 			<ul class="mt-1 space-y-1 text-xs text-muted-foreground">
-				<li><span class="font-medium text-foreground">Merge</span> — add into the existing folder, overwriting files with the same name (older versions are kept).</li>
+				{#if !blockedByFile}
+					<li><span class="font-medium text-foreground">Merge</span> — add into the existing folder, overwriting files with the same name (older versions are kept).</li>
+				{/if}
 				<li><span class="font-medium text-foreground">Keep both</span> — upload as a new folder, e.g. "{current.name} (1)".</li>
 				<li><span class="font-medium text-foreground">Skip</span> — don't upload this folder.</li>
 			</ul>
@@ -89,7 +108,9 @@
 		<AlertDialog.Footer>
 			<Button variant="outline" size="sm" onclick={() => choose("skip")}>Skip</Button>
 			<Button variant="outline" size="sm" onclick={() => choose("keepBoth")}>Keep both</Button>
-			<Button size="sm" onclick={() => choose("merge")}>Merge</Button>
+			{#if !blockedByFile}
+				<Button size="sm" onclick={() => choose("merge")}>Merge</Button>
+			{/if}
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

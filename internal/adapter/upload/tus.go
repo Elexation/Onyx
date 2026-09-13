@@ -22,6 +22,8 @@ import (
 // the response body, so these stay generic — details go to slog only.
 var (
 	errUploadConflict = tusd.NewError("ERR_UPLOAD_CONFLICT", "file already exists", http.StatusUnprocessableEntity)
+	errDestIsFolder   = tusd.NewError("ERR_DEST_IS_FOLDER", "a folder with this name already exists", http.StatusUnprocessableEntity)
+	errPathBlocked    = tusd.NewError("ERR_PATH_BLOCKED", "a file with this name already exists in the path", http.StatusUnprocessableEntity)
 	errFinalizeFailed = tusd.NewError("ERR_FINALIZE_FAILED", "could not finalize upload", http.StatusInternalServerError)
 )
 
@@ -76,19 +78,30 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 			finalPath, ferr := files.CompleteUpload(targetDir, relativePath, strategy, src)
 			src.Close()
 
-			// Cleanup of the tus temp file is left to the client's terminate
-			// (DELETE), which @uppy/tus always sends once it sees the 204 and
-			// removes the file from its queue. Removing it here too would race
-			// that DELETE and make it 404. The 24h sweep (cleanupStaleUploads)
-			// is the backstop if the client never sends it.
+			// On success, cleanup of the tus temp file is left to the client's
+			// terminate (DELETE), which @uppy/tus always sends once it sees the
+			// 204 and removes the file from its queue. Removing it here too
+			// would race that DELETE and make it 404. The 24h sweep
+			// (cleanupStaleUploads) is the backstop if the client never sends it.
 			if ferr != nil {
 				slog.Error("finalize upload", "id", uploadID, "file", filename, "error", ferr)
+				// The stored upload is byte-complete, so a client retry would
+				// HEAD offset==length and report success without finalize ever
+				// running. Remove it so retries recreate and re-finalize; the
+				// client's best-effort DELETE then 404s harmlessly.
+				os.Remove(tusFile)
+				os.Remove(tusFile + ".info")
 				// Sanitized errors only — raw ferr text (paths, syscall detail)
 				// would be written verbatim into the response body by tusd.
-				// Conflict gets a non-retryable 422 (NOT 409/5xx — tus clients
-				// auto-retry those, and a conflict never resolves by retrying).
-				if errors.Is(ferr, service.ErrUploadConflict) {
+				// Collisions get a non-retryable 422 (NOT 409/5xx — tus clients
+				// auto-retry those, and a collision never resolves by retrying).
+				switch {
+				case errors.Is(ferr, service.ErrUploadConflict):
 					return tusd.HTTPResponse{}, errUploadConflict
+				case errors.Is(ferr, service.ErrUploadIsDir):
+					return tusd.HTTPResponse{}, errDestIsFolder
+				case errors.Is(ferr, service.ErrUploadBlockedByFile):
+					return tusd.HTTPResponse{}, errPathBlocked
 				}
 				return tusd.HTTPResponse{}, errFinalizeFailed
 			}

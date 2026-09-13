@@ -12,10 +12,21 @@ import (
 	"syscall"
 )
 
+// ErrFileAtPath: a directory target is occupied by a non-directory.
+var ErrFileAtPath = errors.New("a file occupies the path")
+
 // MakeDir creates a single directory. The parent must already exist.
 func (s *LocalStorage) MakeDir(dirPath string) error {
 	dirPath = cleanPath(dirPath)
-	return s.root.Mkdir(dirPath, 0755)
+	err := s.root.Mkdir(dirPath, 0755)
+	if err != nil && os.IsExist(err) {
+		// Stat, not Lstat: a symlink to a dir reads as a folder in the UI.
+		// A dangling symlink fails Stat and counts as a non-directory blocker.
+		if info, serr := s.root.Stat(dirPath); serr != nil || !info.IsDir() {
+			return fmt.Errorf("mkdir %s: %w", dirPath, ErrFileAtPath)
+		}
+	}
+	return err
 }
 
 // SameFile reports whether two paths refer to the same underlying file.
@@ -317,6 +328,9 @@ func (s *LocalStorage) UniqueName(filePath string) (string, error) {
 	return "", fmt.Errorf("too many copies of %s", path.Base(filePath))
 }
 
+// ErrNotADirectory: a path segment that must be a directory exists as a file.
+var ErrNotADirectory = errors.New("path segment is not a directory")
+
 // mkdirAll creates a directory and all parents inside the root.
 func (s *LocalStorage) mkdirAll(dirPath string) error {
 	parts := strings.Split(dirPath, "/")
@@ -331,8 +345,14 @@ func (s *LocalStorage) mkdirAll(dirPath string) error {
 			current = current + "/" + part
 		}
 		err := s.root.Mkdir(current, 0755)
-		if err != nil && !os.IsExist(err) {
-			return err
+		if err != nil {
+			if !os.IsExist(err) {
+				return err
+			}
+			// Stat, not Lstat: a symlink-to-dir segment is traversable, keep it.
+			if info, serr := s.root.Stat(current); serr == nil && !info.IsDir() {
+				return fmt.Errorf("mkdir %s: %w", current, ErrNotADirectory)
+			}
 		}
 	}
 	return nil

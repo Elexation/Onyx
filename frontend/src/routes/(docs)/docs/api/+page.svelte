@@ -526,9 +526,11 @@
 				{@render codeBlock('{\n  "targetDir": "/Documents",\n  "paths": ["report.pdf", "notes.txt"]\n}', "conflicts-req")}
 
 				<h4 class="mt-4 text-sm font-semibold">Response</h4>
-				{@render codeBlock('{\n  "conflicts": [\n    {\n      "path": "report.pdf",\n      "size": 1048576,\n      "modTime": 1714300000\n    }\n  ]\n}', "conflicts-resp")}
+				{@render codeBlock('{\n  "conflicts": [\n    {\n      "path": "report.pdf",\n      "isDir": false,\n      "size": 1048576,\n      "modTime": 1714300000\n    }\n  ]\n}', "conflicts-resp")}
 				<p class="mt-2 text-meta text-muted-foreground">
-					Only existing files appear in the conflicts array. If no conflicts, the array is empty.
+					Only existing entries appear in the conflicts array. If no conflicts, the array is empty.
+					<code class="font-mono">isDir</code> reports whether the existing entry is a folder;
+					<code class="font-mono">size</code> is then the raw inode size, not a recursive total.
 				</p>
 			</section>
 
@@ -547,7 +549,8 @@
 				<h4 class="mt-4 text-sm font-semibold">Response <span class="font-normal text-muted-foreground">(201)</span></h4>
 				{@render codeBlock('{ "path": "/Documents/New Folder" }', "mkdir-resp")}
 				<p class="mt-2 text-meta text-muted-foreground">
-					Returns <strong>409</strong> if the directory already exists.
+					Returns <strong>409</strong> if the name is already taken, with an error naming whether a
+					file or a folder occupies it.
 				</p>
 			</section>
 
@@ -833,8 +836,11 @@
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">POST /api/trash/check-restore-conflicts</code>
 				</p>
-				{@render codeBlock('// Request\n{ "ids": ["a1b2c3d4", "e5f6g7h8"] }\n\n// Response\n{\n  "conflicts": [\n    {\n      "id": "a1b2c3d4",\n      "path": "/Documents/report.pdf",\n      "isDir": false,\n      "existing": { "size": 2048, "modTime": 1714300000 },\n      "restoring": { "size": 1024, "modTime": 1714200000 }\n    }\n  ]\n}', "trash-conflicts-resp")}
-				<p class="mt-2 text-meta text-muted-foreground">Maximum 500 IDs per request.</p>
+				{@render codeBlock('// Request\n{ "ids": ["a1b2c3d4", "e5f6g7h8"] }\n\n// Response\n{\n  "conflicts": [\n    {\n      "id": "a1b2c3d4",\n      "path": "/Documents/report.pdf",\n      "isDir": false,\n      "existingIsDir": false,\n      "existing": { "size": 2048, "modTime": 1714300000 },\n      "restoring": { "size": 1024, "modTime": 1714200000 }\n    }\n  ]\n}', "trash-conflicts-resp")}
+				<p class="mt-2 text-meta text-muted-foreground">
+					Maximum 500 IDs per request. <code class="font-mono">isDir</code> describes the item being
+					restored, <code class="font-mono">existingIsDir</code> the entry currently occupying the path.
+				</p>
 
 				<h4 class="mt-5 text-sm font-semibold">Permanently Delete Item</h4>
 				<p class="mt-1 text-meta text-muted-foreground">

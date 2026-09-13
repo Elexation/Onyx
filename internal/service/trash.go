@@ -133,12 +133,15 @@ type MoveToTrashResult struct {
 
 // RestoreConflict describes a trashed item whose original path is currently
 // occupied. Returned by CheckRestoreConflicts to drive the UI prompt.
+// IsDir describes the restoring item; ExistingIsDir the occupant it collides
+// with. They differ when a file and a folder share a name.
 type RestoreConflict struct {
-	ID        string              `json:"id"`
-	Path      string              `json:"path"`
-	IsDir     bool                `json:"isDir"`
-	Existing  RestoreConflictMeta `json:"existing"`
-	Restoring RestoreConflictMeta `json:"restoring"`
+	ID            string              `json:"id"`
+	Path          string              `json:"path"`
+	IsDir         bool                `json:"isDir"`
+	ExistingIsDir bool                `json:"existingIsDir"`
+	Existing      RestoreConflictMeta `json:"existing"`
+	Restoring     RestoreConflictMeta `json:"restoring"`
 }
 
 type RestoreConflictMeta struct {
@@ -268,9 +271,10 @@ func (s *TrashService) CheckRestoreConflicts(ids []string) ([]RestoreConflict, e
 		}
 
 		conflicts = append(conflicts, RestoreConflict{
-			ID:    item.ID,
-			Path:  item.OriginalPath,
-			IsDir: item.IsDir,
+			ID:            item.ID,
+			Path:          item.OriginalPath,
+			IsDir:         item.IsDir,
+			ExistingIsDir: info.IsDir(),
 			Existing: RestoreConflictMeta{
 				Size:    existingSize,
 				ModTime: info.ModTime().Unix(),

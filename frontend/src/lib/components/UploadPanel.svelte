@@ -47,6 +47,7 @@
 				status,
 				fileCount: g.fileCount,
 				completedCount: g.completedCount,
+				error: g.lastError,
 			});
 		}
 		for (const item of uploadState.looseItems) {

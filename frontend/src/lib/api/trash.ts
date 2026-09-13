@@ -9,6 +9,7 @@ export type RestoreConflictItem = {
 	id: string;
 	path: string;
 	isDir: boolean;
+	existingIsDir: boolean;
 	existing: RestoreConflictMeta;
 	restoring: RestoreConflictMeta;
 };

@@ -3,7 +3,7 @@
 	import { page } from "$app/state";
 	import { goto, replaceState } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move, mkdir } from "$lib/api/files.js";
-	import { checkConflicts } from "$lib/api/upload.js";
+	import { checkConflicts, type ConflictInfo } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
 	import { preferences } from "$lib/stores/preferences.svelte.js";
@@ -511,7 +511,7 @@
 			// Folder drop → resolve conflicts at the folder level (one prompt per
 			// top-level folder). Avoids the 500-path cap on per-file checks.
 			if (topCounts.size > 0) {
-				let conflicts: { path: string; size: number; modTime: number }[] = [];
+				let conflicts: ConflictInfo[] = [];
 				try {
 					conflicts = (await checkConflicts(targetDir, [...topCounts.keys()])).conflicts;
 				} catch {
@@ -522,7 +522,7 @@
 					pendingEmptyDirs = emptyDirs;
 					folderConflictPairs = conflicts.map((c) => ({
 						name: c.path,
-						existing: { modTime: c.modTime },
+						existing: { modTime: c.modTime, isDir: c.isDir },
 						incoming: { fileCount: topCounts.get(c.path) ?? 0 },
 					}));
 					folderConflictOpen = true;
@@ -545,10 +545,13 @@
 						const f = incomingByPath.get(c.path);
 						return {
 							path: c.path,
-							existing: { size: c.size, modTime: c.modTime },
+							// A folder's inode size is meaningless here (0 on NTFS, 4096
+							// on ext4) and the server does not walk it.
+							existing: { size: c.isDir ? null : c.size, modTime: c.modTime, isDir: c.isDir },
 							incoming: {
 								size: f?.size ?? 0,
 								modTime: Math.floor((f?.lastModified ?? 0) / 1000),
+								isDir: false,
 							},
 						};
 					});

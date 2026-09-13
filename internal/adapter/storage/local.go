@@ -2,12 +2,14 @@ package storage
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -185,6 +187,11 @@ func (s *LocalStorage) Lstat(filePath string) (*domain.FileInfo, error) {
 
 	info, err := s.root.Lstat(filePath)
 	if err != nil {
+		// Linux reports a path under a file as ENOTDIR, Windows as ErrNotExist.
+		// Normalize so callers classify a file blocker the same way on both.
+		if errors.Is(err, syscall.ENOTDIR) {
+			return nil, fmt.Errorf("lstat %s: %w", filePath, ErrNotADirectory)
+		}
 		return nil, err
 	}
 

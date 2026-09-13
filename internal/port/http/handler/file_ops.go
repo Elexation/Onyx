@@ -30,6 +30,10 @@ func (h *FileOpsHandler) MakeDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.files.MakeDir(req.Path); err != nil {
+		if errors.Is(err, service.ErrDirBlockedByFile) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a file with this name already exists"})
+			return
+		}
 		writeFileError(w, err)
 		return
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Elexation/onyx/internal/adapter/storage"
@@ -162,5 +163,129 @@ func TestDelete_Permanent_IgnoresTrashSetting(t *testing.T) {
 	entries, _ := os.ReadDir(trashDir)
 	if len(entries) > 0 {
 		t.Error("file ended up in trash despite permanent=true")
+	}
+}
+
+func setupUploadTest(t *testing.T) (*FileService, string) {
+	t.Helper()
+	dataDir := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	ls, err := storage.NewLocalStorage(dataDir)
+	if err != nil {
+		t.Fatalf("new storage: %v", err)
+	}
+	t.Cleanup(func() { _ = ls.Close() })
+	return NewFileService(ls), dataDir
+}
+
+func TestCompleteUpload_ReplaceOverDirectory_Fails(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.Mkdir(filepath.Join(dataDir, "target"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, err := fs.CompleteUpload("/", "target", "replace", strings.NewReader("body"))
+	if !errors.Is(err, ErrUploadIsDir) {
+		t.Fatalf("want ErrUploadIsDir, got %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(dataDir, "target"))
+	if err != nil || !info.IsDir() {
+		t.Errorf("existing directory was clobbered: %v", err)
+	}
+}
+
+func TestCompleteUpload_KeepBothOverDirectory_AutoRenames(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.Mkdir(filepath.Join(dataDir, "target"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, err := fs.CompleteUpload("/", "target", "keepBoth", strings.NewReader("body"))
+	if err != nil {
+		t.Fatalf("keepBoth over directory failed: %v", err)
+	}
+	if got != "/target (1)" {
+		t.Errorf("want /target (1), got %s", got)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dataDir, "target (1)"))
+	if err != nil || string(data) != "body" {
+		t.Errorf("renamed file content wrong: %q, %v", data, err)
+	}
+}
+
+func TestMakeDir_OverExistingFile_Fails(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.WriteFile(filepath.Join(dataDir, "test"), []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	err := fs.MakeDir("/test")
+	if !errors.Is(err, ErrDirBlockedByFile) {
+		t.Fatalf("want ErrDirBlockedByFile, got %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dataDir, "test"))
+	if err != nil || string(data) != "keep" {
+		t.Errorf("blocking file was damaged: %q, %v", data, err)
+	}
+}
+
+func TestMakeDir_OverExistingDir_ReportsExist(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.Mkdir(filepath.Join(dataDir, "test"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	err := fs.MakeDir("/test")
+	if errors.Is(err, ErrDirBlockedByFile) {
+		t.Fatal("directory blocker misreported as a file")
+	}
+	if !os.IsExist(err) {
+		t.Fatalf("want an exists error, got %v", err)
+	}
+}
+
+func TestCheckConflicts_ReportsIsDir(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.Mkdir(filepath.Join(dataDir, "testfolder"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "test"), []byte("body"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	conflicts, err := fs.CheckConflicts("/", []string{"testfolder", "test", "absent"})
+	if err != nil {
+		t.Fatalf("check conflicts: %v", err)
+	}
+	if len(conflicts) != 2 {
+		t.Fatalf("want 2 conflicts, got %d", len(conflicts))
+	}
+	if !conflicts[0].IsDir {
+		t.Error("directory conflict reported as a file")
+	}
+	if conflicts[1].IsDir {
+		t.Error("file conflict reported as a directory")
+	}
+}
+
+func TestCompleteUpload_ParentSegmentIsFile_Fails(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+	if err := os.WriteFile(filepath.Join(dataDir, "blocker"), []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	_, err := fs.CompleteUpload("/", "blocker/inner.txt", "", strings.NewReader("body"))
+	if !errors.Is(err, ErrUploadBlockedByFile) {
+		t.Fatalf("want ErrUploadBlockedByFile, got %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dataDir, "blocker"))
+	if err != nil || string(data) != "keep" {
+		t.Errorf("blocking file was damaged: %q, %v", data, err)
 	}
 }

@@ -17,9 +17,10 @@ import (
 	"github.com/Elexation/onyx/internal/domain"
 )
 
-// ConflictInfo describes an existing file that collides with an incoming upload.
+// ConflictInfo describes an existing entry that collides with an incoming upload.
 type ConflictInfo struct {
 	Path    string `json:"path"`
+	IsDir   bool   `json:"isDir"`
 	Size    int64  `json:"size"`
 	ModTime int64  `json:"modTime"`
 }
@@ -59,6 +60,15 @@ type finalizeLock struct {
 // exists and the client supplied no conflict strategy. Exposed so the upload
 // handler can map it to a sanitized client-facing error.
 var ErrUploadConflict = errors.New("file already exists")
+
+// ErrUploadIsDir: a "replace" upload targets an existing directory.
+var ErrUploadIsDir = errors.New("destination is a directory")
+
+// ErrUploadBlockedByFile: a parent segment of the destination is a file.
+var ErrUploadBlockedByFile = errors.New("a file blocks the upload path")
+
+// ErrDirBlockedByFile: a MakeDir target name is taken by a file.
+var ErrDirBlockedByFile = errors.New("a file occupies the folder name")
 
 // lockFinalize acquires the finalize lock for dest, creating it on first use.
 func (s *FileService) lockFinalize(dest string) *finalizeLock {
@@ -246,6 +256,9 @@ func (s *FileService) MakeDir(dirPath string) error {
 		return fmt.Errorf("invalid directory path")
 	}
 	if err := s.storage.MakeDir(dirPath); err != nil {
+		if errors.Is(err, storage.ErrFileAtPath) {
+			return ErrDirBlockedByFile
+		}
 		return err
 	}
 	full := ensureSlashPrefix(dirPath)
@@ -497,13 +510,15 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 		fullPath := path.Join(targetDir, clean)
 		info, err := s.storage.Lstat(fullPath)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			// Nothing can exist beneath a file, so a blocked path is not a conflict.
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, storage.ErrNotADirectory) {
 				continue
 			}
 			return nil, err
 		}
 		conflicts = append(conflicts, ConflictInfo{
 			Path:    rp,
+			IsDir:   info.IsDir,
 			Size:    info.Size,
 			ModTime: info.ModTime,
 		})
@@ -537,14 +552,24 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 	l := s.lockFinalize(destPath)
 	defer s.unlockFinalize(destPath, l)
 
-	exists, err := s.storage.Exists(destPath)
-	if err != nil {
+	var exists, destIsDir bool
+	if info, err := s.storage.Lstat(destPath); err == nil {
+		exists = true
+		destIsDir = info.IsDir
+	} else if errors.Is(err, storage.ErrNotADirectory) {
+		// A file blocks a parent segment. Classify it here or the write below,
+		// which raises the same sentinel, is never reached.
+		return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("check existing: %w", err)
 	}
 
 	if exists {
 		switch conflictStrategy {
 		case "replace":
+			if destIsDir {
+				return "", ErrUploadIsDir
+			}
 			// Version the current file before overwriting. A hard failure
 			// here aborts the upload so we don't silently destroy the prior
 			// content (e.g. disk full). CreateVersion returns nil for legit
@@ -583,6 +608,9 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 	}
 
 	if err := s.storage.WriteFile(destPath, src); err != nil {
+		if errors.Is(err, storage.ErrNotADirectory) {
+			return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
+		}
 		return "", fmt.Errorf("write upload: %w", err)
 	}
 

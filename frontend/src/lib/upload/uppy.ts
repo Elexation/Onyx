@@ -129,7 +129,11 @@ async function getUppy(): Promise<Uppy> {
 
 	instance.on("upload-error", (file, error) => {
 		if (file) {
-			uploadState.markError(file.id, error?.message ?? "Upload failed");
+			// Drop stale sent-bytes, or complete's final flush re-flips this file
+			// error→uploading and reconcileActive then marks it complete. A real
+			// retry re-adds entries via fresh progress events.
+			rawProgress.delete(file.id);
+			uploadState.markError(file.id, uploadErrorMessage(error));
 			// Grouped files have no per-file retry UI (recovery is re-drop → Merge):
 			// drop them from Uppy so they free their window slot and aren't silently
 			// re-tried by the next pump's upload() (retry-all is instance-wide).
@@ -164,6 +168,17 @@ async function getUppy(): Promise<Uppy> {
 	});
 
 	return instance;
+}
+
+// Surface the server's sanitized "ERR_X: reason" message. tusd puts it in the
+// response body and tus-js-client embeds it in its error dump; match whichever
+// is present instead of showing the multi-line dump.
+function uploadErrorMessage(error: unknown): string {
+	const body = (error as any)?.originalResponse?.getBody?.();
+	const message = (error as Error | undefined)?.message ?? "";
+	const m = `${typeof body === "string" ? body : ""}\n${message}`.match(/ERR_[A-Z_]+: *([^\n]+)/);
+	if (m) return m[1].trim();
+	return message || "Upload failed";
 }
 
 export interface ConflictResolution {

@@ -223,7 +223,7 @@ func writeFileError(w http.ResponseWriter, err error) {
 			return
 		}
 		if os.IsExist(err) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "directory already exists"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a folder with this name already exists"})
 			return
 		}
 		// Path traversal attempts from os.Root

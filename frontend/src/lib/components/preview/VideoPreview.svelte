@@ -12,6 +12,7 @@
 	import Volume2Icon from "@lucide/svelte/icons/volume-2";
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import MaximizeIcon from "@lucide/svelte/icons/maximize";
+	import MinimizeIcon from "@lucide/svelte/icons/minimize";
 	import SettingsIcon from "@lucide/svelte/icons/settings";
 	import ChevronsLeftIcon from "@lucide/svelte/icons/chevrons-left";
 	import ChevronsRightIcon from "@lucide/svelte/icons/chevrons-right";
@@ -29,6 +30,7 @@
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let containerEl = $state<HTMLDivElement | null>(null);
+	let isFullscreen = $state(false);
 	let playing = $state(false);
 	let currentTime = $state(0);
 	let duration = $state(0);
@@ -52,6 +54,8 @@
 	let playPauseKey = $state(0);
 	let playPauseTimer: ReturnType<typeof setTimeout> | null = null;
 	let buffering = $state(false);
+	let volumeFlash = $state(false);
+	let volumeFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Arrow-key seek accumulates into a settle timer so held/mashed
 	// presses produce one currentTime write, not one per keydown. Held
@@ -152,14 +156,25 @@
 		return undefined;
 	});
 
+	// Only clears cursor writes this component made, so an unrelated one survives.
+	let cogCursorSet = false;
+	function setCogCursor(on: boolean) {
+		if (on === cogCursorSet) return;
+		cogCursorSet = on;
+		document.documentElement.style.cursor = on ? 'pointer' : '';
+	}
+
 	function pressTrack(node: HTMLElement) {
-		const getBtn = () => node.querySelector('button');
+		// bits-ui drops page pointer-events while the menu is open, so hover and
+		// press state can only come from hit-testing document-level moves. The rect
+		// is cached because that hit-test runs on every move across the whole page.
+		let rect: DOMRect | null = null;
+		const invalidate = () => { rect = null; };
 
 		const isOverBtn = (x: number, y: number) => {
-			const b = getBtn();
-			if (!b) return false;
-			const r = b.getBoundingClientRect();
-			return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+			if (!rect) rect = node.querySelector('button')?.getBoundingClientRect() ?? null;
+			if (!rect) return false;
+			return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 		};
 
 		const onDown = (e: PointerEvent) => {
@@ -175,27 +190,32 @@
 		const onMove = (e: PointerEvent) => {
 			const over = isOverBtn(e.clientX, e.clientY);
 			cogHovered = over;
-			if (over && qualityMenuOpen) {
-				document.documentElement.style.cursor = 'pointer';
-			} else if (document.documentElement.style.cursor === 'pointer') {
-				document.documentElement.style.cursor = '';
-			}
+			setCogCursor(over && qualityMenuOpen);
 		};
 
 		document.addEventListener('pointerdown', onDown, true);
 		document.addEventListener('pointerup', onUp, true);
 		document.addEventListener('pointermove', onMove);
+		window.addEventListener('resize', invalidate);
+		document.addEventListener('fullscreenchange', invalidate);
 
 		return { destroy() {
 			document.removeEventListener('pointerdown', onDown, true);
 			document.removeEventListener('pointerup', onUp, true);
 			document.removeEventListener('pointermove', onMove);
-			if (document.documentElement.style.cursor === 'pointer') {
-				document.documentElement.style.cursor = '';
-			}
+			window.removeEventListener('resize', invalidate);
+			document.removeEventListener('fullscreenchange', invalidate);
+			setCogCursor(false);
 		}};
 	}
 	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0 || controlsFocused || qualityMenuOpen);
+
+	// !failed keeps the pointer over the retry overlay, which outlives the auto-hide timer
+	const cursorHidden = $derived(!controlsVisible && !failed);
+
+	// Fullscreen promotes containerEl above the dialog in the top layer, so menu
+	// content portaled to the dialog paints behind the video and is unreachable.
+	const menuPortalTarget = $derived(isFullscreen ? containerEl : portalTarget);
 
 	function restorePosition() {
 		if (!videoEl) return;
@@ -254,12 +274,18 @@
 		playPauseTimer = setTimeout(() => { playPauseAction = null; }, 600);
 	}
 
-	function togglePlay() {
+	function flashVolume() {
+		volumeFlash = true;
+		if (volumeFlashTimer) clearTimeout(volumeFlashTimer);
+		volumeFlashTimer = setTimeout(() => { volumeFlash = false; }, 1000);
+	}
+
+	function togglePlay(flash = true) {
 		if (!videoEl || failed) return;
 		const willPlay = videoEl.paused;
 		if (willPlay) videoEl.play().catch(() => { failed = true; });
 		else videoEl.pause();
-		flashPlayPause(willPlay ? 'play' : 'pause');
+		if (flash) flashPlayPause(willPlay ? 'play' : 'pause');
 	}
 
 	function toggleMute() {
@@ -270,27 +296,22 @@
 		} else {
 			videoEl.muted = true;
 		}
+		// volumechange is async; the flash reads these on the same tick
+		muted = videoEl.muted;
+		volume = videoEl.volume;
 	}
 
-	let clickTimer: ReturnType<typeof setTimeout> | null = null;
-
-	function handleVideoClick() {
-		if (clickTimer) {
-			clearTimeout(clickTimer);
-			clickTimer = null;
-			return;
-		}
-		clickTimer = setTimeout(() => {
-			clickTimer = null;
-			togglePlay();
-		}, 200);
+	// Toggle on the first click and let dblclick undo it, so a plain click responds
+	// immediately instead of waiting out a dblclick discrimination timer.
+	function handleVideoClick(e: MouseEvent) {
+		if (e.detail > 1) return;
+		togglePlay();
 	}
 
 	function handleVideoDblClick() {
-		if (clickTimer) {
-			clearTimeout(clickTimer);
-			clickTimer = null;
-		}
+		togglePlay(false);
+		if (playPauseTimer) clearTimeout(playPauseTimer);
+		playPauseAction = null;
 		toggleFullscreen();
 	}
 
@@ -457,6 +478,10 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// The open menu owns the keyboard, but selecting an item closes it before
+		// this bubbles to window, so Space and Enter need the origin check too.
+		if (qualityMenuOpen) return;
+		if ((e.target as HTMLElement)?.closest?.('[data-slot="dropdown-menu-content"]')) return;
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 		if (tag === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
@@ -481,6 +506,7 @@
 				if (videoEl) {
 					videoEl.volume = Math.min(1, volume + 0.1);
 					volume = videoEl.volume;
+					flashVolume();
 				}
 				break;
 			case "ArrowDown":
@@ -488,6 +514,7 @@
 				if (videoEl) {
 					videoEl.volume = Math.max(0, volume - 0.1);
 					volume = videoEl.volume;
+					flashVolume();
 				}
 				break;
 			case "f":
@@ -499,6 +526,7 @@
 			case "M":
 				e.preventDefault();
 				toggleMute();
+				flashVolume();
 				break;
 		}
 	}
@@ -550,6 +578,11 @@
 
 	// --- Effects ---
 
+	// Closing by Escape or outside-click leaves no pointermove to clear the cursor.
+	$effect(() => {
+		if (!qualityMenuOpen) setCogCursor(false);
+	});
+
 	$effect(() => {
 		const el = videoEl;
 		if (!el) return;
@@ -557,9 +590,9 @@
 		return () => {
 			el.pause();
 			if (controlsTimer) clearTimeout(controlsTimer);
-			if (clickTimer) clearTimeout(clickTimer);
 			if (keySeekTimer) clearTimeout(keySeekTimer);
 			if (playPauseTimer) clearTimeout(playPauseTimer);
+			if (volumeFlashTimer) clearTimeout(volumeFlashTimer);
 		};
 	});
 
@@ -687,11 +720,13 @@
 </script>
 
 <svelte:window onkeydown={handleKeydown} onkeyup={handleKeyup} onblur={handleWindowBlur} />
+<svelte:document onfullscreenchange={() => { isFullscreen = document.fullscreenElement === containerEl; }} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div
 	bind:this={containerEl}
 	class="group relative flex flex-1 items-center justify-center overflow-hidden bg-black"
+	class:cursor-none={cursorHidden}
 	onmousemove={resetControlsTimer}
 	onmouseleave={() => { if (playing) showControls = false; }}
 >
@@ -732,7 +767,7 @@
 			}
 		}}
 		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; saveVolume(); } }}
-		onended={() => { playing = false; showControls = true; clearPosition(); }}
+		onended={() => { playing = false; showControls = true; if (controlsTimer) clearTimeout(controlsTimer); clearPosition(); }}
 		onerror={() => { if (!hlsHandle && pendingSeek === null) failed = true; }}
 	></video>
 
@@ -768,6 +803,19 @@
 					<ChevronsRightIcon class="size-4" />
 				{/if}
 			</div>
+		{:else if volumeFlash}
+			<div
+				class="pointer-events-none absolute left-1/2 top-8 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-4 py-2 text-meta text-white backdrop-blur-sm"
+				transition:fade={{ duration: 120 }}
+			>
+				{#if muted || volume === 0}
+					<VolumeXIcon class="size-4" />
+					<span>Muted</span>
+				{:else}
+					<Volume2Icon class="size-4" />
+					<span class="tabular-nums">{Math.round(volume * 100)}%</span>
+				{/if}
+			</div>
 		{/if}
 
 		{#if buffering}
@@ -795,7 +843,12 @@
 		class:opacity-0={!controlsVisible}
 		class:pointer-events-none={!controlsVisible}
 		onclick={(e) => e.stopPropagation()}
-		onfocusin={() => { controlsFocused = true; }}
+		onfocusin={(e) => {
+			// Click-focus stays on the button so focusout never fires; only
+			// keyboard focus may pin the bar open.
+			controlsFocused = (e.target as HTMLElement).matches(":focus-visible");
+			if (!controlsFocused) resetControlsTimer();
+		}}
 		onfocusout={(e) => {
 			if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
 				controlsFocused = false;
@@ -864,7 +917,7 @@
 
 		<div class="flex items-center gap-2">
 			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
-				onclick={togglePlay}
+				onclick={() => togglePlay()}
 				aria-label={playing ? "Pause" : "Play"}
 			>
 				{#if playing}
@@ -900,7 +953,7 @@
 							</div>
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="min-w-36" portalProps={portalTarget ? { to: portalTarget } : undefined}>
+					<DropdownMenu.Content align="end" class="min-w-36" portalProps={menuPortalTarget ? { to: menuPortalTarget } : undefined}>
 						{#if nativeSupported}
 							<DropdownMenu.Item onclick={switchToOriginal}>
 								{#if userMode !== "transcode"}
@@ -969,9 +1022,13 @@
 
 			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"
 				onclick={toggleFullscreen}
-				aria-label="Fullscreen"
+				aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
 			>
-				<MaximizeIcon class="size-5" />
+				{#if isFullscreen}
+					<MinimizeIcon class="size-5" />
+				{:else}
+					<MaximizeIcon class="size-5" />
+				{/if}
 			</Button>
 		</div>
 	</div>

@@ -1,4 +1,5 @@
 import type Uppy from "@uppy/core";
+import { toast } from "svelte-sonner";
 import { uploadState } from "$lib/stores/upload.svelte.js";
 import { getCsrfToken } from "$lib/api";
 
@@ -78,6 +79,77 @@ function stopFlushTimer() {
 	prevTotalUploaded = 0;
 }
 
+const TUS_ENDPOINT = "/api/upload/";
+
+// The tus resume fingerprint (tus-<fileId>-<endpoint>, @uppy/tus
+// getFingerprint) ignores upload metadata, so an entry orphaned by a
+// mid-upload reload matches the same file re-dropped into a DIFFERENT
+// directory; the server finalizes with the stored creation-time targetDir and
+// the file silently lands in the old directory. @uppy/tus hard-overrides
+// `fingerprint`, so scope resume candidates here instead: same localStorage
+// scheme as tus-js-client's WebStorageUrlStorage (tus::<fingerprint>::<id>
+// keys, entries carry `metadata`), but findUploadsByFingerprint only returns
+// entries whose stored targetDir matches the current file's.
+function readTusEntries(prefix: string): any[] {
+	const results: any[] = [];
+	try {
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i);
+			if (!key || !key.startsWith(prefix)) continue;
+			try {
+				const entry = JSON.parse(localStorage.getItem(key)!);
+				entry.urlStorageKey = key;
+				results.push(entry);
+			} catch {
+				// Malformed entry, skip it.
+			}
+		}
+	} catch {
+		// localStorage unavailable (sandboxed frame, private mode): no resume.
+	}
+	return results;
+}
+
+const dirScopedUrlStorage = {
+	findAllUploads(): Promise<any[]> {
+		return Promise.resolve(readTusEntries("tus::"));
+	},
+	findUploadsByFingerprint(fingerprint: string): Promise<any[]> {
+		const suffix = `-${TUS_ENDPOINT}`;
+		const fileId =
+			fingerprint.startsWith("tus-") && fingerprint.endsWith(suffix)
+				? fingerprint.slice(4, -suffix.length)
+				: null;
+		const meta = fileId
+			? (instance?.getFile(fileId)?.meta as Record<string, unknown> | undefined)
+			: undefined;
+		const targetDir = typeof meta?.targetDir === "string" ? meta.targetDir : null;
+		// Without a current targetDir to compare, offer nothing: a fresh upload
+		// is always correct, a cross-directory resume never is.
+		const entries = targetDir
+			? readTusEntries(`tus::${fingerprint}::`).filter((e) => e?.metadata?.targetDir === targetDir)
+			: [];
+		return Promise.resolve(entries);
+	},
+	removeUpload(urlStorageKey: string): Promise<void> {
+		try {
+			localStorage.removeItem(urlStorageKey);
+		} catch {
+			// localStorage unavailable.
+		}
+		return Promise.resolve();
+	},
+	addUpload(fingerprint: string, upload: unknown): Promise<string> {
+		const key = `tus::${fingerprint}::${Math.round(Math.random() * 1e12)}`;
+		try {
+			localStorage.setItem(key, JSON.stringify(upload));
+		} catch {
+			// Not persisted; removeUpload on this key is a harmless no-op.
+		}
+		return Promise.resolve(key);
+	},
+};
+
 async function getUppy(): Promise<Uppy> {
 	if (instance) return instance;
 
@@ -96,8 +168,9 @@ async function getUppy(): Promise<Uppy> {
 	});
 
 	instance.use(Tus, {
-		endpoint: "/api/upload/",
-		limit: 20,
+		endpoint: TUS_ENDPOINT,
+		urlStorage: dirScopedUrlStorage,
+		limit: 4, // per-IP cap is 8 (router.go); completions fire DELETE + next POST at once, so keep 2x limit within it
 		retryDelays: [0, 1000, 3000, 5000],
 		allowedMetaFields: true,
 		removeFingerprintOnSuccess: true,
@@ -134,11 +207,20 @@ async function getUppy(): Promise<Uppy> {
 			// retry re-adds entries via fresh progress events.
 			rawProgress.delete(file.id);
 			uploadState.markError(file.id, uploadErrorMessage(error));
-			// Grouped files have no per-file retry UI (recovery is re-drop → Merge):
-			// drop them from Uppy so they free their window slot and aren't silently
-			// re-tried by the next pump's upload() (retry-all is instance-wide).
-			// Loose files stay — the retry button needs them in Uppy.
-			if (uploadState.isGrouped(file.id)) instance!.removeFile(file.id);
+			// Never leave an errored file in Uppy: each pump's upload() retries
+			// every errored file instance-wide, so a permanently failing file
+			// would re-upload in full on every window refill. Grouped files
+			// recover via re-drop → Merge; loose files are benched so the retry
+			// button can re-add them.
+			if (!uploadState.isGrouped(file.id)) {
+				errBench.set(file.id, {
+					name: file.name,
+					type: file.type,
+					data: file.data,
+					meta: { ...file.meta },
+				});
+			}
+			instance!.removeFile(file.id);
 		}
 		pumpWindow();
 	});
@@ -158,8 +240,8 @@ async function getUppy(): Promise<Uppy> {
 		}
 
 		// Truly drained: every window emptied and nothing transferable remains.
-		// Errored loose files stay in Uppy for the retry button, so count only
-		// non-errored files — otherwise one failure leaks the flush timer forever.
+		// Errored files are removed from Uppy on upload-error; the !error filter
+		// is belt-and-braces so one stray failure can't leak the flush timer.
 		if (instance!.getFiles().filter((f) => !f.error).length === 0) {
 			stopFlushTimer();
 			uploadState.updateSpeedAndEta(0, null);
@@ -204,6 +286,9 @@ let groupCounter = 0;
 const WINDOW_SIZE = 200;
 let windowQueue: { desc: any; group: string }[] = [];
 let enqueueAbort = false;
+// Errored loose files are removed from Uppy (see upload-error) but benched
+// here so retryUpload can re-add them; keyed by Uppy file id.
+const errBench = new Map<string, any>();
 
 function topSegment(rel: string): string | null {
 	const idx = rel.indexOf("/");
@@ -296,7 +381,19 @@ export async function addFiles(
 // files become per-file rows.
 function addTracked(uppy: Uppy, batch: { desc: any; group?: string }[]) {
 	const groupByData = new Map<unknown, string | undefined>();
-	for (const e of batch) groupByData.set(e.desc.data, e.group);
+	// Expected per-group adds; whatever Uppy rejects or trackFile declines to
+	// bind is subtracted from the group's pre-registered totals so the group
+	// can still reach complete.
+	const missing = new Map<string, { count: number; bytes: number }>();
+	for (const e of batch) {
+		groupByData.set(e.desc.data, e.group);
+		if (e.group) {
+			const t = missing.get(e.group) ?? { count: 0, bytes: 0 };
+			t.count++;
+			t.bytes += e.desc.data?.size ?? 0;
+			missing.set(e.group, t);
+		}
+	}
 
 	// addFiles does NOT throw on duplicates/restrictions — it emits
 	// 'restriction-failed' and silently skips them, so only genuinely-new files
@@ -305,21 +402,63 @@ function addTracked(uppy: Uppy, batch: { desc: any; group?: string }[]) {
 	const onFileAdded = (file: any) => {
 		added.push({ id: file.id, name: file.name, size: file.size ?? 0, data: file.data });
 	};
+	// Uppy's file id covers name/type/relativePath/size/mtime but not targetDir, so
+	// a file still in flight to another folder is rejected here too. Uppy reports
+	// that only through its Informer, which this headless setup never renders.
+	const blocked: { name: string; dir?: string }[] = [];
+	const onRestrictionFailed = (file: any) => {
+		if (!file || groupByData.get(file.data)) return;
+		const meta = uppy.getFile(file.id)?.meta as Record<string, unknown> | undefined;
+		const dir = typeof meta?.targetDir === "string" ? meta.targetDir : undefined;
+		blocked.push({ name: file.name, dir: dir === file.meta?.targetDir ? undefined : dir });
+	};
 	uppy.on("file-added", onFileAdded);
+	uppy.on("restriction-failed", onRestrictionFailed);
 	try {
 		uppy.addFiles(batch.map((e) => e.desc));
 	} catch {
 		// no-op
 	}
 	uppy.off("file-added", onFileAdded);
+	uppy.off("restriction-failed", onRestrictionFailed);
 
 	const looseBucket: { id: string; name: string; size: number }[] = [];
 	for (const f of added) {
 		const group = groupByData.get(f.data);
-		if (group) uploadState.trackFile(f.id, f.size, group);
-		else looseBucket.push({ id: f.id, name: f.name, size: f.size });
+		if (group) {
+			if (uploadState.trackFile(f.id, f.size, group)) {
+				const t = missing.get(group)!;
+				t.count--;
+				t.bytes -= f.size;
+			}
+		} else {
+			looseBucket.push({ id: f.id, name: f.name, size: f.size });
+		}
 	}
 	if (looseBucket.length > 0) uploadState.addLooseFiles(looseBucket);
+
+	let skipped = blocked.filter((b) => !b.dir).length;
+	for (const [gid, t] of missing) {
+		if (t.count > 0) {
+			skipped += t.count;
+			uploadState.adjustGroupShortfall(gid, t.count, t.bytes);
+		}
+	}
+	if (skipped > 0) {
+		toast.info(`Skipped ${skipped} file${skipped === 1 ? "" : "s"} already uploading`);
+	}
+
+	const elsewhere = blocked.filter((b): b is { name: string; dir: string } => !!b.dir);
+	if (elsewhere.length > 0) {
+		const dirs = new Set(elsewhere.map((b) => b.dir));
+		const first = elsewhere[0].dir;
+		const where = dirs.size === 1 ? (first === "/" ? "/" : `/${first}`) : "other folders";
+		toast.info(
+			elsewhere.length === 1
+				? `"${elsewhere[0].name}" is already uploading to ${where}`
+				: `${elsewhere.length} files are already uploading to ${where}`,
+		);
+	}
 }
 
 // Keep Uppy topped up to WINDOW_SIZE files from the grouped queue, then upload.
@@ -330,8 +469,8 @@ function pumpWindow() {
 		return;
 	}
 	if (windowQueue.length === 0) return;
-	// Errored files awaiting retry don't count against the window — otherwise
-	// accumulated failures shrink (and can dead-stall) the pump.
+	// Errored files are removed from Uppy on upload-error; filtering them here
+	// is belt-and-braces so a stray failure can't shrink (or dead-stall) the pump.
 	const slots = WINDOW_SIZE - instance.getFiles().filter((f) => !f.error).length;
 	if (slots <= 0) return;
 	const batch = windowQueue.splice(0, slots);
@@ -346,7 +485,12 @@ export async function startUpload() {
 
 export function cancelUpload(fileId: string) {
 	if (!instance) return;
-	instance.removeFile(fileId);
+	errBench.delete(fileId);
+	try {
+		instance.removeFile(fileId);
+	} catch {
+		// Benched (errored) files are already out of Uppy.
+	}
 	uploadState.removeFile(fileId);
 }
 
@@ -380,6 +524,7 @@ export function cancelAll() {
 	// during the preparing/enqueue phase, not just active transfers).
 	enqueueAbort = true;
 	windowQueue = [];
+	errBench.clear();
 
 	instance.cancelAll();
 	stopFlushTimer();
@@ -392,5 +537,12 @@ export function cancelAll() {
 export function retryUpload(fileId: string) {
 	if (!instance) return;
 	uploadState.retry(fileId);
+	const benched = errBench.get(fileId);
+	if (benched) {
+		errBench.delete(fileId);
+		addTracked(instance, [{ desc: benched }]);
+		instance.upload().catch(() => {});
+		return;
+	}
 	instance.retryUpload(fileId);
 }

@@ -67,6 +67,12 @@ var ErrUploadIsDir = errors.New("destination is a directory")
 // ErrUploadBlockedByFile: a parent segment of the destination is a file.
 var ErrUploadBlockedByFile = errors.New("a file blocks the upload path")
 
+// ErrUploadInvalidTarget: traversal-shaped targetDir upload metadata.
+var ErrUploadInvalidTarget = errors.New("invalid target directory")
+
+// ErrUploadInvalidPath: empty or traversal-shaped upload path metadata.
+var ErrUploadInvalidPath = errors.New("invalid upload path")
+
 // ErrDirBlockedByFile: a MakeDir target name is taken by a file.
 var ErrDirBlockedByFile = errors.New("a file occupies the folder name")
 
@@ -526,23 +532,67 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 	return conflicts, nil
 }
 
-// CompleteUpload moves an uploaded file into the data root.
-// conflictStrategy: "replace" overwrites, "keepBoth" auto-renames.
-// relativePath is the path relative to targetDir (supports nested dirs for folder uploads).
-func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy string, src io.Reader) (string, error) {
-	// Reject traversal in either component before os.Root gets a chance to.
-	// Bad uploads would otherwise linger in the tus store after a 500.
+// CleanUploadPaths lexically validates and canonicalizes upload metadata.
+// Traversal rejection here is defense-in-depth ahead of os.Root containment;
+// shared with the tus create callback so traversal-shaped metadata is
+// refused before any bytes transfer.
+func CleanUploadPaths(targetDir, relativePath string) (cleanTarget, cleanRel string, err error) {
 	fpTarget := filepath.Clean(filepath.FromSlash(strings.TrimLeft(targetDir, "/")))
 	sep := string(filepath.Separator)
 	if fpTarget == ".." || strings.HasPrefix(fpTarget, ".."+sep) {
-		return "", fmt.Errorf("invalid target directory")
+		return "", "", ErrUploadInvalidTarget
 	}
-	cleanTarget := filepath.ToSlash(fpTarget)
+	cleanTarget = filepath.ToSlash(fpTarget)
+	if uploadPathTooLarge(cleanTarget) {
+		return "", "", ErrUploadInvalidTarget
+	}
 	fpRel := filepath.Clean(filepath.FromSlash(strings.TrimLeft(relativePath, "/")))
 	if fpRel == "" || fpRel == "." || fpRel == ".." || strings.HasPrefix(fpRel, ".."+sep) {
-		return "", fmt.Errorf("invalid upload path")
+		return "", "", ErrUploadInvalidPath
 	}
-	cleanRel := filepath.ToSlash(fpRel)
+	cleanRel = filepath.ToSlash(fpRel)
+	if uploadPathTooLarge(cleanRel) {
+		return "", "", ErrUploadInvalidPath
+	}
+	return cleanTarget, cleanRel, nil
+}
+
+// Upload path bounds. mkdirAll issues one syscall per segment and os.Root
+// resolves handle-relative, so no PATH_MAX stops a deep relativePath; without
+// these, one create request mints hundreds of thousands of directories (the
+// metadata header is bounded only by the 1 MiB default MaxHeaderBytes).
+const (
+	maxUploadPathLen    = 4096
+	maxUploadPathDepth  = 64
+	maxUploadSegmentLen = 255
+)
+
+func uploadPathTooLarge(p string) bool {
+	if len(p) > maxUploadPathLen {
+		return true
+	}
+	segments := strings.Split(p, "/")
+	if len(segments) > maxUploadPathDepth {
+		return true
+	}
+	for _, seg := range segments {
+		if len(seg) > maxUploadSegmentLen {
+			return true
+		}
+	}
+	return false
+}
+
+// CompleteUpload moves an uploaded file into the data root. srcPath is the
+// byte-complete upload outside the root (the tus store); it is adopted by
+// hardlink+rename when the filesystems allow, streamed through an atomic
+// copy otherwise. conflictStrategy: "replace" overwrites, "keepBoth" auto-renames.
+// relativePath is the path relative to targetDir (supports nested dirs for folder uploads).
+func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy, srcPath string) (string, error) {
+	cleanTarget, cleanRel, err := CleanUploadPaths(targetDir, relativePath)
+	if err != nil {
+		return "", err
+	}
 
 	destPath := path.Join(cleanTarget, cleanRel)
 
@@ -586,12 +636,18 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 			for {
 				unique, err := s.storage.UniqueName(destPath)
 				if err != nil {
+					if errors.Is(err, storage.ErrNotADirectory) {
+						return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
+					}
 					return "", fmt.Errorf("unique name: %w", err)
 				}
 				lu := s.lockFinalize(unique)
 				taken, err := s.storage.Exists(unique)
 				if err != nil {
 					s.unlockFinalize(unique, lu)
+					if errors.Is(err, storage.ErrNotADirectory) {
+						return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
+					}
 					return "", fmt.Errorf("check existing: %w", err)
 				}
 				if taken {
@@ -607,7 +663,7 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy s
 		}
 	}
 
-	if err := s.storage.WriteFile(destPath, src); err != nil {
+	if err := s.storage.AdoptFile(srcPath, destPath); err != nil {
 		if errors.Is(err, storage.ErrNotADirectory) {
 			return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
 		}

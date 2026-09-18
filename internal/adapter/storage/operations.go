@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -250,11 +251,20 @@ func (s *LocalStorage) Exists(filePath string) (bool, error) {
 	if os.IsNotExist(err) {
 		return false, nil
 	}
+	// Match Lstat: Linux reports a path under a file as ENOTDIR. Windows
+	// reports both that and a merely-missing parent as ERROR_PATH_NOT_FOUND,
+	// matching ENOTDIR and ErrNotExist alike, so the not-exist check above
+	// must stay first. Normalize so a file blocker classifies either way.
+	if errors.Is(err, syscall.ENOTDIR) {
+		return false, fmt.Errorf("lstat %s: %w", filePath, ErrNotADirectory)
+	}
 	return false, err
 }
 
 // WriteFile writes data from src to the given path, creating parent
-// directories as needed. If the file exists it is truncated.
+// directories as needed. Atomic replace: bytes go to an O_EXCL temp sibling,
+// fsync, then rename over the destination; a mid-write failure leaves any
+// existing file untouched.
 func (s *LocalStorage) WriteFile(filePath string, src io.Reader) error {
 	filePath = cleanPath(filePath)
 
@@ -305,12 +315,81 @@ func (s *LocalStorage) WriteFile(filePath string, src io.Reader) error {
 	return nil
 }
 
+// AdoptFile moves an externally-stored file (a path OUTSIDE the root, e.g.
+// the tus upload store) to destPath inside the root without copying: fsync
+// the source (upload chunks are never fsynced upstream), hardlink it to a
+// temp sibling of the destination, then rename into place through os.Root so
+// containment and atomic-replace semantics match WriteFile. The source name
+// is left for its owner's cleanup. Any link failure (cross-device,
+// filesystem without hardlinks) falls back to an atomic copy of the source.
+func (s *LocalStorage) AdoptFile(srcPath, destPath string) error {
+	destPath = cleanPath(destPath)
+
+	dir := path.Dir(destPath)
+	if dir != "." {
+		if err := s.mkdirAll(dir); err != nil {
+			return fmt.Errorf("create parent dirs: %w", err)
+		}
+	}
+
+	// O_RDWR: Windows refuses to flush read-only handles.
+	src, err := os.OpenFile(srcPath, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	if err := src.Sync(); err != nil {
+		src.Close()
+		return fmt.Errorf("sync source: %w", err)
+	}
+
+	suffix := make([]byte, 8)
+	if _, err := cryptorand.Read(suffix); err != nil {
+		src.Close()
+		return fmt.Errorf("temp suffix: %w", err)
+	}
+	tmpPath := ".onyx-tmp-" + hex.EncodeToString(suffix)
+	if dir != "." {
+		tmpPath = path.Join(dir, tmpPath)
+	}
+
+	// os.Link takes a raw OS path, so alone among the writes here it is not
+	// confined by s.root: a symlinked parent segment (which mkdirAll lets pass
+	// when root.Stat cannot follow it) would land the file outside the root,
+	// where the rename and its cleanup then both fail and strand the bytes.
+	if dir != "." {
+		if info, serr := s.root.Stat(dir); serr != nil || !info.IsDir() {
+			defer src.Close()
+			return s.WriteFile(destPath, src)
+		}
+	}
+
+	linkPath := filepath.Join(s.dataPath, filepath.FromSlash(tmpPath))
+	if err := os.Link(srcPath, linkPath); err != nil {
+		// Any link failure (cross-device, no-hardlink filesystem, permissions)
+		// streams through the atomic copy path instead.
+		defer src.Close()
+		return s.WriteFile(destPath, src)
+	}
+	src.Close()
+
+	if err := s.root.Rename(tmpPath, destPath); err != nil {
+		// Raw path: the link was made raw, so root.Remove cannot reach it.
+		_ = os.Remove(linkPath)
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
 // UniqueName returns the path unchanged if it doesn't exist, otherwise
 // appends " (1)", " (2)", etc. until a free name is found.
 // Exported for use by the upload system.
 func (s *LocalStorage) UniqueName(filePath string) (string, error) {
 	filePath = cleanPath(filePath)
-	if _, err := s.root.Lstat(filePath); err != nil {
+	taken, err := s.Exists(filePath)
+	if err != nil {
+		return "", err
+	}
+	if !taken {
 		return filePath, nil
 	}
 
@@ -321,7 +400,11 @@ func (s *LocalStorage) UniqueName(filePath string) (string, error) {
 
 	for i := 1; i <= 999; i++ {
 		candidate := path.Join(dir, fmt.Sprintf("%s (%d)%s", name, i, ext))
-		if _, err := s.root.Lstat(candidate); err != nil {
+		taken, err := s.Exists(candidate)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
 			return candidate, nil
 		}
 	}

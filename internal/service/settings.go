@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Elexation/onyx/internal/domain"
@@ -17,10 +18,18 @@ type SettingsRepo interface {
 type SettingsService struct {
 	repo   SettingsRepo
 	events EventRecorder
+	// Get sits on hot paths (one call per upload create), so resolved values
+	// are cached; every write invalidates the touched key.
+	mu    sync.RWMutex
+	cache map[string]string
+	// Bumped by every invalidate so a Get whose repo read straddled a write
+	// discards its now-stale result instead of latching it for the process
+	// lifetime (nothing else ever evicts a cached key).
+	gen uint64
 }
 
 func NewSettingsService(repo SettingsRepo) *SettingsService {
-	return &SettingsService{repo: repo}
+	return &SettingsService{repo: repo, cache: make(map[string]string)}
 }
 
 func (s *SettingsService) SetEvents(r EventRecorder) {
@@ -28,21 +37,41 @@ func (s *SettingsService) SetEvents(r EventRecorder) {
 }
 
 func (s *SettingsService) Get(key string) (string, error) {
+	s.mu.RLock()
+	cached, ok := s.cache[key]
+	gen := s.gen
+	s.mu.RUnlock()
+	if ok {
+		return cached, nil
+	}
 	value, found, err := s.repo.Get(key)
 	if err != nil {
 		return "", fmt.Errorf("get setting %q: %w", key, err)
 	}
-	if found {
-		return value, nil
+	if !found {
+		value = domain.Defaults[key]
 	}
-	if def, ok := domain.Defaults[key]; ok {
-		return def, nil
+	s.mu.Lock()
+	if s.gen == gen {
+		s.cache[key] = value
 	}
-	return "", nil
+	s.mu.Unlock()
+	return value, nil
 }
 
 func (s *SettingsService) Set(key, value string) error {
-	return s.repo.Set(key, value)
+	if err := s.repo.Set(key, value); err != nil {
+		return err
+	}
+	s.invalidate(key)
+	return nil
+}
+
+func (s *SettingsService) invalidate(key string) {
+	s.mu.Lock()
+	delete(s.cache, key)
+	s.gen++
+	s.mu.Unlock()
 }
 
 func (s *SettingsService) Update(updates map[string]string) (saved []string, errors map[string]string) {
@@ -57,6 +86,7 @@ func (s *SettingsService) Update(updates map[string]string) (saved []string, err
 			errors[key] = "failed to save"
 			continue
 		}
+		s.invalidate(key)
 		saved = append(saved, key)
 	}
 	if len(saved) > 0 {

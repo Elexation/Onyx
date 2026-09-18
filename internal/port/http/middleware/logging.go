@@ -56,3 +56,10 @@ func (rw *responseWriter) Flush() {
 		f.Flush()
 	}
 }
+
+// Unwrap exposes the underlying writer to http.ResponseController. tusd calls
+// SetReadDeadline through it to extend a chunk past the server ReadTimeout and
+// only logs failure, so without this every upload silently dies at 30s.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}

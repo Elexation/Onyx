@@ -50,6 +50,10 @@ class UploadState {
 	// files are enqueued. Together with `preparing` it drives the panel's
 	// "Preparing…" row, re-drop rejection, and the beforeunload guard.
 	scanning = $state(false);
+	// Monotonic drop token. UploadZone captures the value per drop and re-checks
+	// it after each await; clear() bumps it, so a cancelled drop cannot resume
+	// and cannot blank out a newer drop's scanning state.
+	scanGen = 0;
 
 	// Incrementally-maintained totals — never reduced over the item set.
 	totalBytes = $state(0);
@@ -122,10 +126,64 @@ class UploadState {
 
 	// Begin per-file byte/status accounting for a windowed group file once Uppy
 	// has assigned it an id. Group totals were already counted in setGroupTotals,
-	// so this must NOT touch them.
-	trackFile(id: string, size: number, group: string) {
-		if (this.fileIndex.has(id)) return;
-		this.fileIndex.set(id, { name: "", size, bytes: 0, status: "pending", group });
+	// so this must NOT touch them. Returns whether the file is bound to `group`:
+	// Uppy ids are deterministic, so a recovery re-drop collides with records
+	// from a previous run. Terminal (complete/error) leftovers are released from
+	// their old group and re-bound fresh; a record still actively uploading
+	// under another group stays put, and the caller shrinks the new group by
+	// the shortfall (adjustGroupShortfall).
+	trackFile(id: string, size: number, group: string): boolean {
+		const fi = this.fileIndex.get(id);
+		if (!fi) {
+			this.fileIndex.set(id, { name: "", size, bytes: 0, status: "pending", group });
+			return true;
+		}
+		if (fi.status === "pending" || fi.status === "uploading") return fi.group === group;
+		this.releaseRecord(id, fi);
+		this.fileIndex.set(id, { name: fi.name, size, bytes: 0, status: "pending", group });
+		return true;
+	}
+
+	// Detach a terminal (complete/error) record and every aggregate it holds a
+	// stake in, so its deterministic id can be re-tracked by a new drop without
+	// wedging the old group's counters.
+	private releaseRecord(id: string, fi: FileRec) {
+		this.totalBytes -= fi.size;
+		this.totalBytesUploaded -= fi.bytes;
+		if (fi.group) {
+			const g = this.groupsById.get(fi.group);
+			if (g) {
+				g.fileCount--;
+				g.totalBytes -= fi.size;
+				g.bytesUploaded -= fi.bytes;
+				if (fi.status === "complete") g.completedCount--;
+				else this.decErrorCount(g);
+				if (g.fileCount <= 0) {
+					this.groups = this.groups.filter((x) => x.id !== g.id);
+					this.reindexGroups();
+				}
+			}
+		} else {
+			this.looseItems = this.looseItems.filter((i) => i.id !== id);
+		}
+	}
+
+	// A group's totals are registered up front from the raw drop list, but Uppy
+	// can silently reject adds (duplicate ids) and a colliding record can stay
+	// owned by another live group. Shrink this group by the shortfall so its
+	// counters can still reach complete.
+	adjustGroupShortfall(groupId: string, count: number, bytes: number) {
+		const g = this.groupsById.get(groupId);
+		if (!g) return;
+		g.fileCount -= count;
+		g.totalBytes -= bytes;
+		this.totalBytes -= bytes;
+		this.activeCount -= count;
+		if (g.fileCount <= 0) {
+			this.groups = this.groups.filter((x) => x.id !== g.id);
+			this.reindexGroups();
+			if (!this.hasItems) this.minimized = false;
+		}
 	}
 
 	addLooseFiles(files: { id: string; name: string; size: number }[]) {
@@ -381,8 +439,10 @@ class UploadState {
 		this.speed = 0;
 		this.eta = null;
 		this.minimized = false;
-		// Cancelling mid-scan also aborts any in-progress folder enumeration —
-		// UploadZone checks `scanning` after its async walk and bails if cleared.
+		// Cancelling mid-scan also aborts any in-progress folder enumeration:
+		// bumping scanGen invalidates the generation UploadZone captured at drop
+		// time; the boolean only resets the UI display.
+		this.scanGen++;
 		this.scanning = false;
 		this.clearAutoMinimize();
 	}

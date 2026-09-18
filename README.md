@@ -151,6 +151,103 @@ Set `ONYX_HWACCEL` to force a specific encoder (`nvenc`, `qsv`, `vaapi`,
 `amf`, `none`) or leave it as `auto` (default). See the environment
 variables table above.
 
+## Reverse Proxy
+
+Onyx uploads use the tus resumable protocol: one long-lived request per
+file, streamed to the cache directory as it arrives. nginx-based proxies
+cap request body size and buffer the whole body before forwarding it,
+which breaks large uploads. Three things must be true of any proxy in
+front of Onyx:
+
+- **No request body size limit.** Uploads are single long requests, and a
+  proxy-side cap rejects large files with `413`.
+- **No request buffering.** With buffering on, the proxy swallows the
+  entire file before forwarding it, so the progress bar races to 100% and
+  then stalls while the real upload happens.
+- **`Host` and `X-Forwarded-Proto` forwarded**, plus
+  `ONYX_TRUSTED_PROXY=true` on Onyx. Upload URLs are built from these
+  headers, so without them clients are handed the internal host and port.
+  It also keeps the internal port out of `ONYX_DOMAIN` redirects.
+
+Set `ONYX_REQUIRE_HTTPS=true` as well when the proxy terminates TLS and
+speaks plain HTTP to Onyx, so session cookies keep their `Secure` flag.
+
+Removing the proxy's body cap leaves Onyx as the only place an upload size
+can be bounded, and its own limit (`upload.max_size` in Settings) ships
+unlimited. Set it to a real ceiling before widening the proxy, or a single
+request can fill the disk.
+
+With `ONYX_TRUSTED_PROXY=true`, Onyx keys its rate limiters on `X-Real-IP`
+and falls back to the right-most `X-Forwarded-For` entry. The proxy must
+overwrite `X-Real-IP` with the connecting address; if a client-supplied
+value survives, every lockout and rate limit can be bypassed by varying the
+header.
+
+### nginx
+
+```nginx
+location / {
+    proxy_pass http://onyx:8080;
+    proxy_http_version 1.1;
+
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_buffering off;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+Nginx Proxy Manager already forwards the headers, but its global
+`client_max_body_size` (2000m) rejects anything larger with a `413`, and
+its per-host settings do not expose these directives. Paste the three
+upload directives into the proxy host's **Advanced** tab.
+
+### Caddy
+
+Caddy streams request bodies, sets no body size limit, and manages
+`X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host` itself,
+ignoring client-supplied values for those three. It does not set
+`X-Real-IP` and passes other client headers through untouched, so that one
+has to be set explicitly or the rate limiters can be bypassed:
+
+```caddyfile
+onyx.example.com {
+    reverse_proxy onyx:8080 {
+        header_up X-Real-IP {remote_host}
+    }
+}
+```
+
+### Traefik
+
+Traefik also streams and sets the forwarded headers by default, but
+`readTimeout` covers reading an entire request body and defaults to 60
+seconds in v3. Raise it on the entrypoint, or large uploads over slow
+links get cut off mid-request:
+
+```yaml
+entryPoints:
+  websecure:
+    address: ":443"
+    transport:
+      respondingTimeouts:
+        readTimeout: 3600s
+```
+
+### Live Updates
+
+The file browser holds a Server-Sent Events connection on `/api/changes`.
+Onyx sends `X-Accel-Buffering: no` for nginx, and Caddy and Traefik pass
+`text/event-stream` through unbuffered. If your proxy buffers responses
+anyway, disable it for that path or the file list stops updating live.
+
 ## Development
 
 **Prerequisites:** Go 1.24+, Node.js 22+

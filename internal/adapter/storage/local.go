@@ -187,9 +187,12 @@ func (s *LocalStorage) Lstat(filePath string) (*domain.FileInfo, error) {
 
 	info, err := s.root.Lstat(filePath)
 	if err != nil {
-		// Linux reports a path under a file as ENOTDIR, Windows as ErrNotExist.
-		// Normalize so callers classify a file blocker the same way on both.
-		if errors.Is(err, syscall.ENOTDIR) {
+		// Linux reports a path under a file as ENOTDIR. Windows reports both that
+		// and a merely-missing parent as ERROR_PATH_NOT_FOUND, which matches
+		// ENOTDIR and ErrNotExist alike, so not-exist must win: this wrap drops the
+		// original error, and classifying a missing parent as a blocker fails every
+		// upload into a folder that does not exist yet.
+		if !os.IsNotExist(err) && errors.Is(err, syscall.ENOTDIR) {
 			return nil, fmt.Errorf("lstat %s: %w", filePath, ErrNotADirectory)
 		}
 		return nil, err

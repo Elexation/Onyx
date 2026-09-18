@@ -29,15 +29,15 @@ func (s *stubSettingsRepo) GetAll() (map[string]string, error) {
 // stubTrashRepo implements TrashRepo with no-op persistence.
 type stubTrashRepo struct{}
 
-func (s *stubTrashRepo) Insert(item *domain.TrashItem) error              { return nil }
-func (s *stubTrashRepo) GetByID(id string) (*domain.TrashItem, error)     { return nil, nil }
-func (s *stubTrashRepo) List() ([]domain.TrashItem, error)                { return nil, nil }
-func (s *stubTrashRepo) Delete(id string) error                           { return nil }
-func (s *stubTrashRepo) DeleteAll() ([]domain.TrashItem, error)           { return nil, nil }
-func (s *stubTrashRepo) Count() (int, error)                              { return 0, nil }
-func (s *stubTrashRepo) TotalSize() (int64, error)                        { return 0, nil }
+func (s *stubTrashRepo) Insert(item *domain.TrashItem) error                 { return nil }
+func (s *stubTrashRepo) GetByID(id string) (*domain.TrashItem, error)        { return nil, nil }
+func (s *stubTrashRepo) List() ([]domain.TrashItem, error)                   { return nil, nil }
+func (s *stubTrashRepo) Delete(id string) error                              { return nil }
+func (s *stubTrashRepo) DeleteAll() ([]domain.TrashItem, error)              { return nil, nil }
+func (s *stubTrashRepo) Count() (int, error)                                 { return 0, nil }
+func (s *stubTrashRepo) TotalSize() (int64, error)                           { return 0, nil }
 func (s *stubTrashRepo) ListExpiredBefore(int64) ([]domain.TrashItem, error) { return nil, nil }
-func (s *stubTrashRepo) ListOldestFirst() ([]domain.TrashItem, error)     { return nil, nil }
+func (s *stubTrashRepo) ListOldestFirst() ([]domain.TrashItem, error)        { return nil, nil }
 
 func setupDeleteTest(t *testing.T, settingsRepo *stubSettingsRepo) (*FileService, string, string) {
 	t.Helper()
@@ -180,13 +180,24 @@ func setupUploadTest(t *testing.T) (*FileService, string) {
 	return NewFileService(ls), dataDir
 }
 
+// uploadSrc writes an out-of-root source file standing in for a byte-complete
+// tus store entry, as CompleteUpload now consumes a path, not a reader.
+func uploadSrc(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "upload.bin")
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("write upload source: %v", err)
+	}
+	return p
+}
+
 func TestCompleteUpload_ReplaceOverDirectory_Fails(t *testing.T) {
 	fs, dataDir := setupUploadTest(t)
 	if err := os.Mkdir(filepath.Join(dataDir, "target"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	_, err := fs.CompleteUpload("/", "target", "replace", strings.NewReader("body"))
+	_, err := fs.CompleteUpload("/", "target", "replace", uploadSrc(t, "body"))
 	if !errors.Is(err, ErrUploadIsDir) {
 		t.Fatalf("want ErrUploadIsDir, got %v", err)
 	}
@@ -203,7 +214,7 @@ func TestCompleteUpload_KeepBothOverDirectory_AutoRenames(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	got, err := fs.CompleteUpload("/", "target", "keepBoth", strings.NewReader("body"))
+	got, err := fs.CompleteUpload("/", "target", "keepBoth", uploadSrc(t, "body"))
 	if err != nil {
 		t.Fatalf("keepBoth over directory failed: %v", err)
 	}
@@ -279,7 +290,7 @@ func TestCompleteUpload_ParentSegmentIsFile_Fails(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	_, err := fs.CompleteUpload("/", "blocker/inner.txt", "", strings.NewReader("body"))
+	_, err := fs.CompleteUpload("/", "blocker/inner.txt", "", uploadSrc(t, "body"))
 	if !errors.Is(err, ErrUploadBlockedByFile) {
 		t.Fatalf("want ErrUploadBlockedByFile, got %v", err)
 	}
@@ -287,5 +298,74 @@ func TestCompleteUpload_ParentSegmentIsFile_Fails(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dataDir, "blocker"))
 	if err != nil || string(data) != "keep" {
 		t.Errorf("blocking file was damaged: %q, %v", data, err)
+	}
+}
+
+// Folder uploads land here first: the parent does not exist yet. Windows reports
+// that as ERROR_PATH_NOT_FOUND, which also matches ENOTDIR, so a blocker-first
+// classification rejects the whole folder. ParentSegmentIsFile above cannot catch
+// it, since that case still fails once mkdirAll runs.
+func TestCompleteUpload_CreatesMissingParent(t *testing.T) {
+	fs, dataDir := setupUploadTest(t)
+
+	got, err := fs.CompleteUpload("/", "newdir/inner.txt", "", uploadSrc(t, "body"))
+	if err != nil {
+		t.Fatalf("upload into a missing parent: %v", err)
+	}
+	if got != "/newdir/inner.txt" {
+		t.Fatalf("path = %q, want /newdir/inner.txt", got)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dataDir, "newdir", "inner.txt"))
+	if err != nil || string(data) != "body" {
+		t.Fatalf("file on disk = %q, err %v", data, err)
+	}
+}
+
+func TestCleanUploadPaths(t *testing.T) {
+	deep := strings.Repeat("a/", maxUploadPathDepth+1) + "f"
+
+	cases := []struct {
+		name      string
+		targetDir string
+		rel       string
+		wantErr   error
+	}{
+		{"plain", "/docs", "notes.txt", nil},
+		{"nested", "/", "photos/2024/pic.jpg", nil},
+		{"root target", "/", "f.txt", nil},
+		{"traversal in rel", "/", "../evil.bin", ErrUploadInvalidPath},
+		{"traversal in target", "../outside", "f.txt", ErrUploadInvalidTarget},
+		{"absolute rel", "/", "///etc/passwd", nil},
+		{"rel is dotdot", "/", "..", ErrUploadInvalidPath},
+		{"rel empty", "/", "", ErrUploadInvalidPath},
+		// mkdirAll issues one syscall per segment and os.Root resolves
+		// handle-relative, so nothing else bounds these.
+		{"too deep", "/", deep, ErrUploadInvalidPath},
+		{"segment too long", "/", strings.Repeat("x", maxUploadSegmentLen+1), ErrUploadInvalidPath},
+		{"path too long", "/", strings.Repeat("ab/", maxUploadPathLen) + "f", ErrUploadInvalidPath},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := CleanUploadPaths(tc.targetDir, tc.rel)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// Windows treats "\" as a separator and path.Clean does not, so a backslash
+// traversal must not survive canonicalization into a joined filesystem path.
+func TestCleanUploadPathsRejectsBackslashTraversal(t *testing.T) {
+	if filepath.Separator != '\\' {
+		t.Skip("backslash is a legal filename character off Windows")
+	}
+	if _, _, err := CleanUploadPaths("/", `..\..\evil.bin`); !errors.Is(err, ErrUploadInvalidPath) {
+		t.Fatalf("err = %v, want ErrUploadInvalidPath", err)
+	}
+	if _, _, err := CleanUploadPaths(`..\outside`, "f.txt"); !errors.Is(err, ErrUploadInvalidTarget) {
+		t.Fatalf("err = %v, want ErrUploadInvalidTarget", err)
 	}
 }

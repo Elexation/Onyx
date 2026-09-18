@@ -100,6 +100,14 @@
 	let folderConflictPairs = $state<FolderConflictPair[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
 	let pendingEmptyDirs = $state<string[]>([]);
+	// Mixed-drop chaining: folder-level decisions land first, then the loose
+	// subset's ConflictDialog; upload starts only when both are resolved.
+	let pendingLoosePairs: ConflictPair[] | null = null;
+	let pendingFolderCtx: {
+		strategyByTop: Record<string, string>;
+		folderRenames: Record<string, string>;
+		skip: Set<string>;
+	} | null = null;
 	// Warn before uploading folders with very large file counts — holding/uploading
 	// tens of thousands of files at once is slow and memory-heavy in the browser.
 	const LARGE_UPLOAD_THRESHOLD = 5000;
@@ -418,14 +426,32 @@
 			const segs = d.split("/");
 			for (let i = 1; i <= segs.length; i++) toCreate.add(segs.slice(0, i).join("/"));
 		}
-		const ordered = [...toCreate].sort((a, b) => a.split("/").length - b.split("/").length);
-		for (const rel of ordered) {
-			const full = targetDir === "/" ? `/${rel}` : `${targetDir}/${rel}`;
-			try {
-				await mkdir(full);
-			} catch {
-				// Already exists, or created by a sibling file write — ignore.
-			}
+		// Same-depth dirs are independent (their parents all exist from the
+		// previous level), so each level runs through a small pool instead of
+		// one awaited mkdir per dir (500 dirs at 50ms RTT was ~25s serial).
+		const byDepth = new Map<number, string[]>();
+		for (const rel of toCreate) {
+			const depth = rel.split("/").length;
+			let level = byDepth.get(depth);
+			if (!level) byDepth.set(depth, (level = []));
+			level.push(rel);
+		}
+		const POOL = 6;
+		for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+			const level = byDepth.get(depth)!;
+			let next = 0;
+			const worker = async () => {
+				while (next < level.length) {
+					const rel = level[next++];
+					const full = targetDir === "/" ? `/${rel}` : `${targetDir}/${rel}`;
+					try {
+						await mkdir(full);
+					} catch {
+						// Already exists, or created by a sibling file write — ignore.
+					}
+				}
+			};
+			await Promise.all(Array.from({ length: Math.min(POOL, level.length) }, worker));
 		}
 	}
 
@@ -451,6 +477,7 @@
 		strategyByTop: Record<string, string>,
 		folderRenames: Record<string, string>,
 		skip: Set<string>,
+		resolutions?: Record<string, "replace" | "keepBoth" | "skip">,
 	) {
 		const dirsToCreate: string[] = [];
 		for (const d of emptyDirs) {
@@ -467,9 +494,28 @@
 			return !(top && skip.has(top));
 		});
 		if (toUpload.length > 0) {
-			await addFiles(toUpload, targetDir, { strategyByTop, folderRenames });
+			await addFiles(toUpload, targetDir, { strategyByTop, folderRenames, resolutions });
 			startUpload().catch(() => {});
 		}
+	}
+
+	function toConflictPairs(conflicts: ConflictInfo[], candidates: File[]): ConflictPair[] {
+		const incomingByPath = new Map<string, File>();
+		for (const f of candidates) incomingByPath.set(relOf(f), f);
+		return conflicts.map((c) => {
+			const f = incomingByPath.get(c.path);
+			return {
+				path: c.path,
+				// A folder's inode size is meaningless here (0 on NTFS, 4096
+				// on ext4) and the server does not walk it.
+				existing: { size: c.isDir ? null : c.size, modTime: c.modTime, isDir: c.isDir },
+				incoming: {
+					size: f?.size ?? 0,
+					modTime: Math.floor((f?.lastModified ?? 0) / 1000),
+					isDir: false,
+				},
+			};
+		});
 	}
 
 	async function handleUpload(
@@ -477,7 +523,12 @@
 		emptyDirs: string[] = [],
 		opts: { confirmedLarge?: boolean } = {},
 	) {
-		if (conflictOpen || folderConflictOpen || largeUploadOpen) return;
+		if (conflictOpen || folderConflictOpen || largeUploadOpen) {
+			// Not covered by UploadZone's scanning/preparing toast, so without
+			// this the drop vanishes with no trace.
+			toast.info("Finish the open upload prompt first");
+			return;
+		}
 		if (uploadState.preparing) return;
 
 		// Gate very large drops behind a confirmation before any heavy work.
@@ -517,18 +568,41 @@
 				} catch {
 					conflicts = [];
 				}
+				// Loose files riding along with folders get no folder-level prompt,
+				// so run the per-file check for them too; unresolved they would
+				// hard-fail at finalize (terminal 422) with no dialog ever shown.
+				const looseFiles = files.filter((f) => !relOf(f).includes("/"));
+				let looseConflicts: ConflictInfo[] = [];
+				if (looseFiles.length > 0) {
+					try {
+						looseConflicts = (await checkConflicts(targetDir, looseFiles.map(relOf))).conflicts;
+					} catch {
+						looseConflicts = [];
+					}
+				}
+				if (conflicts.length === 0 && looseConflicts.length === 0) {
+					await applyFolderUpload(targetDir, files, emptyDirs, {}, {}, new Set());
+					return;
+				}
+				pendingUploadFiles = files;
+				pendingEmptyDirs = emptyDirs;
+				pendingLoosePairs =
+					looseConflicts.length > 0 ? toConflictPairs(looseConflicts, looseFiles) : null;
 				if (conflicts.length > 0) {
-					pendingUploadFiles = files;
-					pendingEmptyDirs = emptyDirs;
 					folderConflictPairs = conflicts.map((c) => ({
 						name: c.path,
 						existing: { modTime: c.modTime, isDir: c.isDir },
 						incoming: { fileCount: topCounts.get(c.path) ?? 0 },
 					}));
 					folderConflictOpen = true;
-					return;
+				} else {
+					// Only the loose subset conflicts; the folder part proceeds as-is
+					// once the loose dialog resolves.
+					pendingFolderCtx = { strategyByTop: {}, folderRenames: {}, skip: new Set() };
+					conflictPairs = pendingLoosePairs!;
+					pendingLoosePairs = null;
+					conflictOpen = true;
 				}
-				await applyFolderUpload(targetDir, files, emptyDirs, {}, {}, new Set());
 				return;
 			}
 
@@ -538,23 +612,8 @@
 			try {
 				const { conflicts } = await checkConflicts(targetDir, relativePaths);
 				if (conflicts.length > 0) {
-					const incomingByPath = new Map<string, File>();
-					files.forEach((f, i) => incomingByPath.set(relativePaths[i], f));
 					pendingUploadFiles = files;
-					conflictPairs = conflicts.map((c) => {
-						const f = incomingByPath.get(c.path);
-						return {
-							path: c.path,
-							// A folder's inode size is meaningless here (0 on NTFS, 4096
-							// on ext4) and the server does not walk it.
-							existing: { size: c.isDir ? null : c.size, modTime: c.modTime, isDir: c.isDir },
-							incoming: {
-								size: f?.size ?? 0,
-								modTime: Math.floor((f?.lastModified ?? 0) / 1000),
-								isDir: false,
-							},
-						};
-					});
+					conflictPairs = toConflictPairs(conflicts, files);
 					conflictOpen = true;
 				} else {
 					await addFiles(files, targetDir);
@@ -589,11 +648,29 @@
 		conflictOpen = false;
 		const targetDir = path || "/";
 		const filesToUpload = pendingUploadFiles;
+		const emptyDirs = pendingEmptyDirs;
+		const folderCtx = pendingFolderCtx;
 		pendingUploadFiles = [];
+		pendingEmptyDirs = [];
+		pendingFolderCtx = null;
 		uploadState.preparing = true;
 		try {
-			await addFiles(filesToUpload, targetDir, { resolutions });
-			startUpload().catch(() => {});
+			if (folderCtx) {
+				// Mixed drop: folder decisions were made first; the loose
+				// resolutions complete the set.
+				await applyFolderUpload(
+					targetDir,
+					filesToUpload,
+					emptyDirs,
+					folderCtx.strategyByTop,
+					folderCtx.folderRenames,
+					folderCtx.skip,
+					resolutions,
+				);
+			} else {
+				await addFiles(filesToUpload, targetDir, { resolutions });
+				startUpload().catch(() => {});
+			}
 		} finally {
 			uploadState.preparing = false;
 		}
@@ -602,10 +679,6 @@
 	async function handleFolderConflictResolve(resolutions: Record<string, FolderResolution>) {
 		folderConflictOpen = false;
 		const targetDir = path || "/";
-		const files = pendingUploadFiles;
-		const emptyDirs = pendingEmptyDirs;
-		pendingUploadFiles = [];
-		pendingEmptyDirs = [];
 
 		uploadState.preparing = true;
 		try {
@@ -617,6 +690,19 @@
 				else if (res === "merge") strategyByTop[name] = "replace";
 				else if (res === "keepBoth") folderRenames[name] = await uniqueFolderName(targetDir, name);
 			}
+			if (pendingLoosePairs) {
+				// Chain to the loose subset's dialog; the upload starts when it
+				// resolves (pending files stay put until then).
+				pendingFolderCtx = { strategyByTop, folderRenames, skip };
+				conflictPairs = pendingLoosePairs;
+				pendingLoosePairs = null;
+				conflictOpen = true;
+				return;
+			}
+			const files = pendingUploadFiles;
+			const emptyDirs = pendingEmptyDirs;
+			pendingUploadFiles = [];
+			pendingEmptyDirs = [];
 			await applyFolderUpload(targetDir, files, emptyDirs, strategyByTop, folderRenames, skip);
 		} finally {
 			uploadState.preparing = false;
@@ -628,20 +714,26 @@
 	// to uppy 'complete' — server now emits file.changed after CompleteUpload's
 	// rename completes, so the next 5s poll picks it up deterministically.
 	//
-	// Coalesce burst events through a 300ms trailing-edge throttle: a single
-	// thumb.ready burst on a media-heavy directory can emit one event per file,
-	// each of which would otherwise drive a full /api/files/* refetch.
+	// Coalesce burst events through a trailing-edge throttle (300ms; 2.5s while
+	// uploads are active): a single thumb.ready burst on a media-heavy directory
+	// can emit one event per file, each of which would otherwise drive a full
+	// /api/files/* refetch.
 	$effect(() => {
 		const dir = normalizeDir(path);
 		const isInDir = (parent: string) => parent === dir;
 		let refetchTimer: ReturnType<typeof setTimeout> | null = null;
 		const scheduleRefetch = () => {
 			if (refetchTimer) return;
+			// While uploads are active every finalize emits file.changed, and each
+			// refetch makes the server ReadDir every subdirectory for ItemCount;
+			// stretch the trailing throttle so listing churn stops competing with
+			// upload bandwidth (O(N²) aggregate work on big folder drops).
+			const wait = uploadState.activeCount > 0 ? 2500 : 300;
 			refetchTimer = setTimeout(() => {
 				refetchTimer = null;
 				const myGen = navGen;
 				load(path, { isRefresh: true, isCancelled: () => myGen !== navGen });
-			}, 300);
+			}, wait);
 		};
 
 		const offFile = changes.on("file.changed", (p) => {

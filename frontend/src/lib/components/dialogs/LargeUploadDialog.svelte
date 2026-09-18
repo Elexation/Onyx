@@ -29,7 +29,7 @@
 		</AlertDialog.Header>
 
 		<DialogCallout icon={TriangleAlertIcon}>
-			<div class="font-mono text-xs text-muted-foreground">
+			<div class="text-meta text-muted-foreground">
 				{fileCount.toLocaleString()} files · {formatFileSize(totalBytes)}
 			</div>
 		</DialogCallout>

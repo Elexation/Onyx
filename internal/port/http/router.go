@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -159,13 +160,13 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 // concurrency is a DoS vector even behind admin auth.
 func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, uploadCL *middleware.ConcurrencyLimiter, trustedProxy, requireHTTPS bool, next http.Handler) http.Handler {
 	stripped := http.StripPrefix("/api/upload/", tus)
-	authed := middleware.Recovery(middleware.SecurityHeaders(trustedProxy, requireHTTPS)(middleware.Auth(auth, tokens)(uploadCL.Middleware(middleware.CSRF(stripped)))))
+	authed := middleware.Recovery(middleware.Logging(normalizePath(validUploadID(middleware.SecurityHeaders(trustedProxy, requireHTTPS)(middleware.Auth(auth, tokens)(uploadCL.Middleware(middleware.CSRF(stripped))))))))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/upload" && !strings.HasPrefix(r.URL.Path, "/api/upload/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		slog.Info("upload interceptor", "method", r.Method, "path", r.URL.Path)
+		slog.Debug("upload interceptor", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodOptions {
 			handleUploadPreflight(w, r)
 			return
@@ -214,6 +215,27 @@ func normalizePath(next http.Handler) http.Handler {
 		u.RawPath = ""
 		r2.URL = &u
 		next.ServeHTTP(w, &r2)
+	})
+}
+
+// tusd generates upload ids from uid.Uid() (hex) but never validates the id it
+// reads back off the URL: extractIDFromPath is a bare strings.Trim, and the
+// filestore feeds the result straight to filepath.Join. normalizePath alone
+// does not cover it because path.Clean does not treat "\" as a separator while
+// Windows does, so an encoded "..\" suffix escapes the upload store.
+var uploadIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]*$`)
+
+// validUploadID rejects any /api/upload/ suffix that is not a bare tus id.
+// Runs after normalizePath so "." and ".." segments are already collapsed, and
+// inside Logging so rejections are recorded.
+func validUploadID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/upload"), "/")
+		if !uploadIDPattern.MatchString(id) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

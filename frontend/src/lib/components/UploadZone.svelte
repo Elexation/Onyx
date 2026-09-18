@@ -126,12 +126,15 @@
 		}
 
 		uploadState.scanning = true;
+		// Per-drop generation token: cancel (clear()) or a newer drop bumps
+		// scanGen, so a stale drop abandons its post-await work instead of racing
+		// the shared boolean (cancelled drop resurrecting, next drop discarded).
+		const gen = ++uploadState.scanGen;
 		let files: File[] = [];
 		let emptyDirs: string[] = [];
 		try {
 			files = await filesPromise;
-			// Cancelled mid-scan (the preparing X clears scanning) — bail.
-			if (!uploadState.scanning) return;
+			if (uploadState.scanGen !== gen) return;
 
 			if (files.length <= EMPTY_DIR_SCAN_LIMIT) {
 				try {
@@ -141,12 +144,14 @@
 					emptyDirs = [];
 				}
 			}
-			if (!uploadState.scanning) return;
+			if (uploadState.scanGen !== gen) return;
 		} catch {
 			toast.error("Couldn't read the dropped items");
 			return;
 		} finally {
-			uploadState.scanning = false;
+			// Only the drop owning the latest generation clears the flag; a stale
+			// drop must not blank out a newer drop's scanning state.
+			if (uploadState.scanGen === gen) uploadState.scanning = false;
 		}
 
 		// Outside the enumeration try — an upload failure here shouldn't surface

@@ -179,20 +179,21 @@ func main() {
 	}
 	defer transcodeService.Shutdown()
 
+	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
+	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
+
 	tusHandler, err := upload.NewTusHandler(
 		filepath.Join(cacheDir, "uploads"),
 		"/api/upload/",
 		fileService,
 		settingsService,
+		trustedProxy,
 	)
 	if err != nil {
 		slog.Error("upload handler init failed", "error", err)
 		os.Exit(1)
 	}
 	defer tusHandler.Close()
-
-	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
-	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
 
 	canonicalDomain := os.Getenv("ONYX_DOMAIN")
 	if canonicalDomain != "" {

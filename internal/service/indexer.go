@@ -27,7 +27,11 @@ type Indexer struct {
 	repo    SearchRepo
 	storage *storage.LocalStorage
 	mu      sync.Mutex
-	events  EventRecorder
+	// Bumped under mu by every Notify* mutation. flushBatch stats its batch
+	// outside the lock and uses this to detect a concurrent mutation that
+	// could make those observations stale.
+	gen    uint64
+	events EventRecorder
 }
 
 func NewIndexer(repo SearchRepo, st *storage.LocalStorage) *Indexer {
@@ -119,13 +123,37 @@ func (idx *Indexer) scan() int {
 	return count
 }
 
-// flushBatch re-stats each queued entry under idx.mu and drops any that
-// no longer exist on disk, so that a concurrent Notify* delete or rename
-// cannot be undone by a stale observation buffered during the walk.
+// flushBatch re-stats each queued entry and drops any that no longer exist
+// on disk, so that a concurrent Notify* delete or rename cannot be undone by
+// a stale observation buffered during the walk. The stats (up to 500 of
+// them, the slow part) run OUTSIDE idx.mu so uploads' NotifyCreated is not
+// blocked behind them; if gen shows a Notify* landed mid-stat, the
+// verification is redone under the lock, restoring the fully linearized
+// delete-wins behavior for that rare case.
 func (idx *Indexer) flushBatch(fsys fs.FS, batch []database.FileEntry) int {
 	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	startGen := idx.gen
+	idx.mu.Unlock()
 
+	verified := verifyBatch(fsys, batch)
+
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.gen != startGen {
+		verified = verifyBatch(fsys, batch)
+	}
+
+	if len(verified) == 0 {
+		return 0
+	}
+	if err := idx.repo.UpsertBatch(verified); err != nil {
+		slog.Warn("search indexer: batch upsert error", "error", err)
+		return 0
+	}
+	return len(verified)
+}
+
+func verifyBatch(fsys fs.FS, batch []database.FileEntry) []database.FileEntry {
 	verified := make([]database.FileEntry, 0, len(batch))
 	for _, entry := range batch {
 		rel := strings.TrimPrefix(entry.Path, "/")
@@ -141,21 +169,14 @@ func (idx *Indexer) flushBatch(fsys fs.FS, batch []database.FileEntry) int {
 			ModTime: info.ModTime().Unix(),
 		})
 	}
-
-	if len(verified) == 0 {
-		return 0
-	}
-	if err := idx.repo.UpsertBatch(verified); err != nil {
-		slog.Warn("search indexer: batch upsert error", "error", err)
-		return 0
-	}
-	return len(verified)
+	return verified
 }
 
 func (idx *Indexer) NotifyCreated(path string, isDir bool, size, modTime int64) {
 	name := path[strings.LastIndex(path, "/")+1:]
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.gen++
 	if err := idx.repo.Upsert(name, path, isDir, size, modTime); err != nil {
 		slog.Warn("search indexer: notify created error", "path", path, "error", err)
 	}
@@ -164,6 +185,7 @@ func (idx *Indexer) NotifyCreated(path string, isDir bool, size, modTime int64) 
 func (idx *Indexer) NotifyRenamed(oldPath, newPath string, isDir bool) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.gen++
 	if isDir {
 		if err := idx.repo.UpdatePathPrefix(oldPath, newPath); err != nil {
 			slog.Warn("search indexer: notify renamed dir error", "old", oldPath, "new", newPath, "error", err)
@@ -179,6 +201,7 @@ func (idx *Indexer) NotifyRenamed(oldPath, newPath string, isDir bool) {
 func (idx *Indexer) NotifyMoved(oldPath, newPath string, isDir bool) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.gen++
 	if isDir {
 		if err := idx.repo.UpdatePathPrefix(oldPath, newPath); err != nil {
 			slog.Warn("search indexer: notify moved dir error", "old", oldPath, "new", newPath, "error", err)
@@ -194,6 +217,7 @@ func (idx *Indexer) NotifyMoved(oldPath, newPath string, isDir bool) {
 func (idx *Indexer) NotifyDeleted(paths []string) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.gen++
 	for _, p := range paths {
 		if err := idx.repo.DeleteTree(p); err != nil {
 			slog.Warn("search indexer: notify deleted error", "path", p, "error", err)
@@ -205,6 +229,7 @@ func (idx *Indexer) NotifyCopied(path string, isDir bool, size, modTime int64) {
 	name := path[strings.LastIndex(path, "/")+1:]
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
+	idx.gen++
 	if err := idx.repo.Upsert(name, path, isDir, size, modTime); err != nil {
 		slog.Warn("search indexer: notify copied error", "path", path, "error", err)
 	}

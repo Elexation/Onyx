@@ -13,7 +13,8 @@
 	import { Checkbox } from "$lib/components/ui/checkbox/index.js";
 	import FolderIcon from "@lucide/svelte/icons/folder";
 	import FileIcon from "@lucide/svelte/icons/file";
-	import { formatDate } from "$lib/utils/format";
+	import { formatDate, formatFileSize } from "$lib/utils/format";
+	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 	import DialogCallout from "./DialogCallout.svelte";
 
 	let {
@@ -40,6 +41,17 @@
 	const blockedByFile = $derived.by(() => {
 		if (applyToAll) return conflicts.slice(index).some((c) => !c.existing.isDir);
 		return existingIsFile;
+	});
+
+	// Merge's recovery promise must match reality: CreateVersion silently skips
+	// when versioning is off or the file exceeds the size cap, and replaced
+	// content does not go to trash.
+	const versionNote = $derived.by(() => {
+		if (!versioningEnabled.enabled) return "";
+		const max = versioningEnabled.maxFileSize;
+		return max > 0
+			? ` (older versions of files up to ${formatFileSize(max)} are kept)`
+			: " (older versions are kept)";
 	});
 
 	function choose(action: FolderResolution) {
@@ -81,7 +93,7 @@
 		{#if current}
 			<DialogCallout icon={existingIsFile ? FileIcon : FolderIcon}>
 				<div class="truncate text-meta font-medium">{current.name}{existingIsFile ? "" : "/"}</div>
-				<div class="font-mono text-xs text-muted-foreground">
+				<div class="text-meta text-muted-foreground">
 					existing {existingIsFile ? "file" : "folder"} · modified {formatDate(
 						current.existing.modTime,
 					)} · uploading {current.incoming.fileCount}
@@ -91,7 +103,7 @@
 
 			<ul class="mt-1 space-y-1 text-xs text-muted-foreground">
 				{#if !blockedByFile}
-					<li><span class="font-medium text-foreground">Merge</span> — add into the existing folder, overwriting files with the same name (older versions are kept).</li>
+					<li><span class="font-medium text-foreground">Merge</span> — add into the existing folder, overwriting files with the same name{versionNote}.</li>
 				{/if}
 				<li><span class="font-medium text-foreground">Keep both</span> — upload as a new folder, e.g. "{current.name} (1)".</li>
 				<li><span class="font-medium text-foreground">Skip</span> — don't upload this folder.</li>

@@ -24,7 +24,11 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
+	// WAL allows concurrent readers alongside the single writer; one connection
+	// serialized every session lookup behind FTS batch transactions (visible as
+	// upload jitter during rescans). Writes still serialize inside SQLite, and
+	// the DSN's busy_timeout absorbs writer contention.
+	db.SetMaxOpenConns(4)
 
 	if err := db.Ping(); err != nil {
 		db.Close()

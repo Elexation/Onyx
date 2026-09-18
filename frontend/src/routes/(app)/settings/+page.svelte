@@ -238,6 +238,9 @@
 				} else if (key === "server.listen_port" || key === "server.tls_enabled") {
 					toast.success("Saved — restart server to apply");
 				} else {
+					// FolderConflictDialog quotes this cap; without a refresh it
+					// keeps promising the old one until a full reload.
+					if (key === "versions.max_file_size") versioningEnabled.refresh();
 					toast.success("Saved");
 				}
 			} catch {

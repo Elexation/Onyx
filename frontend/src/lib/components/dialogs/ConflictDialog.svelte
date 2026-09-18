@@ -83,7 +83,7 @@
 			<FileIcon name={currentName} isDir={side.isDir} class="size-7 shrink-0" />
 			<div class="min-w-0">
 				<div class="truncate text-meta font-medium">{currentName}{side.isDir ? "/" : ""}</div>
-				<div class="font-mono text-xs text-muted-foreground">
+				<div class="text-meta text-muted-foreground">
 					{side.size === null ? "Folder" : formatFileSize(side.size)} · {formatDate(side.modTime)}
 				</div>
 			</div>

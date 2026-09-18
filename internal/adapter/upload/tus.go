@@ -24,6 +24,7 @@ var (
 	errUploadConflict = tusd.NewError("ERR_UPLOAD_CONFLICT", "file already exists", http.StatusUnprocessableEntity)
 	errDestIsFolder   = tusd.NewError("ERR_DEST_IS_FOLDER", "a folder with this name already exists", http.StatusUnprocessableEntity)
 	errPathBlocked    = tusd.NewError("ERR_PATH_BLOCKED", "a file with this name already exists in the path", http.StatusUnprocessableEntity)
+	errInvalidPath    = tusd.NewError("ERR_INVALID_UPLOAD_PATH", "invalid upload path", http.StatusBadRequest)
 	errFinalizeFailed = tusd.NewError("ERR_FINALIZE_FAILED", "could not finalize upload", http.StatusInternalServerError)
 )
 
@@ -36,7 +37,7 @@ type TusHandler struct {
 
 // NewTusHandler creates a tusd handler backed by local disk storage.
 // storeDir is the directory for incomplete uploads (e.g. /cache/uploads).
-func NewTusHandler(storeDir string, basePath string, files *service.FileService, settings *service.SettingsService) (*TusHandler, error) {
+func NewTusHandler(storeDir string, basePath string, files *service.FileService, settings *service.SettingsService, trustedProxy bool) (*TusHandler, error) {
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
 		return nil, fmt.Errorf("create upload store dir: %w", err)
 	}
@@ -51,6 +52,10 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 	h, err := tusd.NewHandler(tusd.Config{
 		BasePath:      basePath,
 		StoreComposer: composer,
+		// tusd builds absolute Location headers from r.TLS and r.Host; without
+		// forwarded headers, a TLS-terminating proxy with a plain-HTTP upstream
+		// gets http:// URLs and the SPA's PATCHes are blocked as mixed content.
+		RespectForwardedHeaders: trustedProxy,
 		// Finalize synchronously, in the request goroutine, before the 204 is
 		// returned. This runs up to the client's concurrency wide (not serialized
 		// through one channel consumer) and lets a finalize failure propagate to
@@ -69,14 +74,7 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 			}
 
 			tusFile := filepath.Join(storeDir, uploadID)
-			src, err := os.Open(tusFile)
-			if err != nil {
-				slog.Error("open completed upload", "id", uploadID, "error", err)
-				return tusd.HTTPResponse{}, errFinalizeFailed
-			}
-
-			finalPath, ferr := files.CompleteUpload(targetDir, relativePath, strategy, src)
-			src.Close()
+			finalPath, ferr := files.CompleteUpload(targetDir, relativePath, strategy, tusFile)
 
 			// On success, cleanup of the tus temp file is left to the client's
 			// terminate (DELETE), which @uppy/tus always sends once it sees the
@@ -102,6 +100,8 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 					return tusd.HTTPResponse{}, errDestIsFolder
 				case errors.Is(ferr, service.ErrUploadBlockedByFile):
 					return tusd.HTTPResponse{}, errPathBlocked
+				case errors.Is(ferr, service.ErrUploadInvalidTarget), errors.Is(ferr, service.ErrUploadInvalidPath):
+					return tusd.HTTPResponse{}, errInvalidPath
 				}
 				return tusd.HTTPResponse{}, errFinalizeFailed
 			}
@@ -118,6 +118,15 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 			if meta["targetDir"] == "" {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 					tusd.NewError("ERR_TARGET_REQUIRED", "targetDir metadata is required", http.StatusBadRequest)
+			}
+			relativePath := meta["relativePath"]
+			if relativePath == "" {
+				relativePath = meta["name"]
+			}
+			// Mirror CompleteUpload's lexical checks so traversal-shaped metadata
+			// is refused at create, before any bytes transfer.
+			if _, _, err := service.CleanUploadPaths(meta["targetDir"], relativePath); err != nil {
+				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, errInvalidPath
 			}
 			if hook.Upload.SizeIsDeferred {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
@@ -151,8 +160,8 @@ func (t *TusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.handler.ServeHTTP(w, r)
 }
 
-// cleanupStaleUploads removes incomplete uploads older than 24 hours.
-// Runs on startup and every hour.
+// cleanupStaleUploads removes incomplete uploads with no write progress for
+// 24 hours, plus orphaned .info files. Runs on startup and every hour.
 func (t *TusHandler) cleanupStaleUploads() {
 	t.doCleanup()
 	ticker := time.NewTicker(1 * time.Hour)
@@ -172,17 +181,30 @@ func (t *TusHandler) doCleanup() {
 		if entry.IsDir() {
 			continue
 		}
+		name := entry.Name()
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
+		if strings.HasSuffix(name, ".info") {
+			// filestore never rewrites .info after creation, so its mtime stays
+			// frozen at creation time regardless of upload progress. Staleness
+			// keys on the data file; reap a .info alone only once orphaned.
+			if _, err := os.Lstat(filepath.Join(t.storedir, strings.TrimSuffix(name, ".info"))); err == nil {
+				continue
+			}
+			if info.ModTime().Before(cutoff) {
+				os.Remove(filepath.Join(t.storedir, name))
+			}
+			continue
+		}
+		// Data-file mtime advances with every written chunk, so this matches
+		// only uploads without progress for 24h.
 		if !info.ModTime().Before(cutoff) {
 			continue
 		}
-		uploadID := strings.TrimSuffix(entry.Name(), ".info")
-		// Remove data and .info as a pair. Remove() on a missing file is harmless.
-		os.Remove(filepath.Join(t.storedir, uploadID))
-		os.Remove(filepath.Join(t.storedir, uploadID+".info"))
+		os.Remove(filepath.Join(t.storedir, name))
+		os.Remove(filepath.Join(t.storedir, name+".info"))
 	}
 }
 

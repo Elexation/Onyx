@@ -161,7 +161,8 @@ func (t *TusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // cleanupStaleUploads removes incomplete uploads with no write progress for
-// 24 hours, plus orphaned .info files. Runs on startup and every hour.
+// 24 hours (1 hour if no bytes ever arrived), plus orphaned .info files.
+// Runs on startup and every hour.
 func (t *TusHandler) cleanupStaleUploads() {
 	t.doCleanup()
 	ticker := time.NewTicker(1 * time.Hour)
@@ -172,7 +173,9 @@ func (t *TusHandler) cleanupStaleUploads() {
 }
 
 func (t *TusHandler) doCleanup() {
-	cutoff := time.Now().Add(-24 * time.Hour)
+	now := time.Now()
+	cutoff := now.Add(-24 * time.Hour)
+	emptyCutoff := now.Add(-1 * time.Hour)
 	entries, err := os.ReadDir(t.storedir)
 	if err != nil {
 		return
@@ -199,8 +202,14 @@ func (t *TusHandler) doCleanup() {
 			continue
 		}
 		// Data-file mtime advances with every written chunk, so this matches
-		// only uploads without progress for 24h.
-		if !info.ModTime().Before(cutoff) {
+		// only uploads without progress. filestore creates the data file empty
+		// at create time, so zero bytes means no chunk ever arrived and there is
+		// nothing to resume; reap those sooner than an interrupted transfer.
+		stale := cutoff
+		if info.Size() == 0 {
+			stale = emptyCutoff
+		}
+		if !info.ModTime().Before(stale) {
 			continue
 		}
 		os.Remove(filepath.Join(t.storedir, name))

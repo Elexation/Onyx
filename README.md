@@ -86,9 +86,9 @@ Onyx transcodes non-browser-native video on demand into an HLS ABR ladder
 probes for hardware encoders on startup and uses the best available;
 when none are found it falls back to libx264 (software).
 
-If the GPU isn't ready at startup (common after a reboot — the driver may
-initialize after the container starts), Onyx re-probes every 30 seconds
-for up to 5 minutes and upgrades automatically — no restart needed.
+If the GPU isn't ready at startup (common after a reboot, since the driver
+may initialize after the container starts), Onyx re-probes every 30 seconds
+for up to 5 minutes and upgrades automatically, with no restart needed.
 
 Encoder priority: **NVENC > QSV > VAAPI > AMF > libx264**.
 
@@ -107,7 +107,7 @@ Or with `docker run`:
 docker run -d --device /dev/dri:/dev/dri ... onyx:latest
 ```
 
-No host-side driver installation needed for most systems — the kernel
+No host-side driver installation is needed for most systems. The kernel
 module (i915 for Intel, amdgpu for AMD) is auto-loaded, and the container
 bundles the userspace VA-API drivers.
 
@@ -173,9 +173,9 @@ Set `ONYX_REQUIRE_HTTPS=true` as well when the proxy terminates TLS and
 speaks plain HTTP to Onyx, so session cookies keep their `Secure` flag.
 
 Removing the proxy's body cap leaves Onyx as the only place an upload size
-can be bounded, and its own limit (`upload.max_size` in Settings) ships
-unlimited. Set it to a real ceiling before widening the proxy, or a single
-request can fill the disk.
+can be bounded. Its own limit (`upload.max_size` in Settings) defaults to
+100 GiB, which is also the highest value it accepts. Lower it before
+widening the proxy if a single request that large would fill the disk.
 
 With `ONYX_TRUSTED_PROXY=true`, Onyx keys its rate limiters on `X-Real-IP`
 and falls back to the right-most `X-Forwarded-For` entry. The proxy must
@@ -271,14 +271,14 @@ make build
 ## Data Protection
 
 `.versions/` and `.trash/` protect against accidental edits and deletions.
-They are not ransomware protection — they live on the same disk with the same
+They are not ransomware protection. They live on the same disk with the same
 permissions as your data.
 
 For resilience against filesystem-level threats, use host-level protections:
 
-- **ZFS/Btrfs snapshots** — read-only, inaccessible to userspace processes
-- **Pull-based offsite backups** — backup server pulls from you; compromised host can't reach the backup target
-- **S3/B2 with Object Lock** — immutable retention windows that even the account owner can't override
+- **ZFS/Btrfs snapshots**: read-only, inaccessible to userspace processes
+- **Pull-based offsite backups**: backup server pulls from you; compromised host can't reach the backup target
+- **S3/B2 with Object Lock**: immutable retention windows that even the account owner can't override
 
 ## License
 

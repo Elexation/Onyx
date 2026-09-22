@@ -34,7 +34,7 @@ var Defaults = map[string]string{
 	SettingVersionsMaxStorageBytes: "0",          // 0 = unlimited, stored in bytes
 	SettingSharesEnabled:   "true",
 	SettingSessionLifetime: "720h", // 30 days
-	SettingUploadMaxSize:       "0",     // 0 = unlimited
+	SettingUploadMaxSize:       "107374182400", // 100 GiB, the ceiling settings validation allows
 	SettingPlaybackDefaultQualityCeiling: "1080", // pixel height; 0 = unlimited
 
 	SettingServerListenPort:  "8080",

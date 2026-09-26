@@ -18,19 +18,39 @@ Open `http://localhost:8080`. To use a different port:
 ONYX_PORT=3000 docker compose up -d
 ```
 
+### Storage Layout
+
+All application state lives under a single `store/` directory beside the compose file:
+
+```
+store/
+  data/        user files
+  config/      database and TLS certificates
+  cache/       thumbnails, transcode output, upload staging
+  .trash/
+  .versions/
+```
+
+The single mount is load-bearing, not cosmetic. Finishing an upload moves the file from `cache/` into `data/`, and deleting one moves it into `.trash/`; both are instant renames within a mount and become a full copy of every byte across a mount boundary. Docker treats each bind mount as its own mount point even when they sit on the same disk, so splitting these directories degrades both operations with no error. Onyx logs a startup warning if it detects the split.
+
+If you are upgrading from a release that mounted these separately, move them into place first:
+
+```bash
+docker compose down
+mkdir -p store && mv data config .trash .versions store/ && mv .cache store/cache
+docker compose up -d
+```
+
 ### Docker Run
 
 ```bash
 docker run -d \
   --name onyx \
   -p 8080:8080 \
-  -v ./config:/config \
-  -v ./data:/srv \
-  -v ./.versions:/.versions \
-  -v ./.trash:/.trash \
-  -v ./.cache:/.cache \
-  -e ONYX_DATA=/srv \
-  -e ONYX_CONFIG=/config \
+  -v ./store:/store \
+  -e ONYX_DATA=/store/data \
+  -e ONYX_CONFIG=/store/config \
+  -e ONYX_CACHE=/store/cache \
   --restart always \
   onyx:latest
 ```
@@ -58,6 +78,8 @@ docker run -d \
 | `ONYX_DATA` | `data` | Root directory for user files. |
 | `ONYX_CONFIG` | `config` | Directory for the database and TLS certificates. |
 | `ONYX_CACHE` | `.cache` | Directory for thumbnails, transcode output, and upload staging. |
+
+Relative values resolve against the working directory, which is wherever you launch the binary and `/store` in the Docker image. Trash and versions are not configurable; they are always `.trash` and `.versions` in the working directory. Keep all of them on one mount (see Storage Layout above).
 
 ### Transcoding
 

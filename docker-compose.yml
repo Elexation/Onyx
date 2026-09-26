@@ -5,14 +5,15 @@ services:
     ports:
       - "${ONYX_PORT:-8080}:8080"
     volumes:
-      - ./config:/config
-      - ./data:/srv
-      - ./.versions:/.versions
-      - ./.trash:/.trash
-      - ./.cache:/.cache
+      # One mount, not five. Upload finalization hardlinks from the cache into
+      # the data root and trash moves rename into .trash; both fall back to a
+      # full copy across a mount boundary, silently. .trash and .versions are
+      # not configurable and land here via the image's WORKDIR.
+      - ./store:/store
     environment:
-      - ONYX_DATA=/srv
-      - ONYX_CONFIG=/config
+      - ONYX_DATA=/store/data
+      - ONYX_CONFIG=/store/config
+      - ONYX_CACHE=/store/cache
       # Run as this UID:GID (default 1000:1000). The entrypoint ensures
       # all mounted directories are owned by this user before starting.
       # - PUID=1000

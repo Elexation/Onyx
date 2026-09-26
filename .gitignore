@@ -19,6 +19,7 @@ web/build/
 web/csp_hash.go
 
 # App directories
+store/
 config/
 data/
 .versions/

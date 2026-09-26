@@ -380,6 +380,31 @@ func (s *LocalStorage) AdoptFile(srcPath, destPath string) error {
 	return nil
 }
 
+// CheckHardlink reports whether a file in dir can be hardlinked into the data
+// root, which is the fast path AdoptFile takes on upload finalization. Its
+// fallback to a full copy is correct but silent, so callers surface the
+// degradation. Separate bind mounts of one filesystem fail here with EXDEV
+// even though both report the same device, so only an attempt settles it.
+func (s *LocalStorage) CheckHardlink(dir string) error {
+	suffix := make([]byte, 8)
+	if _, err := cryptorand.Read(suffix); err != nil {
+		return fmt.Errorf("temp suffix: %w", err)
+	}
+	name := ".onyx-linkprobe-" + hex.EncodeToString(suffix)
+
+	srcPath := filepath.Join(dir, name)
+	if err := os.WriteFile(srcPath, nil, 0644); err != nil {
+		return fmt.Errorf("create probe file: %w", err)
+	}
+	defer os.Remove(srcPath)
+
+	linkPath := filepath.Join(s.dataPath, name)
+	if err := os.Link(srcPath, linkPath); err != nil {
+		return err
+	}
+	return os.Remove(linkPath)
+}
+
 // UniqueName returns the path unchanged if it doesn't exist, otherwise
 // appends " (1)", " (2)", etc. until a free name is found.
 // Exported for use by the upload system.

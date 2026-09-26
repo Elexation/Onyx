@@ -27,11 +27,16 @@ RUN sed -i 's/Components: main/Components: main non-free non-free-firmware/' /et
 COPY --from=backend /onyx /onyx
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+# .trash and .versions are hardcoded CWD-relative, and upload finalization
+# hardlinks from the cache into the data root, which fails with EXDEV across
+# separate bind mounts. WORKDIR puts every default under one mountable root.
+WORKDIR /store
+# Build-time constant; the runtime port follows ONYX_PORT.
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 	CMD if [ "$ONYX_HTTPS" = "true" ] || [ "$ONYX_TLS" = "true" ]; then \
-		curl -fsk https://localhost:8080/api/health; \
+		curl -fsk https://localhost:${ONYX_PORT:-8080}/api/health; \
 	else \
-		curl -fs http://localhost:8080/api/health; \
+		curl -fs http://localhost:${ONYX_PORT:-8080}/api/health; \
 	fi || exit 1
 ENTRYPOINT ["/entrypoint.sh"]

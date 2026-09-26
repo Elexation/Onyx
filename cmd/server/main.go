@@ -182,8 +182,9 @@ func main() {
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
 
+	uploadStageDir := filepath.Join(cacheDir, "uploads")
 	tusHandler, err := upload.NewTusHandler(
-		filepath.Join(cacheDir, "uploads"),
+		uploadStageDir,
 		"/api/upload/",
 		fileService,
 		settingsService,
@@ -194,6 +195,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer tusHandler.Close()
+
+	// NewTusHandler has created the staging dir by now, so the probe can run.
+	if err := localStorage.CheckHardlink(uploadStageDir); err != nil {
+		slog.Warn("upload staging cannot hardlink into the data dir, so every upload will be copied in full on finalize; put the cache and data dirs under one mount to avoid it",
+			"error", err, "cache", cacheDir, "data", dataDir)
+	}
 
 	canonicalDomain := os.Getenv("ONYX_DOMAIN")
 	if canonicalDomain != "" {

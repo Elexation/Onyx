@@ -31,13 +31,15 @@ store/
   .versions/
 ```
 
-The single mount is load-bearing, not cosmetic. Finishing an upload moves the file from `cache/` into `data/`, and deleting one moves it into `.trash/`; both are instant renames within a mount and become a full copy of every byte across a mount boundary. Docker treats each bind mount as its own mount point even when they sit on the same disk, so splitting these directories degrades both operations with no error. Onyx logs a startup warning if it detects the split.
+Keep these on one mount. Finishing an upload and deleting a file are both renames within `store/`, and Docker treats separate bind mounts as separate filesystems, so splitting them turns each into a full copy with no error. Onyx warns at startup if it detects this.
 
-If you are upgrading from a release that mounted these separately, move them into place first:
+Upgrading from a release that mounted these separately:
 
 ```bash
 docker compose down
-mkdir -p store && mv data config .trash .versions store/ && mv .cache store/cache
+mkdir -p store
+mv data config .trash .versions store/
+mv .cache store/cache
 docker compose up -d
 ```
 
@@ -79,7 +81,7 @@ docker run -d \
 | `ONYX_CONFIG` | `config` | Directory for the database and TLS certificates. |
 | `ONYX_CACHE` | `.cache` | Directory for thumbnails, transcode output, and upload staging. |
 
-Relative values resolve against the working directory, which is wherever you launch the binary and `/store` in the Docker image. Trash and versions are not configurable; they are always `.trash` and `.versions` in the working directory. Keep all of them on one mount (see Storage Layout above).
+Relative values resolve against the working directory, which is `/store` in the Docker image. Trash and versions are always `.trash` and `.versions` there and are not configurable.
 
 ### Transcoding
 

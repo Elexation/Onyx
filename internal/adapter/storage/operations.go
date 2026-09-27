@@ -386,23 +386,21 @@ func (s *LocalStorage) AdoptFile(srcPath, destPath string) error {
 // degradation. Separate bind mounts of one filesystem fail here with EXDEV
 // even though both report the same device, so only an attempt settles it.
 func (s *LocalStorage) CheckHardlink(dir string) error {
-	suffix := make([]byte, 8)
-	if _, err := cryptorand.Read(suffix); err != nil {
-		return fmt.Errorf("temp suffix: %w", err)
-	}
-	name := ".onyx-linkprobe-" + hex.EncodeToString(suffix)
-
-	srcPath := filepath.Join(dir, name)
-	if err := os.WriteFile(srcPath, nil, 0644); err != nil {
+	f, err := os.CreateTemp(dir, ".onyx-linkprobe-*")
+	if err != nil {
 		return fmt.Errorf("create probe file: %w", err)
 	}
+	srcPath := f.Name()
+	f.Close()
 	defer os.Remove(srcPath)
 
-	linkPath := filepath.Join(s.dataPath, name)
+	linkPath := filepath.Join(s.dataPath, filepath.Base(srcPath))
 	if err := os.Link(srcPath, linkPath); err != nil {
 		return err
 	}
-	return os.Remove(linkPath)
+	// Linking succeeded; a failed cleanup must not be reported as a link failure.
+	_ = os.Remove(linkPath)
+	return nil
 }
 
 // UniqueName returns the path unchanged if it doesn't exist, otherwise

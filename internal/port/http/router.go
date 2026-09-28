@@ -124,7 +124,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	})
 
 	// Public share API routes (no auth). All read endpoints sit behind
-	// streamRL — CLAUDE.md mandates rate-limiting any public-share endpoint
+	// streamRL: CLAUDE.md mandates rate-limiting any public-share endpoint
 	// triggering expensive I/O (recursive zip, transcoding, file reads).
 	// /verify keeps shareRL (auth-lockout type) for password brute-force
 	// resistance with handler-side RecordSuccess rollback.
@@ -155,7 +155,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 // uploadInterceptor routes /api/upload requests directly to tusd,
 // bypassing Chi's routing which modifies URL paths. uploadCL caps
-// concurrent in-flight upload requests per IP — each tus chunk holds
+// concurrent in-flight upload requests per IP. Each tus chunk holds
 // disk and goroutine resources for an extended period, so unbounded
 // concurrency is a DoS vector even behind admin auth.
 func uploadInterceptor(auth middleware.SessionValidator, tokens middleware.TokenValidator, tus http.Handler, uploadCL *middleware.ConcurrencyLimiter, trustedProxy, requireHTTPS bool, next http.Handler) http.Handler {
@@ -189,7 +189,7 @@ func handleUploadPreflight(w http.ResponseWriter, r *http.Request) {
 // normalizePath canonicalizes r.URL.Path with path.Clean, resolving "." and
 // ".." segments and collapsing double slashes before any routing or
 // scope-checking middleware sees the path. A trailing slash on the original
-// is preserved — chi's wildcard routes (e.g. /files/*) match /files/ but not
+// is preserved: chi's wildcard routes (e.g. /files/*) match /files/ but not
 // /files, and the SPA hits /api/files/ for the root listing.
 func normalizePath(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

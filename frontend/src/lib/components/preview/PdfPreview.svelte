@@ -387,7 +387,7 @@
 				totalPages = doc.numPages;
 				currentPage = 1;
 
-				// Fetch all page proxies in parallel — pdf.js's worker handles
+				// Fetch all page proxies in parallel; pdf.js's worker handles
 				// these concurrently. Cache base-scale dimensions so subsequent
 				// zooms recompute heights via multiplication, never re-fetch.
 				pageProxies = await Promise.all(

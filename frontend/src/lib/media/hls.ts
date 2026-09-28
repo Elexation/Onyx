@@ -32,7 +32,7 @@ export function isHlsSupported(): boolean {
 
 export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHandle | null {
 	if (!Hls.isSupported()) {
-		// Safari plays HLS natively — caller can set videoEl.src directly.
+		// Safari plays HLS natively; caller can set videoEl.src directly.
 		return null;
 	}
 
@@ -120,7 +120,7 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	};
 }
 
-// canPlayHlsNatively is a Safari/iOS-only fallback — do NOT use it to
+// canPlayHlsNatively is a Safari/iOS-only fallback; do NOT use it to
 // gate MSE on Chrome. Chrome reports "maybe" for this MIME type but its
 // demuxer cannot actually parse m3u8, so any caller must check
 // Hls.isSupported() first and fall back here only when MSE is

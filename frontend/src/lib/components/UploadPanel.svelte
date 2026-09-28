@@ -67,7 +67,7 @@
 
 	const DETAIL_THRESHOLD = 20;
 
-	// File-level totals for the header — a group contributes all its files, not
+	// File-level totals for the header: a group contributes all its files, not
 	// the single row it renders as.
 	const totalFileCount = $derived(
 		uploadState.looseItems.length + uploadState.groups.reduce((s, g) => s + g.fileCount, 0),
@@ -88,7 +88,7 @@
 	);
 
 	// While uploading with throughput but no ETA yet, the rate is still warming up
-	// (see ETA_WARMUP_SAMPLES in uppy.ts) — show "estimating…" instead of a number.
+	// (see ETA_WARMUP_SAMPLES in uppy.ts); show "estimating…" instead of a number.
 	const etaText = $derived.by(() => {
 		if (uploadState.eta !== null) return formatEta(uploadState.eta);
 		if (uploadState.activeCount > 0 && uploadState.speed > 0) return "estimating…";
@@ -115,7 +115,7 @@
 		return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 	}
 
-	// Coarse buckets, not exact seconds — the underlying ETA twitches with every
+	// Coarse buckets, not exact seconds: the underlying ETA twitches with every
 	// burst of small-file completions, so rounding to friendly units (like Windows)
 	// keeps the displayed number from dancing.
 	function formatEta(seconds: number | null): string {

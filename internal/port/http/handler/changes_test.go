@@ -181,7 +181,7 @@ func TestChanges_SSE_CursorResume(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(h.Get))
 	defer srv.Close()
 
-	// Resume from second-to-last — should only get the last event.
+	// Resume from second-to-last: should only get the last event.
 	resumeFrom := latest - 1
 	resp := sseGet(t, srv, strconv.FormatInt(resumeFrom, 10), 3*time.Second)
 	defer resp.Body.Close()
@@ -208,7 +208,7 @@ func TestChanges_SSE_Bootstrap_SkipsExisting(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(h.Get))
 	defer srv.Close()
 
-	// No Last-Event-ID — bootstrap anchors at latest. Insert a new event
+	// No Last-Event-ID: bootstrap anchors at latest. Insert a new event
 	// after connection to verify only new events stream.
 	resp := sseGet(t, srv, "", 3*time.Second)
 	defer resp.Body.Close()
@@ -247,7 +247,7 @@ func TestChanges_SSE_Behind(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(h.Get))
 	defer srv.Close()
 
-	// Cursor at 2 — events 1-3 are pruned, so cursor is behind.
+	// Cursor at 2: events 1-3 are pruned, so cursor is behind.
 	resp := sseGet(t, srv, "2", 3*time.Second)
 	defer resp.Body.Close()
 

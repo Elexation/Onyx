@@ -59,7 +59,7 @@ func (h *TrashHandler) Restore(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
-		// Generic 500 — wrapped errors include absolute FS paths and OS
+		// Generic 500: wrapped errors include absolute FS paths and OS
 		// errno text we don't want to leak (CLAUDE.md: "writeJSON(500,
 		// err.Error()) leaks service-layer details").
 		slog.Warn("trash restore failed", "id", id, "strategy", strategy, "error", err)
@@ -83,7 +83,7 @@ func (h *TrashHandler) CheckRestoreConflicts(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	// Cap the per-request id count — each dir id triggers a recursive
+	// Cap the per-request id count: each dir id triggers a recursive
 	// dirSize walk, so an unbounded array is a disk-I/O DoS vector even
 	// behind admin auth (stolen session/PAT). 500 mirrors the spirit of
 	// the existing /api/download/zip 1000-paths cap.

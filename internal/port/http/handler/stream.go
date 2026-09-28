@@ -40,7 +40,7 @@ type infoResponse struct {
 	NeedsTranscode bool    `json:"needsTranscode"`
 }
 
-// Info handles GET /api/stream/info/* — returns codec metadata for the file
+// Info handles GET /api/stream/info/*: returns codec metadata for the file
 // and an advisory hint on whether it needs transcoding.
 func (h *StreamHandler) Info(w http.ResponseWriter, r *http.Request) {
 	filePath := extractWildcard(r, "/api/stream/info")
@@ -90,7 +90,7 @@ func needsTranscode(codec, audioCodec string) bool {
 	return true
 }
 
-// Master handles GET /api/stream/master/* — triggers transcode session
+// Master handles GET /api/stream/master/*: triggers transcode session
 // creation if this file has never been transcoded, then returns the
 // master playlist. Subsequent calls are map-lookup cheap.
 func (h *StreamHandler) Master(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +110,7 @@ func (h *StreamHandler) Master(w http.ResponseWriter, r *http.Request) {
 	h.serveCachedFile(w, r, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl")
 }
 
-// Playlist handles GET /api/stream/playlist/{v}/* — returns the full
+// Playlist handles GET /api/stream/playlist/{v}/*: returns the full
 // VOD playlist for variant v (all segments listed, ENDLIST present).
 // The playlist is written at session start from the probed duration.
 func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +138,7 @@ func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
 	h.serveCachedFile(w, r, filepath.Join(session.Dir(), media.VariantDir(variant), "playlist.m3u8"), "application/vnd.apple.mpegurl")
 }
 
-// Init handles GET /api/stream/init/{v}/* — serves variant v's fMP4
+// Init handles GET /api/stream/init/{v}/*: serves variant v's fMP4
 // init segment, blocking briefly if ffmpeg has not yet produced it.
 func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 	filePath := extractWildcard(r, "/api/stream/init/"+chi.URLParam(r, "v"))
@@ -170,7 +170,7 @@ func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 	h.serveCachedFile(w, r, initPath, "video/mp4")
 }
 
-// Segment handles GET /api/stream/segment/{v}/{n}/* — returns variant
+// Segment handles GET /api/stream/segment/{v}/{n}/*: returns variant
 // v's data{NNNNNN}.m4s, blocking up to 30s while ffmpeg produces the
 // segment and triggering a seek restart if the requested segment is
 // outside the active window.
@@ -256,7 +256,7 @@ func (h *StreamHandler) redirectDirectNavigate(w http.ResponseWriter, r *http.Re
 }
 
 // serveCachedFile reads a file produced by ffmpeg / the service and
-// sends it with the given content type. Small files only — master and
+// sends it with the given content type. Small files only: master and
 // media playlists, init.mp4.
 func (h *StreamHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, path, contentType string) {
 	data, err := os.ReadFile(path)

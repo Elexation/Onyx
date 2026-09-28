@@ -58,7 +58,7 @@ func NewPublicHandler(shares *service.ShareService, files *service.FileService, 
 	return h
 }
 
-// Info handles GET /s/{token} — returns share metadata (or "password required").
+// Info handles GET /s/{token}: returns share metadata (or "password required").
 func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
@@ -75,7 +75,7 @@ func (h *PublicHandler) Info(w http.ResponseWriter, r *http.Request) {
 	h.writeShareInfo(w, link)
 }
 
-// Verify handles POST /s/{token}/verify — checks password and sets session cookie.
+// Verify handles POST /s/{token}/verify: checks password and sets session cookie.
 func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, pwHash, err := h.shares.Validate(token)
@@ -124,7 +124,7 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	h.writeShareInfo(w, link)
 }
 
-// Download handles GET /s/{token}/dl or GET /s/{token}/dl/* — serves a file from the share.
+// Download handles GET /s/{token}/dl or GET /s/{token}/dl/*: serves a file from the share.
 func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
@@ -164,7 +164,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, modTime, file)
 }
 
-// DownloadZip handles GET /s/{token}/zip — streams the entire shared directory as a zip archive.
+// DownloadZip handles GET /s/{token}/zip: streams the entire shared directory as a zip archive.
 func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
@@ -197,7 +197,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Raw handles GET /s/{token}/raw or GET /s/{token}/raw/* — serves a file inline for preview.
+// Raw handles GET /s/{token}/raw or GET /s/{token}/raw/*: serves a file inline for preview.
 func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	link, _, err := h.shares.Validate(token)
@@ -311,7 +311,7 @@ func servePublicCachedFile(w http.ResponseWriter, path, contentType string) {
 	w.Write(data)
 }
 
-// StreamInfo handles GET /s/{token}/stream/info/* — probes video metadata.
+// StreamInfo handles GET /s/{token}/stream/info/*: probes video metadata.
 func (h *PublicHandler) StreamInfo(w http.ResponseWriter, r *http.Request) {
 	if h.redirectDirectNavigate(w, r) {
 		return
@@ -349,7 +349,7 @@ func (h *PublicHandler) StreamInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StreamMaster handles GET /s/{token}/stream/master/* — master HLS playlist.
+// StreamMaster handles GET /s/{token}/stream/master/*: master HLS playlist.
 func (h *PublicHandler) StreamMaster(w http.ResponseWriter, r *http.Request) {
 	if h.redirectDirectNavigate(w, r) {
 		return
@@ -374,7 +374,7 @@ func (h *PublicHandler) StreamMaster(w http.ResponseWriter, r *http.Request) {
 	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"), filePath)
 }
 
-// StreamPlaylist handles GET /s/{token}/stream/playlist/{v}/* — variant playlist.
+// StreamPlaylist handles GET /s/{token}/stream/playlist/{v}/*: variant playlist.
 func (h *PublicHandler) StreamPlaylist(w http.ResponseWriter, r *http.Request) {
 	if h.redirectDirectNavigate(w, r) {
 		return
@@ -407,7 +407,7 @@ func (h *PublicHandler) StreamPlaylist(w http.ResponseWriter, r *http.Request) {
 	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), media.VariantDir(variant), "playlist.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"), filePath)
 }
 
-// StreamInit handles GET /s/{token}/stream/init/{v}/* — fMP4 init segment.
+// StreamInit handles GET /s/{token}/stream/init/{v}/*: fMP4 init segment.
 func (h *PublicHandler) StreamInit(w http.ResponseWriter, r *http.Request) {
 	if h.redirectDirectNavigate(w, r) {
 		return
@@ -445,7 +445,7 @@ func (h *PublicHandler) StreamInit(w http.ResponseWriter, r *http.Request) {
 	servePublicCachedFile(w, initPath, "video/mp4")
 }
 
-// StreamSegment handles GET /s/{token}/stream/segment/{v}/{n}/* — media segment.
+// StreamSegment handles GET /s/{token}/stream/segment/{v}/{n}/*: media segment.
 func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
 	if h.redirectDirectNavigate(w, r) {
 		return
@@ -615,7 +615,7 @@ func extractSubPath2(r *http.Request, token string, segment string) string {
 // refers to within the share, or false if it escapes scope. For single-file
 // shares, subPath is ignored. For directory shares, subPath may be either
 // share-relative (e.g. "/movie.mkv") or already fully-qualified under the
-// share base (e.g. "/shared/movie.mkv" — this happens when HLS playlist
+// share base (e.g. "/shared/movie.mkv"; this happens when HLS playlist
 // content, rewritten by rewriteShareHLS, flows back through the subsequent
 // playlist/segment requests).
 func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
@@ -626,7 +626,7 @@ func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
 		return "", false
 	}
 	// path.Clean does not treat \ as a separator on any OS, so `..\..\x`
-	// survives normalization. Reject it at the app layer — os.Root is the
+	// survives normalization. Reject it at the app layer; os.Root is the
 	// storage-layer bedrock, this is defense-in-depth.
 	if strings.Contains(subPath, "\\") {
 		return "", false

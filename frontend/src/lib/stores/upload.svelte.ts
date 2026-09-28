@@ -1,4 +1,4 @@
-// Loose (non-folder) files keep a per-file reactive row — these drops are small.
+// Loose (non-folder) files keep a per-file reactive row; these drops are small.
 export interface LooseItem {
 	id: string;
 	name: string;
@@ -12,7 +12,7 @@ export interface LooseItem {
 // Folder uploads collapse to ONE aggregate per top-level folder. Counters and
 // byte totals are maintained incrementally (O(1) per upload event) so a drop of
 // tens of thousands of files never materializes tens of thousands of reactive
-// rows — that was the source of the main-thread freeze.
+// rows; that was the source of the main-thread freeze.
 export interface UploadGroup {
 	id: string;
 	name: string;
@@ -55,7 +55,7 @@ class UploadState {
 	// and cannot blank out a newer drop's scanning state.
 	scanGen = 0;
 
-	// Incrementally-maintained totals — never reduced over the item set.
+	// Incrementally-maintained totals; never reduced over the item set.
 	totalBytes = $state(0);
 	totalBytesUploaded = $state(0);
 	activeCount = $state(0);
@@ -69,7 +69,7 @@ class UploadState {
 	private groupsById = new Map<string, UploadGroup>();
 
 	hasItems = $derived(this.looseItems.length > 0 || this.groups.length > 0);
-	// Never "complete" while a drop is still being enumerated/enqueued — an early
+	// Never "complete" while a drop is still being enumerated/enqueued: an early
 	// file can finish before later ones are added, which would otherwise flash
 	// "complete" and auto-minimize the panel mid-drop.
 	isComplete = $derived(
@@ -110,7 +110,7 @@ class UploadState {
 		this.reindexGroups();
 	}
 
-	// Register a group's full size up front — all files are known at enqueue time
+	// Register a group's full size up front: all files are known at enqueue time
 	// even though they're fed to Uppy a window at a time, so the panel can show
 	// the complete count immediately.
 	setGroupTotals(groupId: string, fileCount: number, totalBytes: number) {
@@ -224,7 +224,7 @@ class UploadState {
 		} else if (fi.status === "error") {
 			// Uppy's upload() retries every errored file instance-wide, so a failed
 			// file can resume without an explicit retry() call. Re-arm the counters
-			// exactly like retry() — otherwise markComplete double-decrements
+			// exactly like retry(); otherwise markComplete double-decrements
 			// activeCount and errorCount goes stale.
 			fi.status = "uploading";
 			this.activeCount++;
@@ -258,7 +258,7 @@ class UploadState {
 		if (!fi || fi.status === "complete") return;
 		const wasActive = fi.status === "pending" || fi.status === "uploading";
 		// A retried file can complete while still marked error (no progress event
-		// fired) — move it out of the error tally so counts stay exact.
+		// fired); move it out of the error tally so counts stay exact.
 		const wasError = fi.status === "error";
 		const delta = fi.size - fi.bytes;
 		fi.bytes = fi.size;
@@ -360,7 +360,7 @@ class UploadState {
 		if (!this.hasItems) this.minimized = false;
 	}
 
-	// Whether a file belongs to a folder group — grouped files have no per-file
+	// Whether a file belongs to a folder group: grouped files have no per-file
 	// retry UI, so error handling treats them differently from loose files.
 	isGrouped(id: string): boolean {
 		return !!this.fileIndex.get(id)?.group;
@@ -418,7 +418,7 @@ class UploadState {
 		if (!this.hasItems) this.minimized = false;
 	}
 
-	// Mark any still-active file Uppy no longer tracks as complete — a safety net
+	// Mark any still-active file Uppy no longer tracks as complete: a safety net
 	// for the rare case a file leaves Uppy's queue without a success/error event.
 	reconcileActive(trackedIds: Set<string>) {
 		for (const [id, fi] of this.fileIndex) {

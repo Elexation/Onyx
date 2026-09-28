@@ -46,7 +46,7 @@ var thumbWidths = map[ThumbSize]int{
 
 // maxThumbInputPixels caps total source pixels (width*height). image.Decode
 // allocates the full backing buffer (Width*Height*4 for RGBA) before reading
-// IDAT/SOF data — a ~1KB crafted PNG declaring 65535x65535 would otherwise
+// IDAT/SOF data, so a ~1KB crafted PNG declaring 65535x65535 would otherwise
 // allocate ~16 GB and OOM-kill the server. image.Decode is unbounded, so a
 // DecodeConfig pre-check is the only mitigation; the per-IP streamRL token
 // bucket bounds request rate but not memory per request.
@@ -70,13 +70,13 @@ func ParseThumbSize(s string) (ThumbSize, bool) {
 type LookupStatus int
 
 const (
-	// StatusReady — thumbnail exists on disk, FilePath is set.
+	// StatusReady: thumbnail exists on disk, FilePath is set.
 	StatusReady LookupStatus = iota
-	// StatusQueued — generation has been requested, try again shortly.
+	// StatusQueued: generation has been requested, try again shortly.
 	StatusQueued
-	// StatusUnsupported — file type cannot produce a thumbnail.
+	// StatusUnsupported: file type cannot produce a thumbnail.
 	StatusUnsupported
-	// StatusFailed — generation was attempted and failed; fail marker is fresh.
+	// StatusFailed: generation was attempted and failed; fail marker is fresh.
 	StatusFailed
 )
 

@@ -103,10 +103,10 @@
 
 			<ul class="mt-1 space-y-1 text-xs text-muted-foreground">
 				{#if !blockedByFile}
-					<li><span class="font-medium text-foreground">Merge</span> — add into the existing folder, overwriting files with the same name{versionNote}.</li>
+					<li><span class="font-medium text-foreground">Merge</span>: add into the existing folder, overwriting files with the same name{versionNote}.</li>
 				{/if}
-				<li><span class="font-medium text-foreground">Keep both</span> — upload as a new folder, e.g. "{current.name} (1)".</li>
-				<li><span class="font-medium text-foreground">Skip</span> — don't upload this folder.</li>
+				<li><span class="font-medium text-foreground">Keep both</span>: upload as a new folder, e.g. "{current.name} (1)".</li>
+				<li><span class="font-medium text-foreground">Skip</span>: don't upload this folder.</li>
 			</ul>
 		{/if}
 

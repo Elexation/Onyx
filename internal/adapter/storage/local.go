@@ -22,7 +22,7 @@ type LocalStorage struct {
 }
 
 // NewLocalStorage opens the given directory as a confined root.
-// All subsequent operations are sandboxed — path traversal is impossible.
+// All subsequent operations are sandboxed; path traversal is impossible.
 func NewLocalStorage(dataPath string) (*LocalStorage, error) {
 	root, err := os.OpenRoot(dataPath)
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *LocalStorage) detectFileMIME(filePath, name string) string {
 		}
 	}
 
-	// Extension unknown — read first 512 bytes for magic-byte detection
+	// Extension unknown: read first 512 bytes for magic-byte detection
 	f, err := s.root.Open(filePath)
 	if err != nil {
 		return "application/octet-stream"

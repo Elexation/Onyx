@@ -19,7 +19,7 @@ import (
 )
 
 // Client-facing finalize errors. tusd writes the error message verbatim into
-// the response body, so these stay generic — details go to slog only.
+// the response body, so these stay generic; details go to slog only.
 var (
 	errUploadConflict = tusd.NewError("ERR_UPLOAD_CONFLICT", "file already exists", http.StatusUnprocessableEntity)
 	errDestIsFolder   = tusd.NewError("ERR_DEST_IS_FOLDER", "a folder with this name already exists", http.StatusUnprocessableEntity)
@@ -89,9 +89,9 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 				// client's best-effort DELETE then 404s harmlessly.
 				os.Remove(tusFile)
 				os.Remove(tusFile + ".info")
-				// Sanitized errors only — raw ferr text (paths, syscall detail)
+				// Sanitized errors only: raw ferr text (paths, syscall detail)
 				// would be written verbatim into the response body by tusd.
-				// Collisions get a non-retryable 422 (NOT 409/5xx — tus clients
+				// Collisions get a non-retryable 422 (NOT 409/5xx; tus clients
 				// auto-retry those, and a collision never resolves by retrying).
 				switch {
 				case errors.Is(ferr, service.ErrUploadConflict):

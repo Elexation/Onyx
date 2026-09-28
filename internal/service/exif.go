@@ -16,7 +16,7 @@ func isJPEG(relPath string) bool {
 
 // readJPEGOrientation returns the EXIF Orientation value (1-8) from a JPEG
 // stream, or 1 on any parse error or missing tag. The reader is left at an
-// arbitrary position — callers must seek back to 0 before decoding.
+// arbitrary position; callers must seek back to 0 before decoding.
 func readJPEGOrientation(r io.Reader) int {
 	var soi [2]byte
 	if _, err := io.ReadFull(r, soi[:]); err != nil || soi[0] != 0xFF || soi[1] != 0xD8 {

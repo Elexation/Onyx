@@ -17,7 +17,7 @@
 
 	let dragging = $state(false);
 	let dragCounter = 0;
-	// Above this file count, skip empty-folder detection — the extra full tree
+	// Above this file count, skip empty-folder detection: the extra full tree
 	// walk doubles an already-heavy enumeration, and huge folders rarely depend
 	// on preserving empty subdirectories.
 	const EMPTY_DIR_SCAN_LIMIT = 5000;
@@ -71,7 +71,7 @@
 		});
 	}
 
-	// Collect every directory path (relative to the drop root, no leading slash —
+	// Collect every directory path (relative to the drop root, no leading slash,
 	// matching Uppy's file.relativePath format) so we can recreate empty ones,
 	// which getDroppedFiles discards.
 	async function collectDirPaths(entries: any[]): Promise<string[]> {
@@ -88,7 +88,7 @@
 	}
 
 	function computeEmptyDirs(allDirs: string[], files: File[]): string[] {
-		// A dir is "occupied" if any file lives somewhere beneath it — those get
+		// A dir is "occupied" if any file lives somewhere beneath it; those get
 		// created implicitly by the file writes. The rest are the empty dirs.
 		const occupied = new Set<string>();
 		for (const f of files) {
@@ -108,7 +108,7 @@
 		dragging = false;
 
 		if (uploadState.scanning || uploadState.preparing) {
-			toast.info("Hang on — still preparing the previous drop");
+			toast.info("Hang on, still preparing the previous drop");
 			return;
 		}
 
@@ -154,7 +154,7 @@
 			if (uploadState.scanGen === gen) uploadState.scanning = false;
 		}
 
-		// Outside the enumeration try — an upload failure here shouldn't surface
+		// Outside the enumeration try: an upload failure here shouldn't surface
 		// as "couldn't read the dropped items".
 		if (files.length > 0 || emptyDirs.length > 0) {
 			try {

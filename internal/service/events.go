@@ -135,7 +135,7 @@ func recordIf(rec EventRecorder, eventType string, payload any) {
 	rec.Record(eventType, payload)
 }
 
-// Payload shapes — inner JSON written to events.payload. Field tags are
+// Payload shapes: inner JSON written to events.payload. Field tags are
 // lowerCamelCase to match the frontend's typed taxonomy.
 
 type FileChangedPayload struct {

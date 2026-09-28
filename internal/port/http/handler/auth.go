@@ -223,7 +223,7 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 // noStore tags an auth response as uncacheable. Set-Cookie responses aren't
-// normally cached by well-behaved proxies, but Status leaks csrfToken — make
+// normally cached by well-behaved proxies, but Status leaks csrfToken, so make
 // the no-cache contract explicit.
 func noStore(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")

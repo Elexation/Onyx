@@ -128,7 +128,7 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 	// GOP size: force encoder keyframes at segment boundaries so the HLS
 	// muxer cuts where expected. Without this, x264's default keyint (250
 	// frames) produces ~8.3s segments at 29.97fps while the playlist says
-	// 6s — causing hls.js to apply a growing timestampOffset that desyncs
+	// 6s, causing hls.js to apply a growing timestampOffset that desyncs
 	// native vs transcoded playback.
 	gopFrames := HLSSegmentSeconds * 30
 	if opts.Framerate > 0 {
@@ -144,7 +144,7 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 		args = append(args, buildVideoEncoderArgs(encoder, i, r, gopFrames)...)
 	}
 
-	// Per-rendition audio mapping — each variant gets its own
+	// Per-rendition audio mapping: each variant gets its own
 	// re-encoded audio stream so the variant is self-contained. Skipped
 	// entirely for sources with no audio; the HLS muxer's var_stream_map
 	// requires referenced streams to exist, so `-map a:0?` isn't enough.

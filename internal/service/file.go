@@ -45,8 +45,8 @@ type FileService struct {
 	// request goroutine per file) and the Exists→resolve-conflict→WriteFile
 	// sequence is non-atomic, so two finalizes of the SAME destination could
 	// both pass the exists check (or pick the same keepBoth name) and clobber
-	// each other. Keying the lock by destination keeps distinct paths — the
-	// common folder-upload case — fully parallel.
+	// each other. Keying the lock by destination keeps distinct paths (the
+	// common folder-upload case) fully parallel.
 	finalizeMu    sync.Mutex
 	finalizeLocks map[string]*finalizeLock
 }
@@ -133,7 +133,7 @@ func (s *FileService) SetShares(c ShareRewriter) {
 	s.shares = c
 }
 
-// cascadeShareDelete drops shares pointing at p. Best-effort — failures
+// cascadeShareDelete drops shares pointing at p. Best-effort: failures
 // are logged but do not propagate (the underlying delete already succeeded).
 func (s *FileService) cascadeShareDelete(p string, isDir bool) {
 	if s.shares == nil {
@@ -145,7 +145,7 @@ func (s *FileService) cascadeShareDelete(p string, isDir bool) {
 }
 
 // cascadeShareRewrite updates shares from oldPath to newPath on rename/move.
-// Best-effort — failures are logged but do not propagate (the underlying
+// Best-effort: failures are logged but do not propagate (the underlying
 // rename already succeeded; a stale share row is preferable to a transaction
 // rollback that would leave the FS state ahead of the DB).
 func (s *FileService) cascadeShareRewrite(oldPath, newPath string, isDir bool) {
@@ -464,7 +464,7 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 			wentToTrash = true
 		}
 	}
-	// Pre-stat for share cascade — only needed when bypassing trash, since
+	// Pre-stat for share cascade: only needed when bypassing trash, since
 	// MoveToTrash already cascades. Source is gone by the time we cascade,
 	// so isDir must be captured before the storage delete.
 	var preStatIsDir map[string]bool

@@ -25,7 +25,7 @@ func CSRF(next http.Handler) http.Handler {
 			// Defense in depth: Auth middleware should always run before CSRF
 			// on mutating routes, which leaves either a real session or a
 			// synthetic bearer session (handled above). A nil session at this
-			// point means the route was misconfigured — fail closed.
+			// point means the route was misconfigured; fail closed.
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 			return
 		}

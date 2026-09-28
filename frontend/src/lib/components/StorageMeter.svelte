@@ -4,7 +4,7 @@
 	import { getStorageUsage } from "$lib/api/storage.js";
 	import { formatFileSize } from "$lib/utils/format.js";
 
-	let hostname = $state("—");
+	let hostname = $state("·");
 	let used = $state<number | null>(null);
 	let total = $state<number | null>(null);
 	let errored = $state(false);
@@ -48,7 +48,7 @@
 			{#if used !== null && total !== null}
 				{formatFileSize(used)} / {formatFileSize(total)}
 			{:else}
-				—
+				·
 			{/if}
 		</span>
 	</div>

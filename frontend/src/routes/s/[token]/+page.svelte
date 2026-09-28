@@ -268,7 +268,7 @@
 										/>
 										<span class="truncate text-[15px]" title={item.name}>{item.name}</span>
 									</div>
-									<div class="hidden text-right text-meta tabular-nums md:block">—</div>
+									<div class="hidden text-right text-meta tabular-nums md:block">·</div>
 									<div class="hidden md:block"></div>
 								</div>
 							{:else}

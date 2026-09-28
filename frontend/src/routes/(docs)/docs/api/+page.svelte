@@ -16,7 +16,7 @@
 			if (copyTimer) clearTimeout(copyTimer);
 			copyTimer = setTimeout(() => (copiedId = null), 2000);
 		} catch {
-			// clipboard unavailable — button stays in default state
+			// clipboard unavailable; button stays in default state
 		}
 	}
 
@@ -334,14 +334,14 @@
 				{@render codeBlock('curl -H "Authorization: Bearer onyx_TOKEN" -o thumb.jpg \\\n  "http://localhost:8080/api/thumbs/Photos/sunset.jpg?size=large"', "thumbs-curl")}
 
 				<div class="mt-3 space-y-1 text-sm text-foreground-dim">
-					<p><strong class="text-foreground">200</strong> &mdash; JPEG thumbnail bytes</p>
+					<p><strong class="text-foreground">200</strong>: JPEG thumbnail bytes</p>
 					<p>
-						<strong class="text-foreground">202</strong> &mdash; Thumbnail queued for generation.
+						<strong class="text-foreground">202</strong>: Thumbnail queued for generation.
 						Retry after 2 seconds (<code class="rounded bg-muted px-1 py-0.5 font-mono text-meta">Retry-After: 2</code>
 						header).
 					</p>
 					<p>
-						<strong class="text-foreground">415</strong> &mdash; Unsupported file type or generation
+						<strong class="text-foreground">415</strong>: Unsupported file type or generation
 						failed
 					</p>
 				</div>
@@ -361,26 +361,26 @@
 
 				<h4 class="mt-5 text-sm font-semibold">Stream Info</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
-					<code class="font-mono">GET /api/stream/info/*</code> &mdash; Returns video metadata.
+					<code class="font-mono">GET /api/stream/info/*</code>: Returns video metadata.
 				</p>
 				{@render codeBlock('{\n  "codec": "h264",\n  "width": 1920,\n  "height": 1080,\n  "duration": 120.5,\n  "bitrate": 5000000,\n  "framerate": 29.97,\n  "needsTranscode": false\n}', "stream-info-resp")}
 
 				<h4 class="mt-5 text-sm font-semibold">Playlists & Segments</h4>
 				<div class="mt-2 space-y-1 text-meta text-foreground-dim">
 					<p>
-						<code class="font-mono">GET /api/stream/master/*</code> &mdash; HLS master playlist (m3u8)
+						<code class="font-mono">GET /api/stream/master/*</code>: HLS master playlist (m3u8)
 					</p>
 					<p>
-						<code class="font-mono">GET /api/stream/playlist/&#123;v&#125;/*</code> &mdash; Variant
+						<code class="font-mono">GET /api/stream/playlist/&#123;v&#125;/*</code>: Variant
 						playlist. <code class="font-mono">v</code> = variant index (0, 1, 2...).
 					</p>
 					<p>
-						<code class="font-mono">GET /api/stream/init/&#123;v&#125;/*</code> &mdash; fMP4 init
+						<code class="font-mono">GET /api/stream/init/&#123;v&#125;/*</code>: fMP4 init
 						segment. Blocks up to 30s while ffmpeg produces it.
 					</p>
 					<p>
-						<code class="font-mono">GET /api/stream/segment/&#123;v&#125;/&#123;n&#125;/*</code>
-						&mdash; Media segment.
+						<code class="font-mono">GET /api/stream/segment/&#123;v&#125;/&#123;n&#125;/*</code>:
+						Media segment.
 						<code class="font-mono">n</code> = segment index (0-based). Blocks up to 30s.
 					</p>
 				</div>
@@ -633,7 +633,7 @@
 
 				<div class="mt-4 space-y-1 text-sm text-foreground-dim">
 					<p>
-						<strong class="text-foreground">Upload-Defer-Length</strong> is rejected &mdash; the
+						<strong class="text-foreground">Upload-Defer-Length</strong> is rejected: the
 						server requires an upfront size for enforcement.
 					</p>
 					<p>
@@ -844,14 +844,14 @@
 
 				<h4 class="mt-5 text-sm font-semibold">Permanently Delete Item</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
-					<code class="font-mono">DELETE /api/trash/&#123;id&#125;</code> &mdash; Permanently removes a
+					<code class="font-mono">DELETE /api/trash/&#123;id&#125;</code>: Permanently removes a
 					single trashed item.
 				</p>
 				{@render codeBlock('{ "status": "deleted" }', "trash-purge-resp")}
 
 				<h4 class="mt-5 text-sm font-semibold">Empty Trash</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
-					<code class="font-mono">DELETE /api/trash/</code> &mdash; Permanently removes all trashed
+					<code class="font-mono">DELETE /api/trash/</code>: Permanently removes all trashed
 					items.
 				</p>
 				{@render codeBlock('{ "status": "emptied" }', "trash-empty-resp")}
@@ -869,7 +869,7 @@
 
 				<h4 class="mt-5 text-sm font-semibold">Restore Version</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
-					<code class="font-mono">POST /api/versions/&#123;id&#125;/restore</code> &mdash; Replaces the
+					<code class="font-mono">POST /api/versions/&#123;id&#125;/restore</code>: Replaces the
 					current file with this version. The current file becomes a new version entry.
 				</p>
 				{@render codeBlock('curl -X POST "http://localhost:8080/api/versions/1/restore" \\\n  -H "Authorization: Bearer onyx_TOKEN"', "version-restore-curl")}
@@ -877,7 +877,7 @@
 
 				<h4 class="mt-5 text-sm font-semibold">Delete Version</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
-					<code class="font-mono">DELETE /api/versions/&#123;id&#125;</code> &mdash; Permanently deletes
+					<code class="font-mono">DELETE /api/versions/&#123;id&#125;</code>: Permanently deletes
 					a specific version.
 				</p>
 				{@render codeBlock('{ "status": "deleted" }', "version-delete-resp")}

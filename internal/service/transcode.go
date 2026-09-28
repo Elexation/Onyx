@@ -70,7 +70,7 @@ var ErrSegmentOutOfRange = errors.New("segment out of range")
 // TranscodeSession holds the state of one active multi-variant
 // transcode. Each session produces one set of fMP4 variants ordered
 // high-to-low (renditions[0] is the highest rung). Seek restart rewinds
-// every variant together — hls.js switches variants independently but
+// every variant together: hls.js switches variants independently but
 // our ffmpeg always has every rung at the same input timestamp.
 type TranscodeSession struct {
 	hash       string
@@ -628,8 +628,8 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	return nil
 }
 
-// waitFFmpeg reaps the process, releases the semaphore slot, and — when
-// the process failed under a hardware encoder — falls back to software
+// waitFFmpeg reaps the process, releases the semaphore slot, and (when
+// the process failed under a hardware encoder) falls back to software
 // and triggers a background re-probe.
 func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder) {
 	startTime := s.startedAt
@@ -668,7 +668,7 @@ func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s 
 			// so an Add after the close races a returned Wait (panic).
 			// close(done) must precede retryWithSoftware: a concurrent
 			// seek-restart holds s.mu inside startFFmpegLocked waiting on
-			// <-s.runDone (this done) — taking s.mu before closing deadlocks.
+			// <-s.runDone (this done): taking s.mu before closing deadlocks.
 			ts.triggerReprobe()
 			close(done)
 			ts.retryWithSoftware(s, done, fromSegment)
@@ -805,7 +805,7 @@ func (b *boundedBuffer) String() string {
 	return strings.TrimRight(string(b.buf), "\r\n")
 }
 
-// resolveSafePath mirrors ProbeService.resolveSafePath — validates
+// resolveSafePath mirrors ProbeService.resolveSafePath: validates
 // relPath via storage.Stat, cleans it, and returns the symlink-resolved
 // absolute path confined to the data directory.
 func (ts *TranscodeService) resolveSafePath(relPath string) (string, error) {
@@ -876,7 +876,7 @@ func writeMasterPlaylist(dir string, info *media.ProbeInfo, relPath string, rung
 	return os.WriteFile(filepath.Join(dir, "master.m3u8"), []byte(b.String()), 0o644)
 }
 
-// writeVariantPlaylist writes stream_{v}/playlist.m3u8 — a full VOD
+// writeVariantPlaylist writes stream_{v}/playlist.m3u8, a full VOD
 // playlist for variant v listing every segment up to the probed
 // duration. Init and segment URIs are absolute server paths.
 func writeVariantPlaylist(dir string, duration, framerate float64, relPath string, variant int, _ media.Rendition) error {

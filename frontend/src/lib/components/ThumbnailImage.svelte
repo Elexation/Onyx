@@ -135,7 +135,7 @@
 	function handleImgError() {
 		// The created URL didn't resolve in the <img>. Drop the cache entry and
 		// retry once via the IntersectionObserver path; on a second failure, fall
-		// through to the children fallback (FileIcon) — never the browser default.
+		// through to the children fallback (FileIcon), never the browser default.
 		if (imgRetried) {
 			fail();
 			return;

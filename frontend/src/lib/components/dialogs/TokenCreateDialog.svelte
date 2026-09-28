@@ -35,7 +35,7 @@
 	onDestroy(() => clearTimeout(copiedTimer));
 
 	const scopeOptions: { value: TokenScope; label: string; description: string }[] = [
-		{ value: "read", label: "Read-only", description: "GET requests only — listing, download, preview" },
+		{ value: "read", label: "Read-only", description: "GET requests only: listing, download, preview" },
 		{ value: "upload", label: "Upload + list", description: "Directory listing, upload, mkdir" },
 		{ value: "full", label: "Full access", description: "All file operations (cannot manage tokens/settings)" },
 	];
@@ -117,7 +117,7 @@
 			clearTimeout(copiedTimer);
 			copiedTimer = setTimeout(() => (copied = false), 2000);
 		} catch {
-			toast.error("Couldn't copy — select the token and copy manually");
+			toast.error("Couldn't copy. Select the token and copy manually");
 		}
 	}
 

@@ -108,7 +108,7 @@
 		folderRenames: Record<string, string>;
 		skip: Set<string>;
 	} | null = null;
-	// Warn before uploading folders with very large file counts — holding/uploading
+	// Warn before uploading folders with very large file counts: holding/uploading
 	// tens of thousands of files at once is slow and memory-heavy in the browser.
 	const LARGE_UPLOAD_THRESHOLD = 5000;
 	let largeUploadOpen = $state(false);
@@ -447,7 +447,7 @@
 					try {
 						await mkdir(full);
 					} catch {
-						// Already exists, or created by a sibling file write — ignore.
+						// Already exists, or created by a sibling file write; ignore.
 					}
 				}
 			};
@@ -711,7 +711,7 @@
 
 	// Live updates: refetch this directory's listing when the server emits
 	// a relevant event. Replaces the prior setTimeout(load, 500) hack tied
-	// to uppy 'complete' — server now emits file.changed after CompleteUpload's
+	// to uppy 'complete': server now emits file.changed after CompleteUpload's
 	// rename completes, so the next 5s poll picks it up deterministically.
 	//
 	// Coalesce burst events through a trailing-edge throttle (300ms; 2.5s while
@@ -742,7 +742,7 @@
 				return;
 			}
 			// Folder uploads finalize files into a subdirectory (e.g. /Dir/sub),
-			// so their parentPath is never this dir — but a new top-level entry
+			// so their parentPath is never this dir, but a new top-level entry
 			// still appears here. Refetch on any create anywhere in our subtree.
 			if (p.kind === "create" && typeof p.parentPath === "string") {
 				const prefix = dir === "/" ? "/" : dir + "/";

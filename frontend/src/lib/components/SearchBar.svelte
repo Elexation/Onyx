@@ -232,7 +232,7 @@
 		<div
 			class="absolute top-full left-0 z-50 mt-1.5 w-full rounded-lg border border-border-2 bg-popover"
 		>
-			<div class="px-3 py-4 text-center text-sm text-muted-foreground">Search failed — try again</div>
+			<div class="px-3 py-4 text-center text-sm text-muted-foreground">Search failed. Try again</div>
 		</div>
 	{:else if open && query.trim().length >= 1 && !loading && results.length === 0}
 		<div

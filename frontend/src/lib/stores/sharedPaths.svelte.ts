@@ -26,14 +26,14 @@ export const sharedPaths = {
 			const res = await listShares();
 			paths = new Set(res.shares.map((s) => s.filePath));
 		} catch {
-			// ignore — keep prior cache
+			// ignore, keep prior cache
 		}
 	},
 };
 
 // Cross-tab sync: refresh the cache when any tab/device creates or revokes
 // a share. Module-load subscription is safe because changes.on() just
-// registers the callback — events flow only after changes.start() runs from
+// registers the callback; events flow only after changes.start() runs from
 // (app)/+layout.svelte. Cost is one always-on listener for the SPA lifetime.
 //
 // Debounced: a poll batch with N share events would otherwise fire N full

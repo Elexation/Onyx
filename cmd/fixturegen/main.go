@@ -79,7 +79,7 @@ func main() {
 		frame2 := solidPaletted(*w, *h)
 		// Make the second frame visually distinct so a naive "take last frame"
 		// decode would be detectable. The thumbnail service decodes via
-		// image.Decode which returns the FIRST frame — the test asserts on
+		// image.Decode which returns the FIRST frame; the test asserts on
 		// first-frame content.
 		for y := 0; y < *h; y++ {
 			for x := 0; x < *w; x++ {

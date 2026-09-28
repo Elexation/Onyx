@@ -178,7 +178,7 @@ func (r *ShareRepo) DeleteByPathRecursive(dirPath string) (int64, error) {
 
 // UpdatePath rewrites the file_path of the share matching oldPath exactly.
 // No-op if no share exists. Errors propagate (e.g. UNIQUE collision if a
-// share already exists at newPath — should not happen in valid rename flows
+// share already exists at newPath; should not happen in valid rename flows
 // since the storage rename would have been rejected).
 func (r *ShareRepo) UpdatePath(oldPath, newPath string) (int64, error) {
 	res, err := r.db.Exec("UPDATE share_links SET file_path = ? WHERE file_path = ?", newPath, oldPath)

@@ -21,14 +21,14 @@
 
 	// Close the mobile drawer on any route change. Sidebar's onNavigate prop
 	// covers sidebar link clicks, but programmatic navigation (e.g. SearchBar
-	// result click -> goto()) bypasses it — this effect catches those too.
+	// result click -> goto()) bypasses it; this effect catches those too.
 	$effect(() => {
 		page.url.pathname;
 		drawerOpen = false;
 	});
 
 	// Warn before a full page reload / tab close while an upload is preparing or
-	// in flight — a real unload tears down the module-level Uppy instance,
+	// in flight: a real unload tears down the module-level Uppy instance,
 	// aborting active transfers and leaving folders partially uploaded. In-app
 	// navigation is unaffected (the instance survives route changes).
 	$effect(() => {

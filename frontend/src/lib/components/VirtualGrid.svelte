@@ -26,7 +26,7 @@
 	const columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap))));
 	const rowCount = $derived(Math.ceil(items.length / columns));
 
-	// keep `count: rowCount` alone — do NOT pass `lanes: columns` (that's
+	// keep `count: rowCount` alone; do NOT pass `lanes: columns` (that's
 	// masonry; items stack silently at y=0 when items < lanes).
 	// Create once + setOptions on prop change; re-creating inside $derived
 	// discards the row-measurement cache and observers on every refresh.

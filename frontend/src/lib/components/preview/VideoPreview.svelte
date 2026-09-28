@@ -43,7 +43,7 @@
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
 
-	// Scrub state — separate from playhead so drag motion doesn't hit
+	// Scrub state: separate from playhead so drag motion doesn't hit
 	// videoEl.currentTime on every input event. Commit happens on `change`
 	// (pointerup / Enter / blur), one write per gesture.
 	let scrubbing = $state(false);
@@ -61,7 +61,7 @@
 	// presses produce one currentTime write, not one per keydown. Held
 	// keys throttle accumulation to ~6.7/sec so the offset grows at a
 	// usable rate instead of tracking the OS key-repeat frequency.
-	// Commit fires only when all arrows are released — committing mid-hold
+	// Commit fires only when all arrows are released; committing mid-hold
 	// causes a visible jolt as the UI snaps between pre- and post-commit.
 	let keySeekOffset = $state(0);
 	let keySeekTimer: ReturnType<typeof setTimeout> | null = null;
@@ -335,7 +335,7 @@
 		if (!force && now - lastKeyAccumAt < KEY_SEEK_ACCUM_MS) return;
 		keySeekOffset += delta;
 		lastKeyAccumAt = now;
-		// Cancel any pending commit — we'll restart the settle timer on keyup.
+		// Cancel any pending commit; we'll restart the settle timer on keyup.
 		if (keySeekTimer) {
 			clearTimeout(keySeekTimer);
 			keySeekTimer = null;
@@ -469,7 +469,7 @@
 	}
 
 	function handleWindowBlur() {
-		// Alt-tab / focus loss while arrows held — we'll never get keyup.
+		// Alt-tab / focus loss while arrows held; we'll never get keyup.
 		// Commit whatever accumulated and clear held state.
 		if (heldArrows.size === 0 && keySeekOffset === 0) return;
 		heldArrows.clear();

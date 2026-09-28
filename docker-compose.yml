@@ -18,7 +18,7 @@ services:
       # all mounted directories are owned by this user before starting.
       # - PUID=1000
       # - PGID=1000
-      # Hardware-accelerated video transcoding. Values: auto (default —
+      # Hardware-accelerated video transcoding. Values: auto (default:
       # probes NVENC / QSV / VAAPI / AMF in that order), nvenc, qsv,
       # vaapi, amf, or none (force libx264). Unavailable forced encoders
       # fall back to software with a WARN log.
@@ -35,7 +35,7 @@ services:
       # Trust reverse proxy headers (X-Forwarded-Proto, X-Real-IP).
       # Required when running behind nginx, Caddy, Traefik, etc.
       # - ONYX_TRUSTED_PROXY=true
-      # Canonical domain — redirects requests with a different Host
+      # Canonical domain. Redirects requests with a different Host
       # header (e.g. IP address) to this hostname via 301.
       # - ONYX_DOMAIN=onyx.example.com
       # Separate HTTP→HTTPS redirect listener. Requires ONYX_HTTPS=true.
@@ -45,7 +45,7 @@ services:
     restart: always
     # --- GPU passthrough (uncomment the section matching your hardware) ---
     #
-    # NVIDIA (NVENC) — requires nvidia-container-toolkit on the host:
+    # NVIDIA (NVENC) requires nvidia-container-toolkit on the host:
     #   sudo apt install nvidia-container-toolkit
     #   sudo nvidia-ctk runtime configure --runtime=docker
     #   sudo systemctl restart docker
@@ -54,7 +54,7 @@ services:
     #   - NVIDIA_VISIBLE_DEVICES=all
     #   - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     #
-    # Intel (VAAPI/QSV) or AMD (VAAPI/AMF) — just pass through /dev/dri:
+    # Intel (VAAPI/QSV) or AMD (VAAPI/AMF): just pass through /dev/dri:
     # devices:
     #   - /dev/dri:/dev/dri
     #

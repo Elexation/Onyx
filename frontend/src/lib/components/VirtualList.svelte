@@ -19,7 +19,7 @@
 		externalScrollEl?: HTMLElement | null;
 	} = $props();
 
-	// Create the virtualizer once — push prop updates via setOptions in $effect
+	// Create the virtualizer once; push prop updates via setOptions in $effect
 	// instead of re-creating it inside $derived. Re-creation discards the
 	// row-measurement cache and resize/intersection observers on every items
 	// reference change (which sorted=$derived produces on every listing refresh

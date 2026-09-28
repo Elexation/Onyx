@@ -158,7 +158,7 @@ func (s *LocalStorage) Delete(paths []string) []OpResult {
 	for i, p := range paths {
 		p = cleanPath(p)
 
-		// Check existence first — RemoveAll is idempotent on missing paths
+		// Check existence first; RemoveAll is idempotent on missing paths
 		if _, err := s.root.Lstat(p); err != nil {
 			results[i] = OpResult{Path: "/" + p, Success: false, Error: err.Error()}
 			continue

@@ -23,7 +23,7 @@ func NewFileHandler(files *service.FileService) *FileHandler {
 	return &FileHandler{files: files}
 }
 
-// List handles GET /api/files/* — returns a directory listing or file metadata.
+// List handles GET /api/files/*: returns a directory listing or file metadata.
 func (h *FileHandler) List(w http.ResponseWriter, r *http.Request) {
 	filePath := extractWildcard(r, "/api/files")
 	showHidden := r.URL.Query().Get("showHidden") == "true"
@@ -57,7 +57,7 @@ func (h *FileHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, info)
 }
 
-// Download handles GET /api/download/* — serves a file with Content-Disposition: attachment.
+// Download handles GET /api/download/*: serves a file with Content-Disposition: attachment.
 func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	filePath := extractWildcard(r, "/api/download")
 
@@ -78,7 +78,7 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, modTime, file)
 }
 
-// Preview handles GET /api/preview/* — serves a file inline for browser preview.
+// Preview handles GET /api/preview/*: serves a file inline for browser preview.
 func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	filePath := extractWildcard(r, "/api/preview")
 
@@ -106,7 +106,7 @@ func (h *FileHandler) Preview(w http.ResponseWriter, r *http.Request) {
 
 // resolvePreviewContentType returns the Content-Type the browser will see for
 // an inline preview, mirroring http.ServeContent's resolution: extension first,
-// 512-byte sniff fallback. The resolved type drives the sandbox decision —
+// 512-byte sniff fallback. The resolved type drives the sandbox decision:
 // extension-only matching is bypassable via files with no extension (sniffed
 // to text/html), .xht (resolves to application/xhtml+xml), Windows-registry
 // MIME entries, or future MIME-DB additions.
@@ -126,8 +126,8 @@ func resolvePreviewContentType(file io.ReadSeeker, name string) string {
 }
 
 // isSafeInline reports whether ct is a Content-Type the browser cannot execute
-// scripts under when served inline. Anything not in this allow-list — HTML,
-// XHTML, XML, MHTML, SVG, application/octet-stream, unknown types — must be
+// scripts under when served inline. Anything not in this allow-list (HTML,
+// XHTML, XML, MHTML, SVG, application/octet-stream, unknown types) must be
 // sandboxed at the CSP layer. Allow-list is strictly safer than enumerating
 // scriptable extensions: the web evolves, mime DBs differ, attacker uploads
 // can be extension-less.

@@ -351,7 +351,7 @@
 									<div
 										class="hidden text-right text-meta tabular-nums text-muted-foreground md:block"
 									>
-										{file.isDir ? "—" : formatFileSize(file.size)}
+										{file.isDir ? "·" : formatFileSize(file.size)}
 									</div>
 									<div
 										class="hidden text-right text-meta tabular-nums text-muted-foreground md:block"

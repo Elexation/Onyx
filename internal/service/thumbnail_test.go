@@ -73,7 +73,7 @@ func TestSweep_RemovesStaleThumbnails(t *testing.T) {
 
 // TestLookup_QueueOverflowKeepsInflightClean covers case 45: when the jobs
 // channel is full, Lookup must still return StatusQueued (graceful
-// degradation) and must not leave a dangling inflight marker — otherwise
+// degradation) and must not leave a dangling inflight marker; otherwise
 // subsequent retries could never re-enqueue the work.
 func TestLookup_QueueOverflowKeepsInflightClean(t *testing.T) {
 	tmp := t.TempDir()
@@ -111,7 +111,7 @@ func TestLookup_QueueOverflowKeepsInflightClean(t *testing.T) {
 		dataDir:  dataDir,
 		realRoot: realRoot,
 		jobs:     make(chan thumbJob, 1), // deliberately tiny
-		workers:  0,                       // no worker pool — channel stays full
+		workers:  0,                       // no worker pool, channel stays full
 		failTTL:  time.Minute,
 		lruTTL:   time.Minute,
 	}
@@ -128,7 +128,7 @@ func TestLookup_QueueOverflowKeepsInflightClean(t *testing.T) {
 	}
 
 	// The default branch must delete the inflight marker for this key so a
-	// retry can try again. Count inflight entries — should be zero.
+	// retry can try again. Count inflight entries: should be zero.
 	inflightCount := 0
 	ts.inflight.Range(func(_, _ any) bool {
 		inflightCount++

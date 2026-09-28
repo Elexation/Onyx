@@ -43,7 +43,7 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 					return
 				}
 				// Synthetic session for downstream handlers. UserID=0 and
-				// empty ID are intentional — bearer-authed requests have no
+				// empty ID are intentional: bearer-authed requests have no
 				// session identity. CSRFToken is a non-matchable sentinel so
 				// a regression in IsBearerAuth can't bypass CSRF. Handlers
 				// that require a real session (ChangePassword) are guarded by

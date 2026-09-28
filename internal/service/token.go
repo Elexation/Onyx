@@ -58,7 +58,7 @@ func (s *TokenService) Create(name, scope string, expiresAt *int64) (*domain.Per
 		return nil, "", fmt.Errorf("count tokens: %w", err)
 	}
 	if count >= MaxActiveTokens {
-		return nil, "", fmt.Errorf("maximum of %d active tokens reached — revoke one to create another", MaxActiveTokens)
+		return nil, "", fmt.Errorf("maximum of %d active tokens reached. Revoke one to create another", MaxActiveTokens)
 	}
 
 	now := time.Now().Unix()
@@ -174,7 +174,7 @@ func (s *TokenService) StartCleanup(interval time.Duration) {
 // CheckScope decides whether a given (scope, method, path) combination is
 // allowed for a bearer-authenticated request. Admin-only endpoints
 // (/api/tokens, /api/auth, /api/settings) are blocked for all bearer tokens
-// regardless of scope — they require a real browser session.
+// regardless of scope; they require a real browser session.
 func CheckScope(scope, method, path string) bool {
 	// Admin endpoints are never accessible via bearer token, even with full scope.
 	// A leaked token must not be able to create more tokens, change the password,

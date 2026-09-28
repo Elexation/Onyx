@@ -6,7 +6,7 @@ import { getCsrfToken } from "$lib/api";
 let instance: Uppy | null = null;
 let emaFilterFn: ((newValue: number, oldValue: number, halfLife: number, dt: number) => number) | null = null;
 
-// Raw progress buffer — not reactive. Uppy events write here freely.
+// Raw progress buffer: not reactive. Uppy events write here freely.
 // The flush timer reads from here and batch-updates reactive uploadState.
 const rawProgress = new Map<string, number>();
 let progressDirty = false;
@@ -56,7 +56,7 @@ function startFlushTimer() {
 				: emaFilterFn!(instantSpeed, smoothedSpeed, SPEED_HALF_LIFE, dt);
 		}
 
-		// Compute ETA — withheld during warmup so the cold-seeded byte rate doesn't
+		// Compute ETA: withheld during warmup so the cold-seeded byte rate doesn't
 		// flash a wildly pessimistic estimate; the panel shows "estimating…" until then.
 		flushSamples++;
 		const remaining = uploadState.totalBytes - totalUploaded;
@@ -194,7 +194,7 @@ async function getUppy(): Promise<Uppy> {
 		if (!file) return;
 		rawProgress.delete(file.id);
 		uploadState.markComplete(file.id);
-		// Free Uppy's slot immediately and pull the next windowed file in — this
+		// Free Uppy's slot immediately and pull the next windowed file in; this
 		// keeps Uppy's working set bounded instead of holding the whole folder.
 		instance!.removeFile(file.id);
 		pumpWindow();
@@ -233,7 +233,7 @@ async function getUppy(): Promise<Uppy> {
 			uploadState.updateProgress(id, bytesUploaded);
 		}
 
-		// More windowed files still queued — keep feeding them.
+		// More windowed files still queued, keep feeding them.
 		if (windowQueue.length > 0) {
 			pumpWindow();
 			return;
@@ -268,7 +268,7 @@ export interface ConflictResolution {
 }
 
 export interface AddFilesOptions {
-	// Per-file strategy keyed by relativePath — used for loose (non-folder) drops.
+	// Per-file strategy keyed by relativePath; used for loose (non-folder) drops.
 	resolutions?: ConflictResolution;
 	// Per-top-level-folder strategy (e.g. "replace" to merge-overwrite into an
 	// existing folder). Keyed by the original top-level folder name.
@@ -395,7 +395,7 @@ function addTracked(uppy: Uppy, batch: { desc: any; group?: string }[]) {
 		}
 	}
 
-	// addFiles does NOT throw on duplicates/restrictions — it emits
+	// addFiles does NOT throw on duplicates/restrictions; it emits
 	// 'restriction-failed' and silently skips them, so only genuinely-new files
 	// arrive via 'file-added'. The try/catch guards the rare AggregateError.
 	const added: { id: string; name: string; size: number; data: unknown }[] = [];
@@ -512,7 +512,7 @@ export function cancelGroup(groupId: string) {
 	uploadState.removeGroup(groupId);
 
 	// No server-side cleanup: tus is per-file atomic, so cancelling only drops
-	// in-flight/queued files — already-completed files stay on disk. This matches
+	// in-flight/queued files; already-completed files stay on disk. This matches
 	// Drive/Dropbox/OneDrive (keep what finished, cancel the rest). The partial
 	// folder is recoverable by re-dropping → Merge.
 }
@@ -531,7 +531,7 @@ export function cancelAll() {
 	uploadState.clear();
 
 	// No server-side cleanup: already-completed files stay on disk; only in-flight
-	// and queued transfers are dropped. Matches production uploaders — see cancelGroup.
+	// and queued transfers are dropped. Matches production uploaders; see cancelGroup.
 }
 
 export function retryUpload(fileId: string) {

@@ -196,12 +196,12 @@
 			if (!togglingShare) sharingChecked = settings["shares.enabled"] === "true";
 			trashChecked = settings["trash.enabled"] === "true";
 		} catch {
-			// silent — background refresh shouldn't toast
+			// silent: background refresh shouldn't toast
 		}
 	}
 
 	async function refreshTokensQuiet() {
-		// Skip the round trip when the tokens section has never been opened —
+		// Skip the round trip when the tokens section has never been opened;
 		// background change-feed signals shouldn't pull data the user can't see.
 		if (tokens.length === 0 && section !== "tokens") return;
 		try {
@@ -209,7 +209,7 @@
 			tokens = res.tokens ?? [];
 			tokenMax = res.max;
 		} catch {
-			// silent — background refresh shouldn't toast
+			// silent: background refresh shouldn't toast
 		}
 	}
 
@@ -236,7 +236,7 @@
 				if (result.errors && Object.keys(result.errors).length > 0) {
 					toast.error(Object.values(result.errors)[0]);
 				} else if (key === "server.listen_port" || key === "server.tls_enabled") {
-					toast.success("Saved — restart server to apply");
+					toast.success("Saved. Restart server to apply");
 				} else {
 					// FolderConflictDialog quotes this cap; without a refresh it
 					// keeps promising the old one until a full reload.
@@ -505,7 +505,7 @@
 		changingPassword = true;
 		try {
 			await changePassword(currentPassword, newPassword);
-			toast.success("Password changed — other sessions invalidated");
+			toast.success("Password changed. Other sessions invalidated");
 			currentPassword = "";
 			newPassword = "";
 			confirmPassword = "";
@@ -839,7 +839,7 @@
 					{/snippet}
 					{@render row(
 						"Session lifetime (hours)",
-						"How long a sign-in stays valid. 1–720 hours (30 days). Default 720. Only affects new sessions.",
+						"How long a sign-in stays valid. 1-720 hours (30 days). Default 720. Only affects new sessions.",
 						sessionLifetime,
 						"session-lifetime",
 					)}
@@ -964,14 +964,14 @@
 
 					{#if portRestartPending || tlsRestartPending}
 						<div class="mb-5 rounded-lg border border-border-2 bg-muted/30 px-4 py-3 text-meta">
-							<span class="font-medium text-foreground">Restart pending</span>
+							<span class="font-medium text-foreground">Restart pending:</span>
 							<span class="text-muted-foreground">
 								{#if portRestartPending}
-									— currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
+									currently bound to <span class="font-mono tabular-nums text-foreground">:{activePort}</span>,
 									will switch to <span class="font-mono tabular-nums text-foreground">:{configuredPort}</span>
 									on next restart.
 								{:else}
-									— TLS {configuredTLS ? "enabled" : "disabled"} in settings, will take effect on next restart.
+									TLS {configuredTLS ? "enabled" : "disabled"} in settings, will take effect on next restart.
 								{/if}
 							</span>
 						</div>
@@ -993,10 +993,10 @@
 					{@render row(
 						"Listen port",
 						lockReason === "ONYX_PORT"
-							? "Locked — set by ONYX_PORT environment variable. Unset and restart to use this field."
+							? "Locked: set by ONYX_PORT environment variable. Unset and restart to use this field."
 							: lockReason === "docker"
-								? "Locked — running in Docker. Change the host-side port via the ONYX_PORT env var on your Docker host, then restart with docker compose up -d."
-								: "Port the server binds to. Range 1024–65535. Takes effect after restart. If you get locked out, set the ONYX_PORT environment variable and restart.",
+								? "Locked: running in Docker. Change the host-side port via the ONYX_PORT env var on your Docker host, then restart with docker compose up -d."
+								: "Port the server binds to. Range 1024-65535. Takes effect after restart. If you get locked out, set the ONYX_PORT environment variable and restart.",
 						listenPortInput,
 						"listen-port",
 					)}
@@ -1012,7 +1012,7 @@
 					{@render row(
 						"Enable TLS (HTTPS)",
 						tlsLockReason === "ONYX_HTTPS"
-							? "Locked — set by ONYX_HTTPS environment variable. Unset and restart to use this field."
+							? "Locked: set by ONYX_HTTPS environment variable. Unset and restart to use this field."
 							: "Serve HTTPS directly with a self-signed certificate. Auto-generated on first enable. Takes effect after restart.",
 						tlsSwitch,
 						"tls-enabled",

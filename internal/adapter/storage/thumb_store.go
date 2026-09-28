@@ -118,7 +118,7 @@ func (ts *ThumbStore) Touch(p string) {
 // Walk visits every regular file under the cache root. Walking continues past
 // per-entry errors (the cache is regenerable, so a transient FS error should
 // not abort the sweep), but non-NotExist errors are logged so operators see
-// real FS trouble — silent swallowing is the failure mode CLAUDE.md's
+// real FS trouble; silent swallowing is the failure mode CLAUDE.md's
 // "stat-then-delete cleanup loops" rule guards against.
 func (ts *ThumbStore) Walk(fn func(path string, info fs.FileInfo)) error {
 	return filepath.WalkDir(ts.root, func(p string, d fs.DirEntry, err error) error {

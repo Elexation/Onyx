@@ -51,7 +51,7 @@
 	let selected = $state<Set<string>>(new Set());
 	let lastSelected = $state<string | null>(null);
 
-	// Auto-purge config — drives header subtitle and per-row "purges in" cell.
+	// Auto-purge config: drives header subtitle and per-row "purges in" cell.
 	// `null` = settings fetch failed; hide subtitle/cell.
 	let purgeAgeHours = $state<number | null>(null);
 
@@ -91,7 +91,7 @@
 	});
 
 	function purgesIn(deletedAt: number): string {
-		if (purgeAgeHours === null || purgeAgeHours <= 0) return "—";
+		if (purgeAgeHours === null || purgeAgeHours <= 0) return "·";
 		const purgeAtMs = deletedAt * 1000 + purgeAgeHours * 3600 * 1000;
 		const remainingMs = purgeAtMs - Date.now();
 		if (remainingMs <= 0) return "purges soon";
@@ -501,7 +501,7 @@
 		<div class="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-meta text-muted-foreground">
 			<InfoIcon class="mt-px size-4 shrink-0" strokeWidth={2} />
 			<span>
-				Trash is disabled — new deletions are permanent. Existing items can still be restored or purged.
+				Trash is disabled. New deletions are permanent. Existing items can still be restored or purged.
 			</span>
 		</div>
 	{/if}
@@ -587,13 +587,13 @@
 										</div>
 									</div>
 									<div class="flex shrink-0 items-center text-xs tabular-nums text-muted-foreground md:hidden">
-										{item.isDir ? "—" : formatFileSize(item.size)}
+										{item.isDir ? "·" : formatFileSize(item.size)}
 									</div>
 									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
 										{formatDate(item.deletedAt)}
 									</div>
 									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
-										{item.isDir ? "—" : formatFileSize(item.size)}
+										{item.isDir ? "·" : formatFileSize(item.size)}
 									</div>
 									<div class="hidden text-center text-meta tabular-nums text-muted-foreground md:block">
 										{purgesIn(item.deletedAt)}

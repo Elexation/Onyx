@@ -167,7 +167,7 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 		return nil, nil, nil
 	}
 
-	// Defensive orphan check — covers OS-level deletes that bypassed the
+	// Defensive orphan check: covers OS-level deletes that bypassed the
 	// cascade hooks (file removed via SFTP, etc.). Stat is cheap; the
 	// uniform 403/404 elsewhere keeps us from being a token oracle.
 	if _, statErr := s.files.GetFileInfo(link.FilePath); statErr != nil && errors.Is(statErr, os.ErrNotExist) {
@@ -305,7 +305,7 @@ func (s *ShareService) SweepOrphans() (int, error) {
 		// Only delete on confirmed non-existence. Transient errors (EACCES
 		// from a backup tool, EBUSY on Windows during AV scan, EIO on a
 		// flaky disk, an unmounted backing store at boot) must not nuke
-		// share rows — share tokens are credentials with no recovery.
+		// share rows: share tokens are credentials with no recovery.
 		if !errors.Is(err, os.ErrNotExist) {
 			slog.Warn("share sweep: stat error, skipping (not deleted)", "id", link.ID, "path", link.FilePath, "error", err)
 			continue

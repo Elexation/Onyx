@@ -95,7 +95,7 @@ func TestDelete_SettingsError_DefaultsToTrash(t *testing.T) {
 		t.Fatalf("read trash dir: %v", err)
 	}
 	if len(entries) == 0 {
-		t.Error("trash dir is empty — file was permanently deleted instead of trashed")
+		t.Error("trash dir is empty: file was permanently deleted instead of trashed")
 	}
 }
 
@@ -139,7 +139,7 @@ func TestDelete_TrashDisabled_PermanentlyDeletes(t *testing.T) {
 	}
 
 	if _, err := os.Stat(filepath.Join(dataDir, "file.txt")); !os.IsNotExist(err) {
-		t.Error("file still exists — should have been permanently deleted")
+		t.Error("file still exists: should have been permanently deleted")
 	}
 }
 

@@ -131,7 +131,7 @@
 			clearTimeout(copiedTimer);
 			copiedTimer = setTimeout(() => (copied = false), 2000);
 		} catch {
-			toast.error("Couldn't copy — select the link and copy manually");
+			toast.error("Couldn't copy. Select the link and copy manually");
 		}
 	}
 

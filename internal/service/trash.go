@@ -80,7 +80,7 @@ func (s *TrashService) SetShares(c ShareCleaner) {
 }
 
 // cascadeShareDelete drops shares for the given path. Logs failures but
-// never propagates — share cascade is best-effort cleanup, not a barrier
+// never propagates: share cascade is best-effort cleanup, not a barrier
 // to the underlying trash/delete operation. Nil-safe when shares unwired.
 func (s *TrashService) cascadeShareDelete(p string, isDir bool) {
 	if s.shares == nil {
@@ -220,7 +220,7 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	}
 
 	// Cascade-clean any share pointing at the trashed path. Restore does NOT
-	// re-create shares — the user must re-share at the new location.
+	// re-create shares; the user must re-share at the new location.
 	s.cascadeShareDelete(item.OriginalPath, info.IsDir())
 
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: "add", ID: id})
@@ -291,11 +291,11 @@ func (s *TrashService) CheckRestoreConflicts(ids []string) ([]RestoreConflict, e
 // Restore moves a trashed item back to its original path. The strategy
 // parameter resolves conflicts:
 //
-//   - "replace"   — displace the existing item to trash, then restore.
+//   - "replace":    displace the existing item to trash, then restore.
 //     Reversible: the displaced item lives in trash with the same OriginalPath.
-//   - "keepBoth"  — auto-suffix (e.g. "Foo (1)") until a free name is found.
-//   - "skip"      — no filesystem action, returns ("", nil). Trash record stays.
-//   - ""          — back-compat: error if the path is occupied.
+//   - "keepBoth":   auto-suffix (e.g. "Foo (1)") until a free name is found.
+//   - "skip":       no filesystem action, returns ("", nil). Trash record stays.
+//   - "":           back-compat: error if the path is occupied.
 //
 // Returns the final restored path (empty for skip).
 func (s *TrashService) Restore(id, strategy string) (string, error) {
@@ -433,7 +433,7 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 
 	// Cascade: drop any version history attached to this file's original
 	// path. Dir items don't have per-path versions of their own, but files
-	// inside the dir would — we don't walk those here because trash stores
+	// inside the dir would. We don't walk those here because trash stores
 	// the dir as an opaque blob, so version cleanup for dir contents is
 	// left to retention.
 	if s.versions != nil && !item.IsDir {
@@ -442,7 +442,7 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 		}
 	}
 
-	// Defensive cascade — shares were already removed at trash time, but
+	// Defensive cascade: shares were already removed at trash time, but
 	// items predating this fix may still carry share rows.
 	s.cascadeShareDelete(item.OriginalPath, item.IsDir)
 
@@ -475,7 +475,7 @@ func (s *TrashService) EmptyTrash() error {
 				slog.Warn("empty trash: cleanup versions", "path", item.OriginalPath, "error", err)
 			}
 		}
-		// Defensive cascade — see permanentDeleteWithKind.
+		// Defensive cascade: see permanentDeleteWithKind.
 		s.cascadeShareDelete(item.OriginalPath, item.IsDir)
 	}
 

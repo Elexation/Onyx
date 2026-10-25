@@ -38,12 +38,12 @@
 		aria-label="Signed in as {name}"
 	>
 		<span
-			class="inline-flex size-7 items-center justify-center rounded-full bg-accent-brand-dim font-mono text-[11px] font-semibold text-accent-brand"
+			class="inline-flex size-7 items-center justify-center rounded-full bg-accent-brand-dim text-[11px] font-semibold text-accent-brand"
 			aria-hidden="true"
 		>
 			{initial}
 		</span>
-		<span class="font-mono">{name}</span>
+		<span>{name}</span>
 		<ChevronDownIcon class="size-3.5 text-muted-foreground" strokeWidth={2} />
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end" class="w-auto min-w-[13rem]">
@@ -53,7 +53,7 @@
 
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
-		class="inline-flex size-9 items-center justify-center rounded-full bg-accent-brand-dim font-mono text-meta font-semibold text-accent-brand outline-none transition-colors hover:bg-accent-brand/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent-brand/20 lg:hidden"
+		class="inline-flex size-9 items-center justify-center rounded-full bg-accent-brand-dim text-meta font-semibold text-accent-brand outline-none transition-colors hover:bg-accent-brand/20 focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent-brand/20 lg:hidden"
 		aria-label="Signed in as {name}"
 	>
 		{initial}

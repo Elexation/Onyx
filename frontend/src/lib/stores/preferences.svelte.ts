@@ -27,7 +27,11 @@ function loadPreferences(): Preferences {
 }
 
 function save(prefs: Preferences) {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+	} catch {
+		// Blocked or full storage: keep the in-memory value for this session.
+	}
 }
 
 let prefs = $state<Preferences>(loadPreferences());

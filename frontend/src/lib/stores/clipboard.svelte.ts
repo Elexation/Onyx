@@ -28,8 +28,10 @@ export const clipboard = {
 	async paste(destination: string): Promise<BatchResult[]> {
 		if (paths.length === 0) return [];
 		const fn = mode === "cut" ? move : copy;
-		const res = await fn(paths, destination);
-		paths = [];
+		const sent = paths;
+		const res = await fn(sent, destination);
+		// Keep failed items to paste again; results come back in request order
+		paths = sent.filter((_, i) => res.results[i] && !res.results[i].success);
 		return res.results;
 	},
 

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { uploadState } from "$lib/stores/upload.svelte.js";
-	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
 	import { cancelUpload, cancelGroup, cancelAll, retryUpload } from "$lib/upload/uppy.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import XIcon from "@lucide/svelte/icons/x";
@@ -11,6 +10,7 @@
 	import AlertCircleIcon from "@lucide/svelte/icons/alert-circle";
 	import FolderIcon from "@lucide/svelte/icons/folder";
 	import CancelUploadDialog from "$lib/components/dialogs/CancelUploadDialog.svelte";
+	import { formatFileSize } from "$lib/utils/format";
 
 	interface DisplayEntry {
 		type: "file" | "directory";
@@ -101,18 +101,11 @@
 			: null,
 	);
 
-	function formatSize(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-		return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-	}
+	// Shared 1000-based formatter, so the panel matches the dialogs' sizes
+	const formatSize = formatFileSize;
 
 	function formatSpeed(bytesPerSec: number): string {
-		if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
-		if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-		if (bytesPerSec < 1024 * 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
-		return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
+		return `${formatFileSize(Math.round(bytesPerSec))}/s`;
 	}
 
 	// Coarse buckets, not exact seconds: the underlying ETA twitches with every
@@ -164,7 +157,7 @@
 
 {#if uploadState.hasItems || uploadState.preparing || uploadState.scanning}
 	<div
-		class="fixed right-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card {audioPlayer.visible ? 'bottom-[168px] md:bottom-[100px]' : 'bottom-[84px] md:bottom-4'}"
+		class="fixed right-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card bottom-[calc(var(--dock-inset)_+_var(--fab-clearance))] md:bottom-[calc(var(--dock-inset)_+_1rem)]"
 	>
 		<!-- Preparing: enumeration/enqueue phase, before items exist -->
 		{#if uploadState.preparing || uploadState.scanning}
@@ -288,7 +281,7 @@
 								</div>
 								<div class="min-w-0 flex-1">
 									<div class="truncate text-xs">{entry.name}</div>
-									<span class="truncate text-[10px] text-destructive">{entry.error ?? "Upload failed"}</span>
+									<span class="truncate text-[11px] text-destructive">{entry.error ?? "Upload failed"}</span>
 								</div>
 								<div class="shrink-0">
 									{#if entry.type === "file"}
@@ -331,9 +324,9 @@
 								</div>
 								<div class="flex items-center gap-2">
 									{#if entry.status === "error"}
-										<span class="truncate font-mono text-[11px] text-destructive">{entry.error ?? "Upload failed"}</span>
+										<span class="truncate text-[11px] text-destructive">{entry.error ?? "Upload failed"}</span>
 									{:else if entry.status === "complete"}
-										<span class="font-mono text-[11px] text-muted-foreground">
+										<span class="text-[11px] tabular-nums text-muted-foreground">
 											{#if entry.type === "directory"}
 												{entry.fileCount} file{entry.fileCount !== 1 ? "s" : ""} · {formatSize(entry.size)}
 											{:else}

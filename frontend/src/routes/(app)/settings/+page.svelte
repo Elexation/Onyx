@@ -136,6 +136,9 @@
 
 	let shareDisableConfirmOpen = $state(false);
 	let versionDisableConfirmOpen = $state(false);
+	// True while a disable-confirm is open and undecided; Escape/outside close then reverts
+	let shareDisableAsking = false;
+	let versionDisableAsking = false;
 	let togglingShare = false;
 	let togglingVersion = false;
 	let versioningChecked = $state(false);
@@ -183,22 +186,82 @@
 		}
 	});
 
+	// Values typed or toggled but still inside the 500ms debounce
+	const pendingValues: Record<string, string> = {};
+	// Each pending key's value before the edit, to roll back a rejected save
+	const pendingPrev: Record<string, string | undefined> = {};
+
+	// Leaving the page must flush, not drop, pending saves: the stores already show the new value
 	onDestroy(() => {
 		for (const t of Object.values(debounceTimers)) clearTimeout(t);
+		if (Object.keys(pendingValues).length > 0) {
+			void persist({ ...pendingValues }, { ...pendingPrev });
+		}
 	});
 
-	async function refreshSettingsQuiet() {
+	// Re-align the global stores with the server after a rejected optimistic save
+	function syncStores() {
+		sharesEnabled.set(settings["shares.enabled"] === "true");
+		versioningEnabled.set(settings["versions.enabled"] === "true");
+		trashEnabled.set(settings["trash.enabled"] === "true");
+	}
+
+	function syncMirrors() {
+		if (!togglingVersion) versioningChecked = settings["versions.enabled"] === "true";
+		if (!togglingShare) sharingChecked = settings["shares.enabled"] === "true";
+		trashChecked = settings["trash.enabled"] === "true";
+	}
+
+	// True if the refresh landed
+	async function refreshSettingsQuiet(): Promise<boolean> {
 		try {
 			const res = await getSettings();
 			settings = res.values;
 			meta = res.meta;
-			if (!togglingVersion) versioningChecked = settings["versions.enabled"] === "true";
-			if (!togglingShare) sharingChecked = settings["shares.enabled"] === "true";
-			trashChecked = settings["trash.enabled"] === "true";
+			syncMirrors();
+			return true;
 		} catch {
 			// silent: background refresh shouldn't toast
+			return false;
 		}
 	}
+
+	// Save then report; on rejection resync from the server, or roll back if it is unreachable
+	async function persist(updates: Record<string, string>, prev: Record<string, string | undefined>, onSettled?: () => void) {
+		let rejected = false;
+		try {
+			const result = await updateSettings(updates);
+			if (result.errors && Object.keys(result.errors).length > 0) {
+				toast.error(Object.values(result.errors)[0]);
+				rejected = true;
+			} else if ("server.listen_port" in updates || "server.tls_enabled" in updates) {
+				toast.success("Saved. Restart server to apply");
+			} else {
+				// FolderConflictDialog quotes this cap; refresh so it isn't stale
+				if ("versions.max_file_size" in updates) versioningEnabled.refresh();
+				toast.success("Saved");
+			}
+		} catch {
+			toast.error("Failed to save setting");
+			rejected = true;
+		} finally {
+			onSettled?.();
+		}
+		if (!rejected) return;
+		if (!(await refreshSettingsQuiet())) {
+			for (const [k, v] of Object.entries(prev)) {
+				if (v === undefined) delete settings[k];
+				else settings[k] = v;
+			}
+			syncMirrors();
+		}
+		syncStores();
+	}
+
+	// Matches the server cap, which counts only unexpired tokens
+	const activeTokenCount = $derived(
+		tokens.filter((t) => !t.expiresAt || t.expiresAt * 1000 >= Date.now()).length,
+	);
 
 	async function refreshTokensQuiet() {
 		// Skip the round trip when the tokens section has never been opened;
@@ -228,28 +291,18 @@
 	});
 
 	function save(key: string, value: string) {
+		if (!(key in pendingPrev)) pendingPrev[key] = settings[key];
 		settings[key] = value;
+		pendingValues[key] = value;
 		if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
-		debounceTimers[key] = setTimeout(async () => {
-			try {
-				const result = await updateSettings({ [key]: value });
-				if (result.errors && Object.keys(result.errors).length > 0) {
-					toast.error(Object.values(result.errors)[0]);
-				} else if (key === "server.listen_port" || key === "server.tls_enabled") {
-					toast.success("Saved. Restart server to apply");
-				} else {
-					// FolderConflictDialog quotes this cap; without a refresh it
-					// keeps promising the old one until a full reload.
-					if (key === "versions.max_file_size") versioningEnabled.refresh();
-					toast.success("Saved");
-				}
-			} catch {
-				toast.error("Failed to save setting");
-				refreshSettingsQuiet();
-			} finally {
+		debounceTimers[key] = setTimeout(() => {
+			const prev = pendingPrev[key];
+			delete pendingValues[key];
+			delete pendingPrev[key];
+			void persist({ [key]: value }, { [key]: prev }, () => {
 				if (key === "shares.enabled") togglingShare = false;
 				if (key === "versions.enabled") togglingVersion = false;
-			}
+			});
 		}, 500);
 	}
 
@@ -277,20 +330,25 @@
 		togglingShare = true;
 		try {
 			const res = await shareCount();
-			if (res.count > 0) {
-				shareDisableConfirmOpen = true;
+			if (res.count === 0) {
+				toggleBool("shares.enabled", false);
 				return;
 			}
-		} catch {}
-		toggleBool("shares.enabled", false);
+		} catch {
+			// Unknown count: confirm anyway rather than delete links unasked
+		}
+		shareDisableAsking = true;
+		shareDisableConfirmOpen = true;
 	}
 
 	function confirmDisableSharing() {
+		shareDisableAsking = false;
 		shareDisableConfirmOpen = false;
 		toggleBool("shares.enabled", false);
 	}
 
 	function cancelDisableSharing() {
+		shareDisableAsking = false;
 		shareDisableConfirmOpen = false;
 		togglingShare = false;
 		sharingChecked = true;
@@ -304,20 +362,25 @@
 		togglingVersion = true;
 		try {
 			const res = await versionCount();
-			if (res.count > 0) {
-				versionDisableConfirmOpen = true;
+			if (res.count === 0) {
+				toggleBool("versions.enabled", false);
 				return;
 			}
-		} catch {}
-		toggleBool("versions.enabled", false);
+		} catch {
+			// Unknown count: confirm anyway rather than purge versions unasked
+		}
+		versionDisableAsking = true;
+		versionDisableConfirmOpen = true;
 	}
 
 	function confirmDisableVersioning() {
+		versionDisableAsking = false;
 		versionDisableConfirmOpen = false;
 		toggleBool("versions.enabled", false);
 	}
 
 	function cancelDisableVersioning() {
+		versionDisableAsking = false;
 		versionDisableConfirmOpen = false;
 		togglingVersion = false;
 		versioningChecked = true;
@@ -609,7 +672,7 @@
 					{#if section === "tokens"}
 						<Button
 							onclick={() => (tokenCreateOpen = true)}
-							disabled={tokens.length >= tokenMax}
+							disabled={activeTokenCount >= tokenMax}
 						>
 							Create Token
 						</Button>
@@ -786,14 +849,14 @@
 							min="0"
 							max="102400"
 							step="1"
-							value={bytesToMB(settings["upload.max_size"] ?? "0")}
+							value={bytesToMB(settings["upload.max_size"] ?? "107374182400")}
 							onchange={(e) => validateAndSaveMB("upload.max_size", e.currentTarget.value)}
 							class={numInputClass}
 						/>
 					{/snippet}
 					{@render row(
 						"Maximum file size (MB)",
-						"Reject uploads larger than this. 0 = unlimited, max 102,400 (100 GB). Default 0 (unlimited).",
+						"Reject uploads larger than this. 0 = unlimited, max 102,400 (100 GB). Default 102,400 (100 GB).",
 						uploadMaxSize,
 						"upload-max-size",
 					)}
@@ -891,7 +954,7 @@
 				{#if section === "tokens"}
 					<div class="border-t border-border pt-4">
 						<p class="mb-4 text-xs text-muted-foreground">
-							{tokens.length} of {tokenMax} used.
+							{activeTokenCount} of {tokenMax} used.
 						</p>
 
 						{#if tokensLoading}
@@ -915,7 +978,7 @@
 												<p class="truncate font-mono text-meta text-muted-foreground">
 													onyx_…{tok.tokenLast8}
 												</p>
-												<div class="grid grid-cols-1 gap-x-3 gap-y-0.5 font-mono text-[11px] text-muted-foreground md:grid-cols-3">
+												<div class="grid grid-cols-1 gap-x-3 gap-y-0.5 text-meta tabular-nums text-muted-foreground md:grid-cols-3">
 													<span class="truncate">Created {formatTokenDate(tok.createdAt)}</span>
 													<span class="truncate">Last used {formatLastUsed(tok.lastUsedAt)}</span>
 													<span class="truncate">Expires {formatTokenDate(tok.expiresAt)}</span>
@@ -1011,8 +1074,8 @@
 					{/snippet}
 					{@render row(
 						"Enable TLS (HTTPS)",
-						tlsLockReason === "ONYX_HTTPS"
-							? "Locked: set by ONYX_HTTPS environment variable. Unset and restart to use this field."
+						tlsLocked
+							? `Locked: set by ${tlsLockReason} environment variable. Unset and restart to use this field.`
 							: "Serve HTTPS directly with a self-signed certificate. Auto-generated on first enable. Takes effect after restart.",
 						tlsSwitch,
 						"tls-enabled",
@@ -1060,7 +1123,10 @@
 	{/if}
 </div>
 
-<AlertDialog.Root bind:open={shareDisableConfirmOpen}>
+<AlertDialog.Root
+	bind:open={shareDisableConfirmOpen}
+	onOpenChange={(o) => { if (!o) queueMicrotask(() => { if (shareDisableAsking) cancelDisableSharing(); }); }}
+>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>Disable sharing?</AlertDialog.Title>
@@ -1077,7 +1143,10 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-<AlertDialog.Root bind:open={versionDisableConfirmOpen}>
+<AlertDialog.Root
+	bind:open={versionDisableConfirmOpen}
+	onOpenChange={(o) => { if (!o) queueMicrotask(() => { if (versionDisableAsking) cancelDisableVersioning(); }); }}
+>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>Disable versioning?</AlertDialog.Title>

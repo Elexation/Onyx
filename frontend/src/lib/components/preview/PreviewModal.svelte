@@ -72,7 +72,8 @@
 
 <dialog
 	bind:this={dialogEl}
-	aria-labelledby="preview-modal-title"
+	aria-labelledby={type === "pdf" ? undefined : "preview-modal-title"}
+	aria-label={type === "pdf" ? file.name : undefined}
 	class="fixed inset-0 z-50 m-0 flex h-full max-h-full w-full max-w-full flex-col overflow-hidden border-none bg-black/80 p-0"
 	oncancel={(e) => { e.preventDefault(); closeModal(); }}
 	onclick={handleBackdropClick}
@@ -119,7 +120,7 @@
 
 		{#if tooLarge}
 			<div class="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-				<p class="text-[15px]">File too large to preview (<span class="font-mono text-meta">{formatFileSize(file.size)}</span>)</p>
+				<p class="text-[15px]">File too large to preview (<span class="text-meta tabular-nums">{formatFileSize(file.size)}</span>)</p>
 				<Button onclick={handleDownload}>
 					<DownloadIcon class="mr-2 size-4" />
 					Download
@@ -166,6 +167,12 @@
 			{:catch}
 				{@render previewError()}
 			{/await}
+		{:else if type === "audio"}
+			<!-- Share pages land here; the app's own audio plays in AudioDock -->
+			<div class="flex flex-1 items-center justify-center">
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<audio class="w-full max-w-md" controls preload="metadata" src={url ?? getPreviewUrl(file.path)} data-preview-content></audio>
+			</div>
 		{:else if type === "pdf"}
 			{#await previewLoaders.pdf()}
 				{@render previewLoading()}

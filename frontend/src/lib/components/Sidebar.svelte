@@ -73,7 +73,7 @@
 					<span class="flex-1">{link.label}</span>
 					{#if link.href === "/trash" && trashCount.count > 0}
 						<span
-							class="rounded-[5px] px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-[0.02em] text-muted-foreground {active
+							class="rounded-[5px] px-1.5 py-0.5 text-meta font-medium tabular-nums text-muted-foreground {active
 								? 'bg-background'
 								: 'bg-muted'}"
 						>

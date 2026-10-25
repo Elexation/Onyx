@@ -10,11 +10,14 @@
 		open = $bindable(false),
 		path,
 		name,
+		isDir = false,
 		onsuccess,
 	}: {
 		open: boolean;
 		path: string;
 		name: string;
+		// Folders have no extension: no ext warning, select the whole name
+		isDir?: boolean;
 		onsuccess: () => void;
 	} = $props();
 
@@ -35,7 +38,7 @@
 			requestAnimationFrame(() => {
 				if (!inputRef) return;
 				inputRef.focus();
-				const dot = newName.lastIndexOf(".");
+				const dot = isDir ? -1 : newName.lastIndexOf(".");
 				if (dot > 0) {
 					inputRef.setSelectionRange(0, dot);
 				} else {
@@ -70,7 +73,7 @@
 			open = false;
 			return;
 		}
-		if (extOf(trimmed) !== extOf(name)) {
+		if (!isDir && extOf(trimmed) !== extOf(name)) {
 			pendingName = trimmed;
 			confirmExtOpen = true;
 			return;

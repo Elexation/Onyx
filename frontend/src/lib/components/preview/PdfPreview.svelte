@@ -101,7 +101,8 @@
 	}
 
 	async function renderPage(pageNum: number) {
-		if (!pdfDoc || renderedPages.has(pageNum)) return;
+		// Skip in-flight pages too: a second call would cancel the first and orphan its task
+		if (!pdfDoc || renderedPages.has(pageNum) || renderingPages.has(pageNum)) return;
 		const page = pageProxies[pageNum - 1];
 		const canvas = canvasRefs[pageNum - 1];
 		if (!canvas || !page) return;
@@ -111,6 +112,7 @@
 
 		const gen = renderGen;
 		renderingPages.add(pageNum);
+		let task: pdfjsLib.RenderTask | undefined;
 		try {
 			const pageViewport = page.getViewport({ scale: renderScale });
 			const backingWidth = Math.round(pageViewport.width);
@@ -120,11 +122,12 @@
 			offscreen.width = backingWidth;
 			offscreen.height = backingHeight;
 
-			const task = page.render({ canvas: offscreen, viewport: pageViewport });
+			task = page.render({ canvas: offscreen, viewport: pageViewport });
 			renderTasks.set(pageNum, task);
 			await task.promise;
 
-			if (gen !== renderGen) return;
+			// clearPage (eviction) drops the entry; a stale finish must not repaint the page
+			if (gen !== renderGen || renderTasks.get(pageNum) !== task) return;
 			canvas.width = backingWidth;
 			canvas.height = backingHeight;
 			canvas.style.width = `${Math.round(baseWidths[pageNum - 1] * scale)}px`;
@@ -138,8 +141,11 @@
 			if (e instanceof Error && e.name === "RenderingCancelledException") return;
 			console.error(`Failed to render page ${pageNum}:`, e);
 		} finally {
-			renderingPages.delete(pageNum);
-			renderTasks.delete(pageNum);
+			// Only release bookkeeping this call still owns; a newer render may hold it
+			if (!task || renderTasks.get(pageNum) === task) {
+				renderingPages.delete(pageNum);
+				renderTasks.delete(pageNum);
+			}
 		}
 	}
 
@@ -205,7 +211,18 @@
 		});
 	}
 
+	// Page picked by Prev/Next/input; beats the midpoint rule until the user scrolls
+	let pinnedPage: number | null = null;
+
+	function unpinPage() {
+		pinnedPage = null;
+	}
+
 	function updateCurrentPage() {
+		if (pinnedPage !== null) {
+			currentPage = pinnedPage;
+			return;
+		}
 		if (!containerEl || pageOffsets.length === 0) return;
 		const mid = containerEl.scrollTop + containerEl.clientHeight / 2;
 		let lo = 0, hi = pageOffsets.length - 1;
@@ -221,6 +238,7 @@
 		renderPage(pageNum);
 		const ref = pageRefs[pageNum - 1];
 		if (ref) ref.scrollIntoView({ behavior: "instant", block: "start" });
+		pinnedPage = pageNum;
 	}
 
 	function handlePageInput(e: Event) {
@@ -664,7 +682,7 @@
 				onclick={(e) => e.stopPropagation()}
 			>
 				<div class="flex-1"></div>
-				<span class="text-xs tabular-nums text-zinc-400">{currentPage} / {totalPages}</span>
+				<span class="text-meta tabular-nums text-zinc-400">{currentPage} / {totalPages}</span>
 				<div class="flex flex-1 items-center justify-end gap-1">
 					{#if ondownload}
 						<Button variant="ghost" size="icon-touch" class="text-zinc-300"
@@ -689,7 +707,7 @@
 		{:else}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="flex items-center border-b border-border bg-zinc-900 px-3 py-1.5" onclick={(e) => e.stopPropagation()}>
-				<div class="flex-1"></div>
+				<div class="min-w-0 flex-1 truncate pr-3 text-[15px] font-medium text-zinc-200" title={name}>{name ?? ""}</div>
 
 				<div class="flex shrink-0 items-center gap-1.5">
 					<Button variant="ghost" size="icon-touch" class="text-zinc-300"
@@ -709,7 +727,7 @@
 							onchange={handlePageInput}
 							class="w-12 rounded-md border border-transparent bg-zinc-800 px-1 py-0.5 text-center text-xs tabular-nums text-zinc-200 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
 						/>
-						<span class="text-xs tabular-nums">/ {totalPages}</span>
+						<span class="text-meta tabular-nums">/ {totalPages}</span>
 					</div>
 					<Button variant="ghost" size="icon-touch" class="text-zinc-300"
 						disabled={currentPage >= totalPages}
@@ -778,7 +796,10 @@
 			data-pdf-scroll
 			class="flex flex-1 flex-col overflow-auto overscroll-contain pt-16 pb-3 md:pt-4"
 			onscroll={scheduleUpdateCurrentPage}
-			onwheel={handleWheel}
+			onwheel={(e) => { unpinPage(); handleWheel(e); }}
+			ontouchstart={unpinPage}
+			onpointerdown={unpinPage}
+			onkeydown={unpinPage}
 			onclick={handleContainerClick}
 		>
 			<div bind:this={innerEl} class="relative my-auto min-w-full md:my-0" style="height: {totalHeight}px; width: {contentWidth}px">

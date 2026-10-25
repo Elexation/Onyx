@@ -8,6 +8,8 @@
 	let { open = $bindable(false), children }: Props = $props();
 
 	function onKeyDown(e: KeyboardEvent) {
+		// bits-ui marks an Escape it used to close a menu; one press closes one layer
+		if (e.defaultPrevented) return;
 		if (e.key === "Escape" && open) {
 			open = false;
 		}

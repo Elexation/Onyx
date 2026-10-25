@@ -20,9 +20,11 @@
 	let {
 		conflicts,
 		onresolve,
+		oncancel,
 	}: {
 		conflicts: FolderConflictPair[];
 		onresolve: (resolutions: Record<string, FolderResolution>) => void;
+		oncancel?: () => void;
 	} = $props();
 
 	let index = $state(0);
@@ -118,6 +120,9 @@
 		{/if}
 
 		<AlertDialog.Footer>
+			{#if oncancel}
+				<Button variant="ghost" size="sm" class="sm:mr-auto" onclick={oncancel}>Cancel upload</Button>
+			{/if}
 			<Button variant="outline" size="sm" onclick={() => choose("skip")}>Skip</Button>
 			<Button variant="outline" size="sm" onclick={() => choose("keepBoth")}>Keep both</Button>
 			{#if !blockedByFile}

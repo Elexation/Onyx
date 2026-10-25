@@ -129,7 +129,8 @@
 			if (ARCHIVE_TYPES.has(mime)) return Archive;
 		}
 		const ext = getExt(n);
-		if (ext in EXT_ICON) return EXT_ICON[ext];
+		// hasOwn, not `in`: a name like "a.__proto__" would resolve to an inherited key
+		if (Object.hasOwn(EXT_ICON, ext)) return EXT_ICON[ext];
 		return File;
 	}
 
@@ -151,7 +152,7 @@
 	const tint = $derived.by(() => {
 		if (isDir) return undefined;
 		const ext = getExt(name);
-		if (EXT_COLOR[ext]) return EXT_COLOR[ext];
+		if (Object.hasOwn(EXT_COLOR, ext)) return EXT_COLOR[ext];
 		return getMimeColor(mimeType);
 	});
 </script>

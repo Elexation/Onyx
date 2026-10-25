@@ -90,3 +90,20 @@ export function formatRemainingLong(expiresAtUnix: number | null | undefined): s
 	if (!b) return "Expired";
 	return `${b.value}${b.unit} remaining`;
 }
+
+const DURATION_UNIT_SECONDS: Record<string, number> = {
+	ns: 1e-9, us: 1e-6, "µs": 1e-6, "μs": 1e-6, ms: 1e-3, s: 1, m: 60, h: 3600,
+};
+
+// Parse a Go duration ("720h", "1h30m", "500ms", "0") into hours. Null if not one
+export function parseDurationHours(s: string): number | null {
+	if (s === "0") return 0;
+	const re = /(\d+\.?\d*|\.\d+)(ns|us|µs|μs|ms|s|m|h)/y;
+	let totalSec = 0;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(s)) !== null) {
+		totalSec += parseFloat(m[1]) * DURATION_UNIT_SECONDS[m[2]];
+		if (re.lastIndex === s.length) return totalSec / 3600;
+	}
+	return null;
+}

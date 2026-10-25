@@ -26,12 +26,7 @@
 	const columns = $derived(Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap))));
 	const rowCount = $derived(Math.ceil(items.length / columns));
 
-	// keep `count: rowCount` alone; do NOT pass `lanes: columns` (that's
-	// masonry; items stack silently at y=0 when items < lanes).
-	// Create once + setOptions on prop change; re-creating inside $derived
-	// discards the row-measurement cache and observers on every refresh.
-	// Placeholder values avoid reading reactive props at script body;
-	// $effect populates real values synchronously on mount.
+	// No `lanes: columns` (masonry stacks items at y=0); create once, then setOptions
 	const virtualizer = createVirtualizer({
 		count: 0,
 		getScrollElement: () => scrollEl,
@@ -49,7 +44,7 @@
 	});
 </script>
 
-<div bind:this={scrollEl} bind:clientWidth={containerWidth} class="min-h-0 flex-1 overflow-auto">
+<div bind:this={scrollEl} bind:clientWidth={containerWidth} class="relative min-h-0 flex-1 overflow-auto">
 	<div class="relative w-full" style="height: {$virtualizer.getTotalSize()}px;">
 		{#each $virtualizer.getVirtualItems() as vRow (vRow.index)}
 			{@const rowStart = vRow.index * columns}

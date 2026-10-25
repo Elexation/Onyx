@@ -11,43 +11,42 @@ let emaFilterFn: ((newValue: number, oldValue: number, halfLife: number, dt: num
 const rawProgress = new Map<string, number>();
 let progressDirty = false;
 
-// Speed tracking (non-reactive)
+// Speed reads a monotonic counter; bookkeeping lowers uploadState totals
 let flushInterval: ReturnType<typeof setInterval> | null = null;
-let prevTotalUploaded = 0;
+let sentBytes = 0;
+let prevSentBytes = 0;
 let prevFlushTime = 0;
 let smoothedSpeed = 0;
 let flushSamples = 0;
 const SPEED_HALF_LIFE = 5000;
 const FLUSH_INTERVAL_MS = 500;
-// Withhold the ETA until the speed EMA has ramped past its cold seed (~5s of
-// progress samples). Without this, big tiny-file folders flash a wildly
-// pessimistic byte-rate ETA at startup before the connection pool warms up.
+// Ticks that moved bytes before the ETA shows, so the cold seed can't flash a bad estimate
 const ETA_WARMUP_SAMPLES = 10;
 
 function startFlushTimer() {
 	if (flushInterval) return;
 	prevFlushTime = Date.now();
-	prevTotalUploaded = uploadState.totalBytesUploaded;
+	prevSentBytes = sentBytes;
 	smoothedSpeed = 0;
 	flushSamples = 0;
 
 	flushInterval = setInterval(() => {
-		if (!progressDirty) return;
-		progressDirty = false;
-
 		const now = Date.now();
 		const dt = now - prevFlushTime;
 		prevFlushTime = now;
 
 		// Flush per-file progress to reactive state
-		for (const [id, bytesUploaded] of rawProgress) {
-			uploadState.updateProgress(id, bytesUploaded);
+		if (progressDirty) {
+			progressDirty = false;
+			for (const [id, bytesUploaded] of rawProgress) {
+				uploadState.updateProgress(id, bytesUploaded);
+			}
 		}
 
-		// Compute speed with EMA smoothing
+		// Empty ticks still sample (as zero bytes) so a real stall decays the speed
 		const totalUploaded = uploadState.totalBytesUploaded;
-		const bytesDelta = totalUploaded - prevTotalUploaded;
-		prevTotalUploaded = totalUploaded;
+		const bytesDelta = sentBytes - prevSentBytes;
+		prevSentBytes = sentBytes;
 
 		if (dt > 0) {
 			const instantSpeed = (bytesDelta / dt) * 1000;
@@ -56,9 +55,8 @@ function startFlushTimer() {
 				: emaFilterFn!(instantSpeed, smoothedSpeed, SPEED_HALF_LIFE, dt);
 		}
 
-		// Compute ETA: withheld during warmup so the cold-seeded byte rate doesn't
-		// flash a wildly pessimistic estimate; the panel shows "estimating…" until then.
-		flushSamples++;
+		// The panel shows "estimating…" until warm
+		if (bytesDelta > 0) flushSamples++;
 		const remaining = uploadState.totalBytes - totalUploaded;
 		const warm = flushSamples >= ETA_WARMUP_SAMPLES;
 		const eta = warm && smoothedSpeed > 0 ? remaining / smoothedSpeed : null;
@@ -76,7 +74,6 @@ function stopFlushTimer() {
 	progressDirty = false;
 	smoothedSpeed = 0;
 	flushSamples = 0;
-	prevTotalUploaded = 0;
 }
 
 const TUS_ENDPOINT = "/api/upload/";
@@ -124,10 +121,16 @@ const dirScopedUrlStorage = {
 			? (instance?.getFile(fileId)?.meta as Record<string, unknown> | undefined)
 			: undefined;
 		const targetDir = typeof meta?.targetDir === "string" ? meta.targetDir : null;
+		// The server finalizes with the creation-time strategy, so it must match too
+		const strategy = typeof meta?.conflictStrategy === "string" ? meta.conflictStrategy : "";
 		// Without a current targetDir to compare, offer nothing: a fresh upload
 		// is always correct, a cross-directory resume never is.
 		const entries = targetDir
-			? readTusEntries(`tus::${fingerprint}::`).filter((e) => e?.metadata?.targetDir === targetDir)
+			? readTusEntries(`tus::${fingerprint}::`).filter(
+					(e) =>
+						e?.metadata?.targetDir === targetDir &&
+						(e?.metadata?.conflictStrategy ?? "") === strategy,
+				)
 			: [];
 		return Promise.resolve(entries);
 	},
@@ -186,6 +189,8 @@ async function getUppy(): Promise<Uppy> {
 
 	instance.on("upload-progress", (file, progress) => {
 		if (!file) return;
+		// A tus restart reports a lower offset; count only forward progress
+		sentBytes += Math.max(0, progress.bytesUploaded - (rawProgress.get(file.id) ?? 0));
 		rawProgress.set(file.id, progress.bytesUploaded);
 		progressDirty = true;
 	});
@@ -228,7 +233,6 @@ async function getUppy(): Promise<Uppy> {
 	// Batch wrap-up: final progress flush, refill the window, stop the flush timer
 	// once drained. (Completed files are removed eagerly in upload-success, not here.)
 	instance.on("complete", () => {
-		// Final flush to ensure UI shows latest progress
 		for (const [id, bytesUploaded] of rawProgress) {
 			uploadState.updateProgress(id, bytesUploaded);
 		}
@@ -301,7 +305,10 @@ export async function addFiles(
 	opts: AddFilesOptions = {},
 ) {
 	const { resolutions, strategyByTop, folderRenames } = opts;
+	// cancelAll bumps scanGen; a cancel during the first-load import must win
+	const gen = uploadState.scanGen;
 	const uppy = await getUppy();
+	if (uploadState.scanGen !== gen) return;
 	enqueueAbort = false;
 
 	// Clear previous completed uploads before starting new batch
@@ -416,9 +423,7 @@ function addTracked(uppy: Uppy, batch: { desc: any; group?: string }[]) {
 	uppy.on("restriction-failed", onRestrictionFailed);
 	try {
 		uppy.addFiles(batch.map((e) => e.desc));
-	} catch {
-		// no-op
-	}
+	} catch {}
 	uppy.off("file-added", onFileAdded);
 	uppy.off("restriction-failed", onRestrictionFailed);
 
@@ -486,6 +491,7 @@ export async function startUpload() {
 export function cancelUpload(fileId: string) {
 	if (!instance) return;
 	errBench.delete(fileId);
+	rawProgress.delete(fileId);
 	try {
 		instance.removeFile(fileId);
 	} catch {
@@ -502,6 +508,7 @@ export function cancelGroup(groupId: string) {
 
 	// Capture ids before removeGroup() clears the group's file records.
 	for (const id of uploadState.groupFileIds(groupId)) {
+		rawProgress.delete(id);
 		try {
 			instance.removeFile(id);
 		} catch {
@@ -518,15 +525,12 @@ export function cancelGroup(groupId: string) {
 }
 
 export function cancelAll() {
-	if (!instance) return;
-
-	// Stop the window pump and drop everything still queued (handles cancel
-	// during the preparing/enqueue phase, not just active transfers).
+	// Stop the pump and drop the queue; clear() aborts scans and prepares even with no instance yet
 	enqueueAbort = true;
 	windowQueue = [];
 	errBench.clear();
 
-	instance.cancelAll();
+	instance?.cancelAll();
 	stopFlushTimer();
 	uploadState.clear();
 

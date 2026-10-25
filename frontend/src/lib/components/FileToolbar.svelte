@@ -2,6 +2,7 @@
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { selection } from "$lib/stores/selection.svelte.js";
 	import { clipboard } from "$lib/stores/clipboard.svelte.js";
+	import { sharesEnabled } from "$lib/stores/sharesEnabled.svelte.js";
 	import UploadButton from "$lib/components/UploadButton.svelte";
 	import FolderPlusIcon from "@lucide/svelte/icons/folder-plus";
 	import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -46,15 +47,17 @@
 			<DownloadIcon class="size-[15px]" strokeWidth={2} />
 			<span class="max-md:hidden">Download</span>
 		</Button>
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={selection.count !== 1}
-			onclick={onshare}
-		>
-			<Share2Icon class="size-[15px]" strokeWidth={2} />
-			<span class="max-md:hidden">Share</span>
-		</Button>
+		{#if sharesEnabled.enabled}
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={selection.count !== 1}
+				onclick={onshare}
+			>
+				<Share2Icon class="size-[15px]" strokeWidth={2} />
+				<span class="max-md:hidden">Share</span>
+			</Button>
+		{/if}
 		<Button
 			variant="outline"
 			size="sm"

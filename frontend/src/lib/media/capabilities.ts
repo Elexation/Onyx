@@ -74,7 +74,22 @@ function audioContentTypeFor(codec: string): string | null {
 const FALLBACK_NATIVE_CODECS = new Set(["h264", "vp8", "vp9"]);
 const FALLBACK_NATIVE_AUDIO = new Set(["", "aac", "mp3", "opus", "vorbis", "flac"]);
 
-export async function canPlayNative(info: ProbeInfo): Promise<boolean> {
+// Containers browsers can demux; AVI, MPEG-TS and FLV fail even around h264/aac
+const NATIVE_CONTAINERS = new Set(["mp4", "m4v", "mov", "webm", "ogv", "ogg"]);
+
+function isWebKitOnly(): boolean {
+	const ua = navigator.userAgent;
+	return /AppleWebKit/.test(ua) && !/(Chrome|Chromium|Edg|OPR|Android)\//.test(ua);
+}
+
+function nativeContainer(name: string): boolean {
+	const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+	if (ext === "mkv") return !isWebKitOnly();
+	return NATIVE_CONTAINERS.has(ext);
+}
+
+export async function canPlayNative(info: ProbeInfo, name?: string): Promise<boolean> {
+	if (name && !nativeContainer(name)) return false;
 	const audioCodec = info.audioCodec ?? "";
 	const fallback = () =>
 		FALLBACK_NATIVE_CODECS.has(info.codec) && FALLBACK_NATIVE_AUDIO.has(audioCodec);

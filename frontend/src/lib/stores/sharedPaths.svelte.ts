@@ -24,7 +24,8 @@ export const sharedPaths = {
 	async refresh() {
 		try {
 			const res = await listShares();
-			paths = new Set(res.shares.map((s) => s.filePath));
+			const now = Date.now() / 1000;
+			paths = new Set(res.shares.filter((s) => !s.expiresAt || s.expiresAt >= now).map((s) => s.filePath));
 		} catch {
 			// ignore, keep prior cache
 		}

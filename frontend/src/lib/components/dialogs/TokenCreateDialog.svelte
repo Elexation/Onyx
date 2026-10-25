@@ -134,10 +134,10 @@
 <Dialog.Root bind:open>
 	<Dialog.Content
 		class="sm:max-w-md"
-		escapeKeydownBehavior={createdToken ? "ignore" : "close"}
-		interactOutsideBehavior={createdToken ? "ignore" : "close"}
-		showCloseButton={!createdToken}
-		onInteractOutside={(e: Event) => { if (createdToken) e.preventDefault(); }}
+		escapeKeydownBehavior={createdToken || submitting ? "ignore" : "close"}
+		interactOutsideBehavior={createdToken || submitting ? "ignore" : "close"}
+		showCloseButton={!createdToken && !submitting}
+		onInteractOutside={(e: Event) => { if (createdToken || submitting) e.preventDefault(); }}
 	>
 		{#if createdToken}
 			<Dialog.Header>
@@ -174,11 +174,11 @@
 					</div>
 					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Scope</span>
-						<span class="font-mono text-meta">{scopeLabel(createdToken.scope)}</span>
+						<span class="text-meta">{scopeLabel(createdToken.scope)}</span>
 					</div>
 					<div class="flex justify-between gap-3">
 						<span class="text-muted-foreground">Expires</span>
-						<span class="font-mono text-meta">{formatExpiryDisplay()}</span>
+						<span class="text-meta tabular-nums">{formatExpiryDisplay()}</span>
 					</div>
 				</div>
 			</div>

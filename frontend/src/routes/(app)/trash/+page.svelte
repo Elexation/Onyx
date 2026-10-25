@@ -11,7 +11,7 @@
 		type RestoreConflictItem,
 	} from "$lib/api/trash.js";
 	import { getSettings } from "$lib/api/settings.js";
-	import { formatFileSize, formatDate } from "$lib/utils/format.js";
+	import { formatFileSize, formatDate, parseDurationHours } from "$lib/utils/format.js";
 	import { basename, dirname } from "$lib/utils.js";
 	import type { TrashItem } from "$lib/types";
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
@@ -57,28 +57,6 @@
 
 	const allIds = $derived(items.map((i) => i.id));
 
-	// Parse a Go duration string ("720h", "30m", "0", "1h30m") into hours.
-	// Bare numbers are treated as seconds (Go convention).
-	function parseDurationHours(s: string): number {
-		if (!s) return 0;
-		let totalSec = 0;
-		let any = false;
-		const re = /(\d+(?:\.\d+)?)(h|m|s)/g;
-		let m: RegExpExecArray | null;
-		while ((m = re.exec(s)) !== null) {
-			any = true;
-			const n = parseFloat(m[1]);
-			if (m[2] === "h") totalSec += n * 3600;
-			else if (m[2] === "m") totalSec += n * 60;
-			else totalSec += n;
-		}
-		if (!any) {
-			const n = parseFloat(s);
-			if (!isNaN(n)) return n / 3600;
-		}
-		return totalSec / 3600;
-	}
-
 	const purgeSubtitle = $derived.by(() => {
 		if (purgeAgeHours === null) return null;
 		if (purgeAgeHours <= 0) return "Items never auto-purge.";
@@ -95,10 +73,8 @@
 		const purgeAtMs = deletedAt * 1000 + purgeAgeHours * 3600 * 1000;
 		const remainingMs = purgeAtMs - Date.now();
 		if (remainingMs <= 0) return "purges soon";
-		const days = Math.ceil(remainingMs / 86400000);
-		if (days >= 1) return `purges in ${days}d`;
-		const hours = Math.ceil(remainingMs / 3600000);
-		return `purges in ${hours}h`;
+		if (remainingMs < 86400000) return `purges in ${Math.ceil(remainingMs / 3600000)}h`;
+		return `purges in ${Math.ceil(remainingMs / 86400000)}d`;
 	}
 
 	function applySelection(modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }, item: TrashItem) {
@@ -144,6 +120,8 @@
 	}
 
 	function handlePageKeydown(e: KeyboardEvent) {
+		// bits-ui's escape layer closes a dialog first and marks the event handled
+		if (e.defaultPrevented) return;
 		if (e.key === "Escape" && selected.size > 0 && !restoreConflictOpen && !emptyConfirmOpen && !deleteConfirmOpen && !bulkDeleteConfirmOpen) {
 			clearSelection();
 		}
@@ -167,8 +145,15 @@
 			items = trashRes.items;
 			trashCount.set(items.length);
 			loadError = false;
+			// Drop selections for items restored or purged elsewhere
+			const live = new Set(items.map((i) => i.id));
+			if ([...selected].some((id) => !live.has(id))) {
+				selected = new Set([...selected].filter((id) => live.has(id)));
+				if (lastSelected !== null && !live.has(lastSelected)) lastSelected = null;
+			}
 			if (settings) {
 				purgeAgeHours = parseDurationHours(settings.values["trash.purge_age"] ?? "720h");
+				trashEnabled.set(settings.values["trash.enabled"] === "true");
 			}
 		} catch {
 			loadError = true;
@@ -189,10 +174,12 @@
 			debounceTimer = setTimeout(load, 250);
 		};
 		const offTrash = changes.on("trash.changed", debouncedLoad);
+		const offSettings = changes.on("settings.changed", debouncedLoad);
 		const offBehind = changes.onBehind(load);
 		return () => {
 			if (debounceTimer) clearTimeout(debounceTimer);
 			offTrash();
+			offSettings();
 			offBehind();
 		};
 	});
@@ -220,6 +207,18 @@
 
 	type RestoreTally = "plain" | "replaced" | "keptBoth" | "skipped" | "failed";
 
+	// trashRL allows a burst of 20, then 5/s; back off on 429 instead of failing the item
+	async function paced<T>(fn: () => Promise<T>): Promise<T> {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await fn();
+			} catch (e) {
+				if ((e as { status?: number })?.status !== 429 || attempt >= 5) throw e;
+				await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+			}
+		}
+	}
+
 	// tryRestore wraps a single restore call with mid-batch 409 recovery.
 	// When two trash items target the same OriginalPath, the upfront
 	// pre-check sees the path empty (0 conflicts), the first restore wins,
@@ -230,7 +229,7 @@
 		strategy: RestoreStrategy | undefined,
 	): Promise<RestoreTally> {
 		try {
-			await restoreTrashItem(id, strategy);
+			await paced(() => restoreTrashItem(id, strategy));
 			if (strategy === "replace") return "replaced";
 			if (strategy === "keepBoth") return "keptBoth";
 			return "plain";
@@ -241,10 +240,11 @@
 			// Server now sees the just-restored peer as the conflicting "existing".
 			let conflictPair: ConflictPair | null = null;
 			try {
-				const { conflicts } = await checkRestoreConflicts([id]);
+				const { conflicts } = await paced(() => checkRestoreConflicts([id]));
 				if (conflicts.length > 0) {
 					const c = conflicts[0];
 					conflictPair = {
+						key: c.id,
 						path: c.path,
 						existing: { ...c.existing, isDir: c.existingIsDir },
 						incoming: { ...c.restoring, isDir: c.isDir },
@@ -256,11 +256,11 @@
 			if (!conflictPair) return "failed";
 
 			const resolutions = await awaitConflictResolution([conflictPair]);
-			const chosen = resolutions[conflictPair.path];
+			const chosen = resolutions[id];
 			if (!chosen || chosen === "skip") return "skipped";
 
 			try {
-				await restoreTrashItem(id, chosen);
+				await paced(() => restoreTrashItem(id, chosen));
 				if (chosen === "replace") return "replaced";
 				if (chosen === "keepBoth") return "keptBoth";
 				return "plain";
@@ -289,7 +289,9 @@
 
 		let resolutions: Record<string, RestoreStrategy> = {};
 		if (conflicts.length > 0) {
+			// Keyed by trash id: two items with the same original path need separate answers
 			const pairs: ConflictPair[] = conflicts.map((c) => ({
+				key: c.id,
 				path: c.path,
 				existing: { ...c.existing, isDir: c.existingIsDir },
 				incoming: { ...c.restoring, isDir: c.isDir },
@@ -297,7 +299,7 @@
 			resolutions = await awaitConflictResolution(pairs);
 		}
 
-		const conflictPathByID = new Map(conflicts.map((c) => [c.id, c.path]));
+		const conflictIDs = new Set(conflicts.map((c) => c.id));
 
 		// Capture single-item name before mutating items.
 		const singleItemName =
@@ -313,9 +315,9 @@
 		const restoredIds: string[] = [];
 
 		for (const id of ids) {
-			const conflictPath = conflictPathByID.get(id);
-			const strategy = conflictPath ? resolutions[conflictPath] : undefined;
-			if (conflictPath && (!strategy || strategy === "skip")) {
+			const conflicted = conflictIDs.has(id);
+			const strategy = conflicted ? resolutions[id] : undefined;
+			if (conflicted && (!strategy || strategy === "skip")) {
 				skipped++;
 				continue;
 			}
@@ -393,11 +395,16 @@
 	async function handleBulkPermanentDelete() {
 		const ids = [...selected];
 		submitting = true;
-		const results = await Promise.allSettled(
-			ids.map((id) => permanentDeleteTrashItem(id)),
-		);
-		const failed = results.filter((r) => r.status === "rejected").length;
-		const deleted = results.length - failed;
+		// Sequential and paced: a parallel burst over 20 trips trashRL
+		let failed = 0;
+		for (const id of ids) {
+			try {
+				await paced(() => permanentDeleteTrashItem(id));
+			} catch {
+				failed++;
+			}
+		}
+		const deleted = ids.length - failed;
 		if (failed === 0) {
 			const idSet = new Set(ids);
 			items = items.filter((i) => !idSet.has(i.id));

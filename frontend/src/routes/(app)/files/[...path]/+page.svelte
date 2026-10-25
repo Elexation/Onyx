@@ -3,6 +3,7 @@
 	import { page } from "$app/state";
 	import { goto, replaceState } from "$app/navigation";
 	import { listDirectory, getDownloadUrl, getZipDownloadUrl, move, mkdir } from "$lib/api/files.js";
+	import { basename, filesRoute } from "$lib/utils";
 	import { checkConflicts, type ConflictInfo } from "$lib/api/upload.js";
 	import type { DirectoryListing, FileInfo } from "$lib/types";
 	import type { SortField, SortDir, ViewMode } from "$lib/stores/preferences.svelte.js";
@@ -100,6 +101,8 @@
 	let folderConflictPairs = $state<FolderConflictPair[]>([]);
 	let pendingUploadFiles = $state<File[]>([]);
 	let pendingEmptyDirs = $state<string[]>([]);
+	// Folder the pending drop targets; the live path may change before it resolves
+	let pendingTargetDir = "/";
 	// Mixed-drop chaining: folder-level decisions land first, then the loose
 	// subset's ConflictDialog; upload starts only when both are resolved.
 	let pendingLoosePairs: ConflictPair[] | null = null;
@@ -264,7 +267,7 @@
 	// Actions
 	function handleOpen(item: FileInfo) {
 		if (item.isDir) {
-			goto(`/files${item.path}`);
+			goto(filesRoute(item.path));
 		} else if (getPreviewType(item) === "audio") {
 			audioPlayer.load(item.path, item.name);
 		} else if (canPreview(item)) {
@@ -349,7 +352,10 @@
 			if (failed.length === 0) {
 				toast.success(results.length === 1 ? "Pasted item" : `Pasted ${results.length} items`);
 			} else {
-				toast.error(`${failed.length} item(s) failed`);
+				const names = failed.slice(0, 3).map((r) => basename(r.path)).join(", ");
+				toast.error(`${failed.length} item(s) failed: ${names}${failed.length > 3 ? ", …" : ""}`, {
+					description: `${failed[0].error ?? "Paste failed"}. Failed items stay on the clipboard.`,
+				});
 			}
 			selection.clear();
 			refresh();
@@ -478,6 +484,7 @@
 		folderRenames: Record<string, string>,
 		skip: Set<string>,
 		resolutions?: Record<string, "replace" | "keepBoth" | "skip">,
+		cancelled: () => boolean = () => false,
 	) {
 		const dirsToCreate: string[] = [];
 		for (const d of emptyDirs) {
@@ -487,6 +494,7 @@
 			dirsToCreate.push(newTop !== top ? newTop + d.slice(top.length) : d);
 		}
 		if (dirsToCreate.length > 0) await createEmptyDirs(targetDir, dirsToCreate);
+		if (cancelled()) return;
 
 		const toUpload = files.filter((f) => {
 			const rel = relOf(f);
@@ -521,20 +529,26 @@
 	async function handleUpload(
 		files: File[],
 		emptyDirs: string[] = [],
-		opts: { confirmedLarge?: boolean } = {},
+		opts: { confirmedLarge?: boolean; targetDir?: string } = {},
 	) {
+		// Capture before any await, since the page survives navigation
+		const targetDir = opts.targetDir ?? (path || "/");
 		if (conflictOpen || folderConflictOpen || largeUploadOpen) {
 			// Not covered by UploadZone's scanning/preparing toast, so without
 			// this the drop vanishes with no trace.
 			toast.info("Finish the open upload prompt first");
 			return;
 		}
-		if (uploadState.preparing) return;
+		if (uploadState.preparing || uploadState.scanning) {
+			toast.info("Hang on, still preparing the previous drop");
+			return;
+		}
 
 		// Gate very large drops behind a confirmation before any heavy work.
 		if (!opts.confirmedLarge && files.length > LARGE_UPLOAD_THRESHOLD) {
 			pendingUploadFiles = files;
 			pendingEmptyDirs = emptyDirs;
+			pendingTargetDir = targetDir;
 			largeUploadCount = files.length;
 			largeUploadBytes = files.reduce((sum, f) => sum + f.size, 0);
 			largeUploadOpen = true;
@@ -542,8 +556,10 @@
 		}
 
 		uploadState.preparing = true;
+		// Stop upload (cancelAll) bumps scanGen; re-check after every await
+		const gen = uploadState.scanGen;
+		const cancelled = () => uploadState.scanGen !== gen;
 		try {
-			const targetDir = path || "/";
 
 			// Top-level folder names across both files and empty dirs.
 			const topCounts = new Map<string, number>();
@@ -562,30 +578,28 @@
 			// Folder drop → resolve conflicts at the folder level (one prompt per
 			// top-level folder). Avoids the 500-path cap on per-file checks.
 			if (topCounts.size > 0) {
-				let conflicts: ConflictInfo[] = [];
+				// Never upload blind: an unresolved collision fails at finalize and retries forever
+				let conflicts: ConflictInfo[];
+				let looseConflicts: ConflictInfo[] = [];
+				// Loose files beside folders get no folder prompt, so check them per file
+				const looseFiles = files.filter((f) => !relOf(f).includes("/"));
 				try {
 					conflicts = (await checkConflicts(targetDir, [...topCounts.keys()])).conflicts;
-				} catch {
-					conflicts = [];
-				}
-				// Loose files riding along with folders get no folder-level prompt,
-				// so run the per-file check for them too; unresolved they would
-				// hard-fail at finalize (terminal 422) with no dialog ever shown.
-				const looseFiles = files.filter((f) => !relOf(f).includes("/"));
-				let looseConflicts: ConflictInfo[] = [];
-				if (looseFiles.length > 0) {
-					try {
+					if (looseFiles.length > 0) {
 						looseConflicts = (await checkConflicts(targetDir, looseFiles.map(relOf))).conflicts;
-					} catch {
-						looseConflicts = [];
 					}
+				} catch {
+					if (!cancelled()) toast.error("Couldn't check for existing files. Upload not started");
+					return;
 				}
+				if (cancelled()) return;
 				if (conflicts.length === 0 && looseConflicts.length === 0) {
-					await applyFolderUpload(targetDir, files, emptyDirs, {}, {}, new Set());
+					await applyFolderUpload(targetDir, files, emptyDirs, {}, {}, new Set(), undefined, cancelled);
 					return;
 				}
 				pendingUploadFiles = files;
 				pendingEmptyDirs = emptyDirs;
+				pendingTargetDir = targetDir;
 				pendingLoosePairs =
 					looseConflicts.length > 0 ? toConflictPairs(looseConflicts, looseFiles) : null;
 				if (conflicts.length > 0) {
@@ -609,23 +623,26 @@
 			// Loose files only → existing per-file conflict flow.
 			if (files.length === 0) return;
 			const relativePaths = files.map(relOf);
+			let conflicts: ConflictInfo[];
 			try {
-				const { conflicts } = await checkConflicts(targetDir, relativePaths);
-				if (conflicts.length > 0) {
-					pendingUploadFiles = files;
-					conflictPairs = toConflictPairs(conflicts, files);
-					conflictOpen = true;
-				} else {
-					await addFiles(files, targetDir);
-					startUpload().catch(() => {});
-				}
+				conflicts = (await checkConflicts(targetDir, relativePaths)).conflicts;
 			} catch {
-				// If conflict check fails, upload anyway without conflict resolution
+				if (!cancelled()) toast.error("Couldn't check for existing files. Upload not started");
+				return;
+			}
+			if (cancelled()) return;
+			if (conflicts.length > 0) {
+				pendingUploadFiles = files;
+				pendingTargetDir = targetDir;
+				conflictPairs = toConflictPairs(conflicts, files);
+				conflictOpen = true;
+			} else {
 				await addFiles(files, targetDir);
 				startUpload().catch(() => {});
 			}
 		} finally {
-			uploadState.preparing = false;
+			// A cancelled prepare must not drop the lock a newer upload now holds
+			if (!cancelled()) uploadState.preparing = false;
 		}
 	}
 
@@ -635,7 +652,7 @@
 		const emptyDirs = pendingEmptyDirs;
 		pendingUploadFiles = [];
 		pendingEmptyDirs = [];
-		handleUpload(files, emptyDirs, { confirmedLarge: true });
+		handleUpload(files, emptyDirs, { confirmedLarge: true, targetDir: pendingTargetDir });
 	}
 
 	function handleLargeUploadCancel() {
@@ -644,9 +661,19 @@
 		pendingEmptyDirs = [];
 	}
 
+	// Abort the whole drop from either conflict prompt; nothing has been enqueued yet
+	function handleConflictCancel() {
+		conflictOpen = false;
+		folderConflictOpen = false;
+		pendingUploadFiles = [];
+		pendingEmptyDirs = [];
+		pendingLoosePairs = null;
+		pendingFolderCtx = null;
+	}
+
 	async function handleConflictResolve(resolutions: Record<string, "replace" | "keepBoth" | "skip">) {
 		conflictOpen = false;
-		const targetDir = path || "/";
+		const targetDir = pendingTargetDir;
 		const filesToUpload = pendingUploadFiles;
 		const emptyDirs = pendingEmptyDirs;
 		const folderCtx = pendingFolderCtx;
@@ -654,6 +681,8 @@
 		pendingEmptyDirs = [];
 		pendingFolderCtx = null;
 		uploadState.preparing = true;
+		const gen = uploadState.scanGen;
+		const cancelled = () => uploadState.scanGen !== gen;
 		try {
 			if (folderCtx) {
 				// Mixed drop: folder decisions were made first; the loose
@@ -666,21 +695,24 @@
 					folderCtx.folderRenames,
 					folderCtx.skip,
 					resolutions,
+					cancelled,
 				);
 			} else {
 				await addFiles(filesToUpload, targetDir, { resolutions });
 				startUpload().catch(() => {});
 			}
 		} finally {
-			uploadState.preparing = false;
+			if (!cancelled()) uploadState.preparing = false;
 		}
 	}
 
 	async function handleFolderConflictResolve(resolutions: Record<string, FolderResolution>) {
 		folderConflictOpen = false;
-		const targetDir = path || "/";
+		const targetDir = pendingTargetDir;
 
 		uploadState.preparing = true;
+		const gen = uploadState.scanGen;
+		const cancelled = () => uploadState.scanGen !== gen;
 		try {
 			const strategyByTop: Record<string, string> = {};
 			const folderRenames: Record<string, string> = {};
@@ -689,6 +721,7 @@
 				if (res === "skip") skip.add(name);
 				else if (res === "merge") strategyByTop[name] = "replace";
 				else if (res === "keepBoth") folderRenames[name] = await uniqueFolderName(targetDir, name);
+				if (cancelled()) return;
 			}
 			if (pendingLoosePairs) {
 				// Chain to the loose subset's dialog; the upload starts when it
@@ -703,21 +736,13 @@
 			const emptyDirs = pendingEmptyDirs;
 			pendingUploadFiles = [];
 			pendingEmptyDirs = [];
-			await applyFolderUpload(targetDir, files, emptyDirs, strategyByTop, folderRenames, skip);
+			await applyFolderUpload(targetDir, files, emptyDirs, strategyByTop, folderRenames, skip, undefined, cancelled);
 		} finally {
-			uploadState.preparing = false;
+			if (!cancelled()) uploadState.preparing = false;
 		}
 	}
 
-	// Live updates: refetch this directory's listing when the server emits
-	// a relevant event. Replaces the prior setTimeout(load, 500) hack tied
-	// to uppy 'complete': server now emits file.changed after CompleteUpload's
-	// rename completes, so the next 5s poll picks it up deterministically.
-	//
-	// Coalesce burst events through a trailing-edge throttle (300ms; 2.5s while
-	// uploads are active): a single thumb.ready burst on a media-heavy directory
-	// can emit one event per file, each of which would otherwise drive a full
-	// /api/files/* refetch.
+	// Refetch on change-feed events, throttled (300ms, 2.5s while uploading) so a thumb burst refetches once
 	$effect(() => {
 		const dir = normalizeDir(path);
 		const isInDir = (parent: string) => parent === dir;
@@ -756,11 +781,11 @@
 				if (p.kind === "delete") {
 					const parent = affected.slice(0, affected.lastIndexOf("/")) || "/";
 					toast.info("This folder was deleted");
-					goto(parent === "/" ? "/files" : `/files${parent}`);
+					goto(filesRoute(parent));
 				} else if (p.kind === "move" || p.kind === "rename") {
 					const newDir = p.path + dir.slice(affected.length);
 					toast.info(p.kind === "rename" ? "This folder was renamed" : "This folder was moved");
-					goto(newDir === "/" ? "/files" : `/files${newDir}`);
+					goto(filesRoute(newDir));
 				}
 			}
 		});
@@ -824,7 +849,7 @@
 		"backspace": () => {
 			const parts = path.split("/").filter(Boolean);
 			if (parts.length > 0) {
-				goto(`/files/${parts.slice(0, -1).join("/")}`);
+				goto(filesRoute(parts.slice(0, -1).join("/")));
 			} else {
 				goto("/files");
 			}
@@ -867,7 +892,10 @@
 			{error}
 		</div>
 	{:else if !loading}
-		<UploadZone currentDir={path || "/"} onupload={handleUpload}>
+		<UploadZone
+			currentDir={path || "/"}
+			onupload={(files, emptyDirs, targetDir) => handleUpload(files, emptyDirs, { targetDir })}
+		>
 			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 			<div class="flex min-h-0 flex-1 flex-col p-4" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
 				{#if activeView === "grid"}
@@ -946,6 +974,7 @@
 		bind:open={renameOpen}
 		path={renameTarget.path}
 		name={renameTarget.name}
+		isDir={renameTarget.isDir}
 		onsuccess={handleRenameSuccess}
 	/>
 {/if}
@@ -974,6 +1003,7 @@
 	<ConflictDialog
 		conflicts={conflictPairs}
 		onresolve={handleConflictResolve}
+		oncancel={handleConflictCancel}
 	/>
 {/if}
 
@@ -981,6 +1011,7 @@
 	<FolderConflictDialog
 		conflicts={folderConflictPairs}
 		onresolve={handleFolderConflictResolve}
+		oncancel={handleConflictCancel}
 	/>
 {/if}
 

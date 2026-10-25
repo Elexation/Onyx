@@ -87,6 +87,8 @@
 	}
 
 	function handleRowKeydown(e: KeyboardEvent, item: FileInfo) {
+		// Keys from inner controls (More actions) belong to them
+		if (e.target !== e.currentTarget) return;
 		if (e.key === "Enter") {
 			e.preventDefault();
 			onopen(item);
@@ -137,7 +139,7 @@
 				const row = el.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(name)}"]`);
 				if (row) {
 					row.style.transition = "none";
-					row.style.backgroundColor = "oklch(0.74 0.13 245 / 0.3)";
+					row.style.backgroundColor = "color-mix(in oklch, var(--accent-brand) 30%, transparent)";
 					t2 = setTimeout(() => {
 						row.style.transition = "background-color 1.5s ease-out";
 						rafId2 = requestAnimationFrame(() => {
@@ -194,7 +196,7 @@
 			{/snippet}
 			{#snippet children()}
 
-			<VirtualList {items} estimateSize={() => (viewport.isMobile ? 64 : 48)} externalScrollEl={scrollEl}>
+			<VirtualList {items} sizeKey={viewport.isMobile} estimateSize={() => (viewport.isMobile ? 64 : 48)} externalScrollEl={scrollEl}>
 				{#snippet row({ item, style })}
 					{@const file = item as FileInfo}
 					{#if file.name === ".."}

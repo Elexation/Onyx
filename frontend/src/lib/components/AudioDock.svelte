@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
 	import { formatMediaTime } from "$lib/utils/format.js";
 	import PlayIcon from "@lucide/svelte/icons/play";
@@ -7,16 +8,55 @@
 	import Volume1Icon from "@lucide/svelte/icons/volume-1";
 	import VolumeXIcon from "@lucide/svelte/icons/volume-x";
 	import XIcon from "@lucide/svelte/icons/x";
+	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 
 	let audioEl = $state<HTMLAudioElement | null>(null);
 	let volumeOpen = $state(false);
 	let volumePopupEl = $state<HTMLDivElement | null>(null);
 	let volumeBtnEl = $state<HTMLButtonElement | null>(null);
 
+	// AbortError (pause or track change) and NotAllowedError (autoplay blocked) aren't failures
+	function playOrFail() {
+		audioEl?.play().catch((e) => {
+			if (e?.name !== "AbortError" && e?.name !== "NotAllowedError") audioPlayer.failed = true;
+		});
+	}
+
 	function togglePlay() {
 		if (!audioEl || audioPlayer.failed) return;
-		if (audioEl.paused) audioEl.play().catch(() => { audioPlayer.failed = true; });
+		if (audioEl.paused) playOrFail();
 		else audioEl.pause();
+	}
+
+	function retry() {
+		if (!audioEl) return;
+		audioPlayer.failed = false;
+		audioEl.load();
+		playOrFail();
+	}
+
+	const VOLUME_STEP = 0.05;
+
+	function setVolume(v: number) {
+		if (!audioEl) return;
+		audioEl.volume = Math.max(0, Math.min(1, v));
+		if (audioEl.volume > 0 && audioEl.muted) audioEl.muted = false;
+	}
+
+	function handleVolumeKeydown(e: KeyboardEvent) {
+		if (!audioEl) return;
+		let next: number | null = null;
+		// Step from what the slider shows (0 while muted), read live since volumechange lags
+		const shown = audioEl.muted ? 0 : audioEl.volume;
+		if (e.key === "ArrowUp" || e.key === "ArrowRight") next = shown + VOLUME_STEP;
+		else if (e.key === "ArrowDown" || e.key === "ArrowLeft") next = shown - VOLUME_STEP;
+		else if (e.key === "Home") next = 0;
+		else if (e.key === "End") next = 1;
+		if (next === null) return;
+		e.preventDefault();
+		// Keep the window handler from treating the arrows as seeks
+		e.stopPropagation();
+		setVolume(next);
 	}
 
 	function toggleMute() {
@@ -127,7 +167,20 @@
 	$effect(() => {
 		const el = audioEl;
 		if (!el) return;
+		// Untracked: a volume change must not rerun this, since the cleanup pauses
+		untrack(() => {
+			el.volume = audioPlayer.volume;
+			el.muted = audioPlayer.muted;
+		});
 		return () => { el.pause(); };
+	});
+
+	let seenReloads = audioPlayer.reloads;
+	$effect(() => {
+		const n = audioPlayer.reloads;
+		if (n === seenReloads) return;
+		seenReloads = n;
+		untrack(retry);
 	});
 
 	const seekPercent = $derived(audioPlayer.duration > 0 ? (audioPlayer.displayTime / audioPlayer.duration) * 100 : 0);
@@ -155,7 +208,7 @@
 		<!-- Seek bar -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="group relative flex h-5 w-full cursor-pointer items-center px-0 outline-none"
+			class="group relative flex h-5 w-full cursor-pointer items-center px-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			role="slider"
 			tabindex={0}
 			aria-label="Seek"
@@ -197,9 +250,20 @@
 			</span>
 
 			<!-- Time -->
-			<span class="shrink-0 font-mono text-sm text-muted-foreground">
-				{formatMediaTime(audioPlayer.displayTime)} / {formatMediaTime(audioPlayer.duration)}
-			</span>
+			{#if audioPlayer.failed}
+				<span class="shrink-0 text-meta text-destructive">Unable to play audio</span>
+				<button
+					class="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-meta text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+					onclick={retry}
+				>
+					<RotateCcwIcon class="size-3.5" />
+					Retry
+				</button>
+			{:else}
+				<span class="shrink-0 font-mono text-sm text-muted-foreground">
+					{formatMediaTime(audioPlayer.displayTime)} / {formatMediaTime(audioPlayer.duration)}
+				</span>
+			{/if}
 
 			<!-- Volume (desktop only) -->
 			<div class="relative hidden md:block">
@@ -207,7 +271,8 @@
 					bind:this={volumeBtnEl}
 					class="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
 					onclick={handleVolumeClick}
-					aria-label={audioPlayer.muted || audioPlayer.volume === 0 ? "Unmute" : "Mute"}
+					aria-label="Volume"
+					aria-expanded={volumeOpen}
 				>
 					{#if audioPlayer.muted || audioPlayer.volume === 0}
 						<VolumeXIcon class="size-5" />
@@ -221,11 +286,11 @@
 				{#if volumeOpen}
 					<div
 						bind:this={volumePopupEl}
-						class="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg border border-border-2 bg-card px-2 py-3"
+						class="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 flex-col items-center rounded-lg border border-border-2 bg-card px-2 py-3"
 					>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
-							class="relative h-24 w-1 cursor-pointer rounded-full bg-muted outline-none"
+							class="relative h-24 w-1 cursor-pointer rounded-full bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
 							role="slider"
 							tabindex={0}
 							aria-label="Volume"
@@ -233,6 +298,7 @@
 							aria-valuemax={100}
 							aria-valuenow={Math.round(displayVolume * 100)}
 							onpointerdown={handleVolumeTrackDown}
+							onkeydown={handleVolumeKeydown}
 						>
 							<div
 								class="absolute inset-x-0 bottom-0 rounded-full bg-foreground"
@@ -243,6 +309,17 @@
 								style="bottom: {displayVolume * 100}%"
 							></div>
 						</div>
+						<button
+							class="mt-3 flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+							onclick={toggleMute}
+							aria-label={audioPlayer.muted || audioPlayer.volume === 0 ? "Unmute" : "Mute"}
+						>
+							{#if audioPlayer.muted || audioPlayer.volume === 0}
+								<VolumeXIcon class="size-4" />
+							{:else}
+								<Volume2Icon class="size-4" />
+							{/if}
+						</button>
 					</div>
 				{/if}
 			</div>

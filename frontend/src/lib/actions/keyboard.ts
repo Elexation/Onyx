@@ -17,6 +17,16 @@ function toCombo(e: KeyboardEvent): string {
 	return parts.join("+");
 }
 
+// Focusable controls that act on Enter themselves (buttons, links, rows, cards)
+const OWN_ENTER = 'button, a[href], [role="button"], [role="link"], [role="menuitem"], [role="option"], [tabindex]';
+
+// A focused inner control owns Enter; taking it here would cancel its click
+function ownsEnter(node: HTMLElement, target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) return false;
+	const control = target.closest(OWN_ENTER);
+	return !!control && control !== node && node.contains(control);
+}
+
 export const shortcuts: Action<HTMLElement, ShortcutMap> = (node, map) => {
 	let currentMap = map;
 
@@ -24,11 +34,11 @@ export const shortcuts: Action<HTMLElement, ShortcutMap> = (node, map) => {
 		if (isInputElement(e.target)) return;
 		const combo = toCombo(e);
 		const fn = currentMap[combo];
-		if (fn) {
-			e.preventDefault();
-			e.stopPropagation();
-			fn(e);
-		}
+		if (!fn) return;
+		if (combo === "enter" && ownsEnter(node, e.target)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		fn(e);
 	}
 
 	node.addEventListener("keydown", handler);

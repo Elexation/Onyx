@@ -63,7 +63,7 @@
 						required
 						autofocus
 					/>
-					<p class="text-[11px] text-muted-foreground">Password reset is via the server CLI. Store it somewhere safe.</p>
+					<p class="text-[11px] text-muted-foreground">Forgot it? Run <code class="font-mono">onyx reset-password</code> on the server.</p>
 				</div>
 				{#if error}
 					<p class="text-sm text-destructive">{error}</p>

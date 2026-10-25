@@ -2,6 +2,7 @@
 	import HomeIcon from "@lucide/svelte/icons/home";
 	import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
 	import { droppable } from "$lib/actions/droppable.js";
+	import { filesRoute } from "$lib/utils";
 
 	let {
 		path = "",
@@ -16,7 +17,7 @@
 		const parts = path.split("/").filter(Boolean);
 		return parts.map((name, i) => ({
 			name,
-			href: "/files/" + parts.slice(0, i + 1).join("/"),
+			href: filesRoute(parts.slice(0, i + 1).join("/")),
 			dirPath: parts.slice(0, i + 1).join("/"),
 			isLast: i === parts.length - 1,
 		}));

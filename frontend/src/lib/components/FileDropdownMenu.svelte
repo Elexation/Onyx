@@ -82,7 +82,7 @@
 				<DropdownMenu.Shortcut>Enter</DropdownMenu.Shortcut>
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
-			{#if selection.count <= 1}
+			{#if !(selection.has(item?.path ?? "") && selection.count > 1)}
 				<DropdownMenu.Item onclick={onrename}>
 					<PencilIcon />
 					Rename

@@ -6,6 +6,7 @@
 	import { formatFileSize, formatDate } from "$lib/utils/format.js";
 	import LoadingState from "$lib/components/LoadingState.svelte";
 	import type { FileVersion } from "$lib/types";
+	import { versioningEnabled } from "$lib/stores/versioningEnabled.svelte.js";
 
 	let {
 		open = $bindable(false),
@@ -20,6 +21,15 @@
 	let versions = $state<FileVersion[]>([]);
 	let loading = $state(false);
 	let busy = $state<{ id: number; action: "restore" | "delete" } | null>(null);
+	// Both actions are destructive (restore may have no backup), so each asks inline first
+	let confirming = $state<{ id: number; action: "restore" | "delete" } | null>(null);
+
+	// The server snapshots the current file before a restore, but skips files over this cap
+	const restoreNote = $derived(
+		versioningEnabled.maxFileSize > 0
+			? `The current file is saved as a version first, unless it is over ${formatFileSize(versioningEnabled.maxFileSize)}.`
+			: "The current file is saved as a version first.",
+	);
 
 	async function load() {
 		if (!path) return;
@@ -37,11 +47,13 @@
 
 	$effect(() => {
 		if (open && path) {
+			confirming = null;
 			load();
 		}
 	});
 
 	async function handleRestore(v: FileVersion) {
+		confirming = null;
 		busy = { id: v.id, action: "restore" };
 		try {
 			await restoreVersion(v.id);
@@ -56,6 +68,7 @@
 	}
 
 	async function handleDelete(v: FileVersion) {
+		confirming = null;
 		busy = { id: v.id, action: "delete" };
 		try {
 			await deleteVersion(v.id);
@@ -90,27 +103,43 @@
 						<li class="flex items-center justify-between gap-3 px-3 py-2.5">
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-meta tabular-nums text-foreground">{formatDate(v.createdAt)}</p>
-								<p class="text-[11px] tabular-nums text-muted-foreground">{formatFileSize(v.size)}</p>
+								<p class="text-meta tabular-nums text-muted-foreground">{formatFileSize(v.size)}</p>
+								{#if confirming?.id === v.id}
+									<p class="mt-1 text-xs text-muted-foreground">
+										{confirming.action === "restore" ? `Replace the current file with this version? ${restoreNote}` : "Permanently delete this version? This can't be undone."}
+									</p>
+								{/if}
 							</div>
 							<div class="flex shrink-0 gap-2">
-								<Button
-									size="sm"
-									variant="outline"
-									disabled={busy !== null}
-									loading={busy?.id === v.id && busy?.action === "restore"}
-									onclick={() => handleRestore(v)}
-								>
-									Restore
-								</Button>
-								<Button
-									size="sm"
-									variant="destructive"
-									disabled={busy !== null}
-									loading={busy?.id === v.id && busy?.action === "delete"}
-									onclick={() => handleDelete(v)}
-								>
-									Delete
-								</Button>
+								{#if confirming?.id === v.id}
+									<Button size="sm" variant="outline" onclick={() => (confirming = null)}>Cancel</Button>
+									<Button
+										size="sm"
+										variant="destructive"
+										onclick={() => (confirming?.action === "restore" ? handleRestore(v) : handleDelete(v))}
+									>
+										{confirming.action === "restore" ? "Restore" : "Delete"}
+									</Button>
+								{:else}
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={busy !== null}
+										loading={busy?.id === v.id && busy?.action === "restore"}
+										onclick={() => (confirming = { id: v.id, action: "restore" })}
+									>
+										Restore
+									</Button>
+									<Button
+										size="sm"
+										variant="destructive"
+										disabled={busy !== null}
+										loading={busy?.id === v.id && busy?.action === "delete"}
+										onclick={() => (confirming = { id: v.id, action: "delete" })}
+									>
+										Delete
+									</Button>
+								{/if}
 							</div>
 						</li>
 					{/each}

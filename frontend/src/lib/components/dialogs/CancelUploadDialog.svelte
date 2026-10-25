@@ -24,7 +24,7 @@
 
 		<DialogCallout icon={TriangleAlertIcon}>
 			<div class="text-xs text-muted-foreground">
-				You can re-drop the folder later to finish the remaining files.
+				To finish later, upload the same items again. Merge and Replace send every file again, including ones that already finished.
 			</div>
 		</DialogCallout>
 

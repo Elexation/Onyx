@@ -6,6 +6,7 @@
 	import BrandMark from "./BrandMark.svelte";
 	import UserChip from "./UserChip.svelte";
 	import { Button } from "$lib/components/ui/button/index.js";
+	import { viewport } from "$lib/stores/viewport.svelte.js";
 
 	interface Props {
 		drawerOpen?: boolean;
@@ -23,6 +24,11 @@
 	function closeMobileSearch() {
 		mobileSearchOpen = false;
 	}
+
+	// The mobile search UI is md:hidden; left open past the breakpoint it hides the logo and user menu
+	$effect(() => {
+		if (!viewport.isMobile) mobileSearchOpen = false;
+	});
 </script>
 
 <HeaderShell

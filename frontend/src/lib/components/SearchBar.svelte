@@ -3,6 +3,7 @@
 	import { search, type SearchResponse } from "$lib/api/search.js";
 	import type { SearchResult } from "$lib/types";
 	import FileIcon from "./FileIcon.svelte";
+	import { filesRoute } from "$lib/utils";
 	import SearchIcon from "@lucide/svelte/icons/search";
 
 	let {
@@ -82,11 +83,11 @@
 		inputEl?.blur();
 
 		if (result.isDir) {
-			goto(`/files${result.path}`);
+			goto(filesRoute(result.path));
 		} else {
 			const lastSlash = result.path.lastIndexOf("/");
 			const parentDir = lastSlash > 0 ? result.path.substring(0, lastSlash) : "";
-			goto(`/files${parentDir}`, { state: { highlight: result.name } });
+			goto(filesRoute(parentDir), { state: { highlight: result.name } });
 		}
 	}
 
@@ -169,7 +170,7 @@
 
 <div class="relative w-full" bind:this={containerEl}>
 	<div
-		class="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 transition-colors focus-within:border-ring"
+		class="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 transition-colors focus-within:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50"
 	>
 		<SearchIcon class="size-4 shrink-0 text-muted-foreground" strokeWidth={2} />
 		<input
@@ -180,6 +181,7 @@
 				if (results.length > 0 && query.trim().length >= 1) open = true;
 			}}
 			type="text"
+			maxlength={256}
 			placeholder="Search files, folders, contents…"
 			class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground-2 outline-none"
 		/>
@@ -222,7 +224,7 @@
 			{/each}
 			{#if total > results.length}
 				<div
-					class="border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground"
+					class="border-t border-border px-3 py-1.5 text-meta tabular-nums text-muted-foreground"
 				>
 					{total - results.length} more result{total - results.length === 1 ? "" : "s"}
 				</div>

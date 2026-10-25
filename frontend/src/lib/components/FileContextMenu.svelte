@@ -90,7 +90,7 @@
 				<ContextMenu.Shortcut>Enter</ContextMenu.Shortcut>
 			</ContextMenu.Item>
 			<ContextMenu.Separator />
-			{#if selection.count <= 1}
+			{#if !(selection.has(item?.path ?? "") && selection.count > 1)}
 				<ContextMenu.Item onclick={onrename}>
 					<PencilIcon />
 					Rename

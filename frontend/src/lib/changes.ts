@@ -3,17 +3,20 @@ type BehindListener = () => void;
 
 let es: EventSource | null = null;
 let active = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 const listeners = new Map<string, Set<Listener>>();
 const behindListeners = new Set<BehindListener>();
 
 function connect() {
-	if (es) return;
+	reconnectTimer = null;
+	// A reconnect scheduled before stop() must not reopen the stream
+	if (es || !active) return;
 	es = new EventSource("/api/changes");
 	es.onerror = () => {
 		if (es?.readyState === EventSource.CLOSED) {
 			disconnect();
-			if (active) setTimeout(connect, 5000);
+			if (active) reconnectTimer = setTimeout(connect, 5000);
 		}
 	};
 	es.onmessage = (e) => {
@@ -61,6 +64,8 @@ export const changes = {
 	stop(): void {
 		if (!active) return;
 		active = false;
+		if (reconnectTimer) clearTimeout(reconnectTimer);
+		reconnectTimer = null;
 		disconnect();
 	},
 

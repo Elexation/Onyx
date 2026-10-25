@@ -47,8 +47,7 @@
 					1,
 					Math.floor((containerWidth + gap) / (minItemWidth + gap)),
 				);
-				// Grid uses 1fr columns, so actual rendered column width ≠ minItemWidth.
-				// Marquee hit-test needs the real stride.
+				// 1fr columns render wider than minItemWidth; the marquee hit-test needs the real stride
 				const actualItemWidth = (containerWidth - (columns - 1) * gap) / columns;
 				return {
 					mode: "grid",
@@ -85,7 +84,7 @@
 				const card = el.querySelector<HTMLElement>(`[data-file-name="${CSS.escape(name)}"]`);
 				if (card) {
 					card.style.transition = "none";
-					card.style.backgroundColor = "oklch(0.74 0.13 245 / 0.3)";
+					card.style.backgroundColor = "color-mix(in oklch, var(--accent-brand) 30%, transparent)";
 					t2 = setTimeout(() => {
 						card.style.transition = "background-color 1.5s ease-out";
 						rafId2 = requestAnimationFrame(() => {

@@ -29,6 +29,11 @@
 	async function submit() {
 		const trimmed = folderName.trim();
 		if (!trimmed) return;
+		// Same rules as rename: a bare name, never a path
+		if (/[/\\]/.test(trimmed) || trimmed === "." || trimmed === "..") {
+			toast.error('Folder names can\'t contain "/" or "\\", or be "." or ".."');
+			return;
+		}
 		const fullPath = parentPath ? `${parentPath}/${trimmed}` : trimmed;
 		submitting = true;
 		try {

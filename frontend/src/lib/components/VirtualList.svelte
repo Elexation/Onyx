@@ -10,6 +10,7 @@
 		row,
 		scrollEl = $bindable<HTMLDivElement | null>(null),
 		externalScrollEl = null,
+		sizeKey = undefined,
 	}: {
 		items: unknown[];
 		estimateSize?: () => number;
@@ -17,14 +18,11 @@
 		row: Snippet<[{ item: unknown; index: number; style: string }]>;
 		scrollEl?: HTMLDivElement | null;
 		externalScrollEl?: HTMLElement | null;
+		// Change it when estimateSize's result changes (e.g. mobile row height)
+		sizeKey?: unknown;
 	} = $props();
 
-	// Create the virtualizer once; push prop updates via setOptions in $effect
-	// instead of re-creating it inside $derived. Re-creation discards the
-	// row-measurement cache and resize/intersection observers on every items
-	// reference change (which sorted=$derived produces on every listing refresh
-	// / change-feed tick). Placeholder count=0 avoids reading reactive props at
-	// script body; $effect populates real values synchronously on mount.
+	// Create once, then setOptions: re-creating drops the measurement cache every refresh
 	const virtualizer = createVirtualizer({
 		count: 0,
 		getScrollElement: () => externalScrollEl ?? scrollEl,
@@ -32,13 +30,21 @@
 		overscan: 5,
 	});
 
+	let measuredKey: unknown = undefined;
 	$effect(() => {
-		get(virtualizer).setOptions({
+		const key = sizeKey;
+		const v = get(virtualizer);
+		v.setOptions({
 			count: items.length,
 			getScrollElement: () => externalScrollEl ?? scrollEl,
 			estimateSize,
 			overscan,
 		});
+		// Cached row sizes ignore estimateSize changes; drop them when the key flips
+		if (key !== measuredKey) {
+			measuredKey = key;
+			v.measure();
+		}
 	});
 </script>
 

@@ -11,11 +11,15 @@ export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
 export type WithoutChildren<T> = T extends { children?: any } ? Omit<T, "children"> : T;
 export type WithoutChildrenOrChild<T> = WithoutChildren<WithoutChild<T>>;
 
-// Escapes each path segment for use in a URL. Preserves `/` separators while
-// encoding `#`, `?`, `%`, spaces, and other reserved characters that would
-// otherwise break routing or become fragments/query strings.
+// Encode each path segment, keeping "/" separators
 export function encodeFilePath(path: string): string {
 	return path.split("/").map(encodeURIComponent).join("/");
+}
+
+// SPA route for a folder/file path, segments encoded so "#", "?" and "%" survive
+export function filesRoute(path: string): string {
+	const trimmed = path.replace(/^\/+/, "");
+	return trimmed ? `/files/${encodeFilePath(trimmed)}` : "/files";
 }
 
 export function basename(path: string): string {

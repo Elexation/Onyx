@@ -35,7 +35,6 @@
 	let copiedTimer: ReturnType<typeof setTimeout>;
 	let loading = $state(false);
 	let existing = $state<ShareLink | null>(null);
-	let revoking = $state(false);
 	let showCreateForm = $state(false);
 	let urlInputRef = $state<HTMLInputElement | null>(null);
 	let closeEnabled = $state(false);
@@ -89,7 +88,15 @@
 
 	async function submit() {
 		submitting = true;
+		let revoked = false;
 		try {
+			// One link per path, so Replace must revoke the old link first
+			if (existing) {
+				await deleteShare(existing.id);
+				existing = null;
+				sharedPaths.remove(path);
+				revoked = true;
+			}
 			const result = await createShare({
 				path,
 				isDir,
@@ -102,25 +109,10 @@
 			sharedPaths.add(path);
 			toast.success("Share link created");
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Failed to create share");
+			const reason = e instanceof Error ? e.message : "Failed to create share";
+			toast.error(revoked ? `The old link was revoked, but a new one couldn't be created: ${reason}` : reason);
 		} finally {
 			submitting = false;
-		}
-	}
-
-	async function revoke() {
-		if (!existing) return;
-		revoking = true;
-		try {
-			await deleteShare(existing.id);
-			existing = null;
-			showCreateForm = true;
-			sharedPaths.remove(path);
-			toast.success("Share link revoked");
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : "Failed to revoke share");
-		} finally {
-			revoking = false;
 		}
 	}
 
@@ -140,17 +132,17 @@
 <Dialog.Root bind:open>
 	<Dialog.Content
 		class="sm:max-w-md"
-		escapeKeydownBehavior={shareUrl ? "ignore" : "close"}
-		interactOutsideBehavior={shareUrl ? "ignore" : "close"}
-		showCloseButton={!shareUrl}
-		onInteractOutside={(e: Event) => { if (shareUrl) e.preventDefault(); }}
+		escapeKeydownBehavior={shareUrl || submitting ? "ignore" : "close"}
+		interactOutsideBehavior={shareUrl || submitting ? "ignore" : "close"}
+		showCloseButton={!shareUrl && !submitting}
+		onInteractOutside={(e: Event) => { if (shareUrl || submitting) e.preventDefault(); }}
 	>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<LinkIcon class="size-4" />
 				Share
 			</Dialog.Title>
-			<Dialog.Description class="truncate">
+			<Dialog.Description class="truncate font-mono text-xs">
 				{path}
 			</Dialog.Description>
 		</Dialog.Header>
@@ -204,11 +196,16 @@
 					{/if}
 				</div>
 				<p class="text-xs text-muted-foreground">
-					Lost the link? Revoke it and create a new one.
+					Lost the link? Replace it with a new one.
 				</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4">
+				{#if existing}
+					<p class="text-xs text-muted-foreground">
+						The current link stops working when you create the new one.
+					</p>
+				{/if}
 				<div class="flex flex-col gap-2">
 					<Label>Expiration</Label>
 					<Select.Root type="single" bind:value={expiresIn}>
@@ -246,15 +243,20 @@
 		{:else if existing && !showCreateForm}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (open = false)}>Close</Button>
-				<Button variant="destructive" onclick={revoke} disabled={revoking}>
-					{revoking ? "Revoking…" : "Revoke & Create New"}
+				<Button variant="destructive" onclick={() => (showCreateForm = true)}>
+					Replace Link…
 				</Button>
 			</Dialog.Footer>
 		{:else if !loading}
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-				<Button onclick={submit} loading={submitting} disabled={usePassword && !password}>
-					{submitting ? "Creating…" : "Create Link"}
+				<Button variant="outline" onclick={() => (open = false)} disabled={submitting}>Cancel</Button>
+				<Button
+					variant={existing ? "destructive" : "default"}
+					onclick={submit}
+					loading={submitting}
+					disabled={usePassword && !password}
+				>
+					{submitting ? "Creating…" : existing ? "Replace Link" : "Create Link"}
 				</Button>
 			</Dialog.Footer>
 		{/if}

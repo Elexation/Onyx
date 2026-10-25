@@ -11,6 +11,8 @@ class AudioPlayerState {
 	volume = $state(1);
 	muted = $state(false);
 	failed = $state(false);
+	// Bumped when a failed track is reopened; the dock reloads the element on change
+	reloads = $state(0);
 
 	scrubbing = $state(false);
 	scrubTime = $state(0);
@@ -20,7 +22,11 @@ class AudioPlayerState {
 	progress = $derived(this.duration > 0 ? this.displayTime / this.duration : 0);
 
 	load(path: string, name: string) {
-		if (this.path === path) return;
+		if (this.path === path) {
+			// Same src, so the element only refetches if the dock reloads it
+			if (this.failed) this.reloads++;
+			return;
+		}
 		this.path = path;
 		this.name = name;
 		this.url = getPreviewUrl(path);

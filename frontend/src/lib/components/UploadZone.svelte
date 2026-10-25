@@ -11,7 +11,8 @@
 		children,
 	}: {
 		currentDir: string;
-		onupload: (files: File[], emptyDirs: string[]) => void | Promise<void>;
+		// targetDir is currentDir at drop time, not after the scan
+		onupload: (files: File[], emptyDirs: string[], targetDir: string) => void | Promise<void>;
 		children: Snippet;
 	} = $props();
 
@@ -112,6 +113,7 @@
 			return;
 		}
 
+		const dropDir = currentDir || "/";
 		const dt = event.dataTransfer!;
 		// Kick off file enumeration first (it captures its own entries
 		// synchronously), then grab our own entry handles for empty-dir
@@ -158,7 +160,7 @@
 		// as "couldn't read the dropped items".
 		if (files.length > 0 || emptyDirs.length > 0) {
 			try {
-				await onupload(files, emptyDirs);
+				await onupload(files, emptyDirs, dropDir);
 			} catch {
 				toast.error("Upload failed to start");
 			}

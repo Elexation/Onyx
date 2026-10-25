@@ -9,6 +9,8 @@
 
 import Hls from "hls.js";
 
+const MAX_NETWORK_RETRIES = 3;
+
 export type HlsLevel = {
 	index: number;
 	height: number;
@@ -39,6 +41,8 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	let fatalCb: ((data: unknown) => void) | null = null;
 	let recoveryAttempts = 0;
 	let lastRecoveryAt = 0;
+	// Capped: an endless startLoad on a 403 or 429 hammers the shared rate limit
+	let networkRetries = 0;
 	const hls = new Hls({
 		maxBufferLength: 60,
 		maxMaxBufferLength: 600,
@@ -47,11 +51,27 @@ export function createHlsPlayer(videoEl: HTMLVideoElement, src: string): HlsHand
 	hls.on(Hls.Events.MEDIA_ATTACHED, () => {
 		hls.loadSource(src);
 	});
+	hls.on(Hls.Events.FRAG_LOADED, () => {
+		networkRetries = 0;
+	});
 	hls.on(Hls.Events.ERROR, (_event, data) => {
 		if (!data.fatal) return;
 		console.error("[hls] fatal error", data);
 		if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-			hls.startLoad();
+			const status = (data.response as { code?: number } | undefined)?.code ?? 0;
+			// 4xx won't heal by retrying, and startLoad can't resume a failed manifest
+			const permanent = status >= 400 && status < 500 && status !== 429;
+			const manifest =
+				data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+				data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+				data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+			if (!permanent && !manifest && networkRetries < MAX_NETWORK_RETRIES) {
+				networkRetries++;
+				hls.startLoad();
+				return;
+			}
+			hls.destroy();
+			fatalCb?.(data);
 			return;
 		}
 		const now = Date.now();

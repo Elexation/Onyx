@@ -164,8 +164,9 @@
 			<section id="errors" class="scroll-mt-6 mb-10" class:hidden={docsDrawer.filterQuery.trim() && !docsDrawer.matchedIds.has("errors")}>
 				<h2 class="text-lg font-bold tracking-[-0.01em]">Errors & Conventions</h2>
 				<p class="mt-2 text-sm leading-relaxed text-foreground-dim">
-					All errors return a JSON object with a single
-					<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-meta">error</code> field:
+					Errors return a JSON object with a single
+					<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-meta">error</code> field
+					(tus responses under <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-meta">/api/upload/</code> are plain text):
 				</p>
 				{@render codeBlock('{ "error": "not found" }', "error-format")}
 				<div class="mt-4 space-y-2 text-sm leading-relaxed text-foreground-dim">
@@ -363,7 +364,7 @@
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">GET /api/stream/info/*</code>: Returns video metadata.
 				</p>
-				{@render codeBlock('{\n  "codec": "h264",\n  "width": 1920,\n  "height": 1080,\n  "duration": 120.5,\n  "bitrate": 5000000,\n  "framerate": 29.97,\n  "needsTranscode": false\n}', "stream-info-resp")}
+				{@render codeBlock('{\n  "codec": "h264",\n  "audioCodec": "aac",\n  "width": 1920,\n  "height": 1080,\n  "duration": 120.5,\n  "bitrate": 5000000,\n  "framerate": 29.97,\n  "needsTranscode": false\n}', "stream-info-resp")}
 
 				<h4 class="mt-5 text-sm font-semibold">Playlists & Segments</h4>
 				<div class="mt-2 space-y-1 text-meta text-foreground-dim">
@@ -639,11 +640,13 @@
 					<p>
 						<strong class="text-foreground">Size limit</strong> is configurable via the
 						<code class="rounded bg-muted px-1 py-0.5 font-mono text-meta">upload.max_size</code>
-						setting (0 = unlimited). Exceeding it returns <strong>413</strong>.
+						setting (default 100 GiB, 0 = unlimited). Exceeding it returns <strong>413</strong>.
 					</p>
 					<p>
-						<strong class="text-foreground">Concurrency</strong> is limited to 8 concurrent uploads
-						per IP.
+						<strong class="text-foreground">Concurrency</strong> is limited to 8 in-flight requests
+						to <code class="rounded bg-muted px-1 py-0.5 font-mono text-meta">/api/upload/</code> per IP, of any tus method; more get
+						<strong>429</strong>. A finished upload's DELETE overlaps the next upload's POST, so run
+						at most 4 uploads in parallel.
 					</p>
 				</div>
 			</section>
@@ -733,6 +736,13 @@
 					trash (if enabled).
 					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: true</code> deletes
 					immediately and cannot be undone.
+				</p>
+				<p class="mt-2 text-meta text-muted-foreground">
+					With trash disabled, a token request with
+					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: false</code> deletes
+					permanently. A browser session gets <strong>409</strong>
+					<code class="rounded bg-muted px-1 py-0.5 font-mono">trash is disabled</code> instead, so
+					the app can ask again before anything is lost.
 				</p>
 
 				<h4 class="mt-4 text-sm font-semibold">Response</h4>
@@ -870,7 +880,8 @@
 				<h4 class="mt-5 text-sm font-semibold">Restore Version</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">POST /api/versions/&#123;id&#125;/restore</code>: Replaces the
-					current file with this version. The current file becomes a new version entry.
+					current file with this version. The current file is saved as a new version first, unless
+					it is over <code class="font-mono">versions.max_file_size</code>.
 				</p>
 				{@render codeBlock('curl -X POST "http://localhost:8080/api/versions/1/restore" \\\n  -H "Authorization: Bearer onyx_TOKEN"', "version-restore-curl")}
 				{@render codeBlock('{ "status": "restored" }', "version-restore-resp")}

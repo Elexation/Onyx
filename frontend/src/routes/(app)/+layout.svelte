@@ -19,18 +19,20 @@
 		return () => changes.stop();
 	});
 
-	// Close the mobile drawer on any route change. Sidebar's onNavigate prop
-	// covers sidebar link clicks, but programmatic navigation (e.g. SearchBar
-	// result click -> goto()) bypasses it; this effect catches those too.
+	// Everything floating clears the dock through this one variable
+	$effect(() => {
+		const root = document.documentElement;
+		root.style.setProperty("--dock-inset", audioPlayer.visible ? "84px" : "0px");
+		return () => root.style.removeProperty("--dock-inset");
+	});
+
+	// Close drawer on any route change, incl. goto()
 	$effect(() => {
 		page.url.pathname;
 		drawerOpen = false;
 	});
 
-	// Warn before a full page reload / tab close while an upload is preparing or
-	// in flight: a real unload tears down the module-level Uppy instance,
-	// aborting active transfers and leaving folders partially uploaded. In-app
-	// navigation is unaffected (the instance survives route changes).
+	// Warn on unload while uploads run, since unload kills Uppy
 	$effect(() => {
 		const handler = (e: BeforeUnloadEvent) => {
 			if (uploadState.preparing || uploadState.scanning || uploadState.activeCount > 0) {
@@ -49,11 +51,12 @@
 		<MobileDrawer bind:open={drawerOpen}>
 			<Sidebar onNavigate={() => (drawerOpen = false)} />
 		</MobileDrawer>
-		<main class="min-w-0 flex-1 overflow-auto" style:padding-bottom={audioPlayer.visible ? '84px' : '0px'}>
+		<main class="min-w-0 flex-1 overflow-auto pb-(--dock-inset)">
 			{@render children()}
 		</main>
 	</div>
 </div>
 <AudioDock />
 <UploadPanel />
-<Toaster theme="dark" />
+<!-- Toasts sit above the FAB and the audio dock -->
+<Toaster theme="dark" mobileOffset={{ bottom: "calc(var(--dock-inset) + var(--fab-clearance))" }} />

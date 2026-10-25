@@ -1,4 +1,4 @@
-import { request } from "$lib/api";
+import { request, setCsrfToken } from "$lib/api";
 
 export type SettingsMeta = {
 	envOverrides: Record<string, string>;
@@ -11,29 +11,32 @@ export type SettingsResponse = {
 	meta: SettingsMeta;
 };
 
-// In-flight de-dupe: concurrent callers share one round trip; cleared on settle
-// so PATCH-followed-by-GET still observes fresh values.
+// In-flight de-dupe: concurrent callers share one round trip. A PATCH drops the
+// shared GET, since one started before the PATCH committed returns old values.
 let inflightGet: Promise<SettingsResponse> | null = null;
 
 export async function getSettings(): Promise<SettingsResponse> {
 	if (inflightGet) return inflightGet;
-	inflightGet = (async () => {
-		try {
-			return await request<SettingsResponse>("GET", "/api/settings");
-		} finally {
-			inflightGet = null;
-		}
-	})();
-	return inflightGet;
+	const p: Promise<SettingsResponse> = request<SettingsResponse>("GET", "/api/settings").finally(() => {
+		if (inflightGet === p) inflightGet = null;
+	});
+	inflightGet = p;
+	return p;
 }
 
 export async function updateSettings(updates: Record<string, string>): Promise<{
 	saved: string[];
 	errors: Record<string, string>;
 }> {
-	return request("PATCH", "/api/settings", updates);
+	try {
+		return await request("PATCH", "/api/settings", updates);
+	} finally {
+		inflightGet = null;
+	}
 }
 
+// The server rotates the session, so adopt its new CSRF token or every later write 403s
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-	await request("POST", "/api/auth/change-password", { currentPassword, newPassword });
+	const res = await request<{ csrfToken?: string }>("POST", "/api/auth/change-password", { currentPassword, newPassword });
+	if (res?.csrfToken) setCsrfToken(res.csrfToken);
 }

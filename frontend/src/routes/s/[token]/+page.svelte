@@ -45,7 +45,7 @@
 	const lastDot = $derived(fileName.lastIndexOf("."));
 	const ext = $derived(!isDir && lastDot > 0 ? fileName.slice(lastDot + 1, lastDot + 5).toUpperCase() : null);
 
-	const totalSize = $derived(items.reduce((sum, i) => sum + (i.size || 0), 0));
+	const totalSize = $derived(items.reduce((sum, i) => sum + (i.isDir ? 0 : i.size || 0), 0));
 
 	function stripLeadingSlash(p: string): string {
 		return p.replace(/^\/+/, "");
@@ -236,12 +236,10 @@
 							</div>
 						</div>
 					</div>
-					<a href={`/api/public/s/${safeToken}/zip`} download class="shrink-0">
-						<Button class="w-full md:w-auto">
-							<DownloadIcon class="mr-2 size-4" />
-							Download All
-						</Button>
-					</a>
+					<Button href={`/api/public/s/${safeToken}/zip`} download class="w-full shrink-0 md:w-auto">
+						<DownloadIcon class="mr-2 size-4" />
+						Download All
+					</Button>
 				</div>
 
 				{#if items.length === 0}
@@ -272,10 +270,11 @@
 									<div class="hidden md:block"></div>
 								</div>
 							{:else}
+								<div class="grid w-full grid-cols-[1fr_auto] items-center border-b border-border transition-colors last:border-b-0 hover:bg-muted md:grid-cols-[minmax(0,1fr)_40px] md:pr-[14px]">
 								<button
 									type="button"
 									onclick={() => openItem(item)}
-									class="group grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-[14px] py-3.5 text-left transition-colors last:border-b-0 hover:bg-muted md:grid-cols-[minmax(0,1fr)_100px_40px] md:py-[11px]"
+									class="grid min-w-0 grid-cols-[1fr_auto] items-center gap-3 px-[14px] py-3.5 text-left md:grid-cols-[minmax(0,1fr)_100px] md:py-[11px] md:pr-3"
 								>
 									<div class="flex min-w-0 items-center gap-3">
 										<FileIcon
@@ -293,27 +292,26 @@
 									<div class="hidden text-right text-meta tabular-nums text-muted-foreground md:block">
 										{formatFileSize(item.size)}
 									</div>
-									<div class="hidden items-center justify-end md:flex">
-										<span
-											role="button"
-											tabindex="0"
-											title="Download"
-											aria-label="Download {item.name}"
-											onclick={(e) => { e.stopPropagation(); downloadItem(item); }}
-											onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); downloadItem(item); } }}
-											class="cursor-pointer rounded-md p-1.5 text-muted-foreground outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-										>
-											<DownloadIcon class="size-4" />
-										</span>
-									</div>
 								</button>
+								<div class="hidden items-center justify-end md:flex">
+									<button
+										type="button"
+										title="Download"
+										aria-label="Download {item.name}"
+										onclick={() => downloadItem(item)}
+										class="cursor-pointer rounded-md p-1.5 text-muted-foreground outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+									>
+										<DownloadIcon class="size-4" />
+									</button>
+								</div>
+								</div>
 							{/if}
 						{/each}
 					</div>
 				{/if}
 
 				{#if expiresAt > 0}
-					<div class="mt-2 text-center text-[11px] tabular-nums text-muted-foreground">
+					<div class="mt-2 text-center text-meta tabular-nums text-muted-foreground">
 						Expires {formatRelativeExpiry(expiresAt)}
 					</div>
 				{/if}
@@ -366,17 +364,15 @@
 										Preview
 									</Button>
 								{/if}
-								<a href={downloadUrl()} download class="block">
-									<Button variant={previewable ? "outline" : "default"} size="lg" class="w-full">
-										<DownloadIcon class="mr-2 size-4" />
-										Download
-									</Button>
-								</a>
+								<Button href={downloadUrl()} download variant={previewable ? "outline" : "default"} size="lg" class="w-full">
+									<DownloadIcon class="mr-2 size-4" />
+									Download
+								</Button>
 							</div>
 						</Card.Content>
 					</Card.Root>
 					{#if expiresAt > 0}
-						<div class="mt-2 text-center text-[11px] tabular-nums text-muted-foreground">
+						<div class="mt-2 text-center text-meta tabular-nums text-muted-foreground">
 							Expires {formatRelativeExpiry(expiresAt)}
 						</div>
 					{/if}

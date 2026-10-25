@@ -78,7 +78,7 @@
 			>
 				&larr; Prev
 			</Button>
-			<span class="font-mono text-meta">{currentIndex + 1} / {siblings.length}</span>
+			<span class="text-meta tabular-nums">{currentIndex + 1} / {siblings.length}</span>
 			<Button variant="ghost" class="min-h-[44px] px-2.5 text-meta"
 				disabled={!hasNext}
 				onclick={next}

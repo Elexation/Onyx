@@ -42,8 +42,9 @@
 
 	const redirectTarget = $derived(resolveRedirect(page.url.pathname, auth));
 
+	// replaceState: a pushed entry would make Back land on the redirecting page again
 	$effect(() => {
-		if (redirectTarget) goto(redirectTarget);
+		if (redirectTarget) goto(redirectTarget, { replaceState: true });
 	});
 </script>
 

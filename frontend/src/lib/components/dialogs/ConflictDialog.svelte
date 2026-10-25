@@ -3,6 +3,8 @@
 	// folder the server did not walk. Rendered as "Folder" instead.
 	export type ConflictSide = { size: number | null; modTime: number; isDir: boolean };
 	export type ConflictPair = {
+		// Resolution key; defaults to path. Set when two pairs can share a path.
+		key?: string;
 		path: string;
 		existing: ConflictSide;
 		incoming: ConflictSide;
@@ -22,10 +24,12 @@
 		conflicts,
 		kind = "upload",
 		onresolve,
+		oncancel,
 	}: {
 		conflicts: ConflictPair[];
 		kind?: "upload" | "restore";
 		onresolve: (resolutions: Record<string, Resolution>) => void;
+		oncancel?: () => void;
 	} = $props();
 
 	const incomingLabel = $derived(kind === "restore" ? "Restoring" : "Uploading");
@@ -58,12 +62,12 @@
 	function choose(action: Resolution) {
 		if (applyToAll) {
 			for (let i = index; i < conflicts.length; i++) {
-				resolutions[conflicts[i].path] = action;
+				resolutions[conflicts[i].key ?? conflicts[i].path] = action;
 			}
 			onresolve({ ...resolutions });
 			return;
 		}
-		resolutions[current.path] = action;
+		resolutions[current.key ?? current.path] = action;
 		if (index + 1 >= total) {
 			onresolve({ ...resolutions });
 		} else {
@@ -132,6 +136,11 @@
 		{/if}
 
 		<AlertDialog.Footer>
+			{#if oncancel}
+				<Button variant="ghost" size="sm" class="sm:mr-auto" onclick={oncancel}>
+					Cancel {kind === "restore" ? "restore" : "upload"}
+				</Button>
+			{/if}
 			<Button variant="outline" size="sm" onclick={() => choose("skip")}>Skip</Button>
 			<Button variant="outline" size="sm" onclick={() => choose("keepBoth")}>Keep both</Button>
 			{#if !blockedByType}

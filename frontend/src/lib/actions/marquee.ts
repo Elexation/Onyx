@@ -216,12 +216,7 @@ export function setupMarquee(scrollEl: HTMLDivElement, params: MarqueeParams): (
 			activated = true;
 			scrollEl.setPointerCapture(e.pointerId);
 
-			// Append to the scroll container itself (relative + overflow-auto), NOT
-			// its first child: that child is the rounded `ListCard` with
-			// `overflow-hidden`, which clips the marquee to the card's height (header
-			// + rows) and hides any part drawn over the empty space below the last
-			// row. scrollEl spans the full visible area, so the rectangle paints
-			// wherever the pointer goes.
+			// Append to scrollEl, not its clipping first child; scrollEl must be position: relative
 			marqueeDiv = document.createElement("div");
 			marqueeDiv.style.position = "absolute";
 			marqueeDiv.style.pointerEvents = "none";

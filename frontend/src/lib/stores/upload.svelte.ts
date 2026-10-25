@@ -12,7 +12,7 @@ export interface LooseItem {
 // Folder uploads collapse to ONE aggregate per top-level folder. Counters and
 // byte totals are maintained incrementally (O(1) per upload event) so a drop of
 // tens of thousands of files never materializes tens of thousands of reactive
-// rows; that was the source of the main-thread freeze.
+// rows, which freezes the main thread.
 export interface UploadGroup {
 	id: string;
 	name: string;
@@ -222,10 +222,7 @@ class UploadState {
 		if (fi.status === "pending") {
 			fi.status = "uploading";
 		} else if (fi.status === "error") {
-			// Uppy's upload() retries every errored file instance-wide, so a failed
-			// file can resume without an explicit retry() call. Re-arm the counters
-			// exactly like retry(); otherwise markComplete double-decrements
-			// activeCount and errorCount goes stale.
+			// A late progress event on an errored file: re-arm counters like retry() does
 			fi.status = "uploading";
 			this.activeCount++;
 			if (fi.group) {
@@ -257,8 +254,7 @@ class UploadState {
 		const fi = this.fileIndex.get(id);
 		if (!fi || fi.status === "complete") return;
 		const wasActive = fi.status === "pending" || fi.status === "uploading";
-		// A retried file can complete while still marked error (no progress event
-		// fired); move it out of the error tally so counts stay exact.
+		// A late success can land on an errored record; move it out of the error tally
 		const wasError = fi.status === "error";
 		const delta = fi.size - fi.bytes;
 		fi.bytes = fi.size;
@@ -439,11 +435,11 @@ class UploadState {
 		this.speed = 0;
 		this.eta = null;
 		this.minimized = false;
-		// Cancelling mid-scan also aborts any in-progress folder enumeration:
-		// bumping scanGen invalidates the generation UploadZone captured at drop
-		// time; the boolean only resets the UI display.
+		// Bumping scanGen aborts any scan or prepare that captured the old value
 		this.scanGen++;
 		this.scanning = false;
+		// Release the prepare lock here: a cancelled prepare skips its own release
+		this.preparing = false;
 		this.clearAutoMinimize();
 	}
 

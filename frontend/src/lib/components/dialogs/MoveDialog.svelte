@@ -69,10 +69,26 @@
 				roots = [...roots];
 			}
 		} catch {
-			if (parentPath === "") treeError = true;
+			if (parentPath === "") {
+				treeError = true;
+			} else {
+				// Collapse again so a failed listing doesn't pass for an empty folder
+				const node = findNode(roots, parentPath);
+				if (node) node.expanded = false;
+				roots = [...roots];
+				toast.error(`Couldn't load folders in "${parentPath.split("/").pop()}"`);
+			}
 		} finally {
 			if (parentPath === "") treeLoading = false;
 		}
+	}
+
+	function findNode(nodes: TreeNode[], targetPath: string): TreeNode | null {
+		for (const node of nodes) {
+			if (node.path === targetPath) return node;
+			if (targetPath.startsWith(node.path + "/")) return findNode(node.children, targetPath);
+		}
+		return null;
 	}
 
 	function setChildren(nodes: TreeNode[], targetPath: string, children: TreeNode[]) {
@@ -109,6 +125,10 @@
 		const next = items[idx + direction];
 		if (next) next.focus();
 	}
+
+	const parentOf = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+	// Moving into the items' own folder is a no-op on the server
+	const sameFolder = $derived(mode === "move" && paths.length > 0 && paths.every((p) => parentOf(p) === (destination || "/")));
 
 	async function submit() {
 		submitting = true;
@@ -221,8 +241,15 @@
 			{/if}
 		</div>
 		<Dialog.Footer>
+			{#if sameFolder}
+				<p class="self-center text-meta text-muted-foreground sm:mr-auto">Already in this folder. Pick another one</p>
+			{/if}
 			<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
-			<Button onclick={submit} loading={submitting}>
+			<Button
+				onclick={submit}
+				loading={submitting}
+				disabled={treeLoading || (treeError && roots.length === 0) || sameFolder}
+			>
 				{#if submitting}
 					{mode === "move" ? "Moving…" : "Copying…"}
 				{:else}

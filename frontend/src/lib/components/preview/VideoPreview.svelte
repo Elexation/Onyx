@@ -39,13 +39,22 @@
 	let bufferedEnd = $state(0);
 	let showControls = $state(true);
 	let failed = $state(false);
+	let reloadKey = $state(0);
+	// iOS keeps media volume read-only (always 1), at any viewport width
+	const volumeSettable = (() => {
+		try {
+			const probe = document.createElement("audio");
+			probe.volume = 0.5;
+			return probe.volume === 0.5;
+		} catch {
+			return false;
+		}
+	})();
 	let probeInfo = $state<ProbeInfo | null>(null);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;
 
-	// Scrub state: separate from playhead so drag motion doesn't hit
-	// videoEl.currentTime on every input event. Commit happens on `change`
-	// (pointerup / Enter / blur), one write per gesture.
+	// Kept apart from the playhead: a drag commits once on change, a key step at once
 	let scrubbing = $state(false);
 	let scrubTime = $state(0);
 	let seekBarHovered = $state(false);
@@ -57,12 +66,7 @@
 	let volumeFlash = $state(false);
 	let volumeFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Arrow-key seek accumulates into a settle timer so held/mashed
-	// presses produce one currentTime write, not one per keydown. Held
-	// keys throttle accumulation to ~6.7/sec so the offset grows at a
-	// usable rate instead of tracking the OS key-repeat frequency.
-	// Commit fires only when all arrows are released; committing mid-hold
-	// causes a visible jolt as the UI snaps between pre- and post-commit.
+	// Arrow seeks add up and commit once all arrows are up; a commit mid-hold jolts the UI
 	let keySeekOffset = $state(0);
 	let keySeekTimer: ReturnType<typeof setTimeout> | null = null;
 	const heldArrows = new Set<string>();
@@ -143,8 +147,6 @@
 	const bufferedPercent = $derived(duration > 0 ? (bufferedEnd / duration) * 100 : 0);
 	const hoverTime = $derived(duration > 0 ? (hoverPercent / 100) * duration : 0);
 
-	// Force the bottom bar visible while any scrub is in flight; the
-	// normal 3s auto-hide resumes once the gesture settles.
 	let controlsFocused = $state(false);
 	let qualityMenuOpen = $state(false);
 	let cogPressed = $state(false);
@@ -208,6 +210,7 @@
 			setCogCursor(false);
 		}};
 	}
+	// Pin the bottom bar during scrubs, keyboard focus or an open quality menu; else the 3s auto-hide applies
 	const controlsVisible = $derived(showControls || scrubbing || keySeekOffset !== 0 || controlsFocused || qualityMenuOpen);
 
 	// !failed keeps the pointer over the retry overlay, which outlives the auto-hide timer
@@ -280,10 +283,35 @@
 		volumeFlashTimer = setTimeout(() => { volumeFlash = false; }, 1000);
 	}
 
+	// AbortError (pause or source swap) and NotAllowedError (autoplay blocked) aren't failures
+	function playOrFail() {
+		videoEl?.play().catch((e) => {
+			if (e?.name !== "AbortError" && e?.name !== "NotAllowedError") failed = true;
+		});
+	}
+
+	function handleVideoError() {
+		if (hlsHandle || pendingSeek !== null) return;
+		// The probe passed but the browser can't demux the file: fall back to the transcode once
+		const unsupported = videoEl?.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
+		if (unsupported && playback === "native" && userMode === null && probeInfo) {
+			nativeSupported = false;
+			userMode = "transcode";
+			return;
+		}
+		failed = true;
+	}
+
+	// Retry rebuilds the source: native gets a fresh load, HLS a new player
+	function retryPlayback() {
+		failed = false;
+		reloadKey++;
+	}
+
 	function togglePlay(flash = true) {
 		if (!videoEl || failed) return;
 		const willPlay = videoEl.paused;
-		if (willPlay) videoEl.play().catch(() => { failed = true; });
+		if (willPlay) playOrFail();
 		else videoEl.pause();
 		if (flash) flashPlayPause(willPlay ? 'play' : 'pause');
 	}
@@ -597,6 +625,8 @@
 	});
 
 	$effect(() => {
+		// Share pages (streamBase set) have no session; an authenticated call would 401 and redirect to /login
+		if (streamBase) return;
 		let cancelled = false;
 		getSettings()
 			.then((s) => {
@@ -639,7 +669,7 @@
 				return;
 			}
 			probeInfo = result.info;
-			const native = await canPlayNative(result.info);
+			const native = await canPlayNative(result.info, file.name);
 			if (cancelled) return;
 			nativeSupported = native;
 			detectedMode = native ? "native" : "transcode-required";
@@ -652,6 +682,7 @@
 		if (!el) return;
 		const mode = playback;
 		const filePath = file.path;
+		void reloadKey;
 
 		if (mode === "native") {
 			el.src = url ?? getPreviewUrl(filePath);
@@ -758,7 +789,7 @@
 					if (pendingSeek > 0) videoEl.currentTime = pendingSeek;
 					pendingSeek = null;
 					if (!pendingPaused) {
-						videoEl.play().catch(() => { failed = true; });
+						playOrFail();
 					}
 					pendingPaused = false;
 				} else {
@@ -768,7 +799,7 @@
 		}}
 		onvolumechange={() => { if (videoEl) { volume = videoEl.volume; muted = videoEl.muted; saveVolume(); } }}
 		onended={() => { playing = false; showControls = true; if (controlsTimer) clearTimeout(controlsTimer); clearPosition(); }}
-		onerror={() => { if (!hlsHandle && pendingSeek === null) failed = true; }}
+		onerror={handleVideoError}
 	></video>
 
 	{#if failed}
@@ -782,7 +813,7 @@
 					variant="ghost"
 					size="sm"
 					class="mt-1 gap-2 px-4 text-meta text-white/80 hover:bg-white/10 hover:text-white"
-					onclick={() => { failed = false; }}
+					onclick={retryPlayback}
 				>
 					<RotateCcwIcon class="size-3.5" />
 					Try again
@@ -927,7 +958,7 @@
 				{/if}
 			</Button>
 
-			<span class="shrink-0 text-meta tabular-nums text-white/80">
+			<span class="shrink-0 font-mono text-meta tabular-nums text-white/80">
 				{formatMediaTime(displayTime)} / {formatMediaTime(duration)}
 			</span>
 
@@ -953,7 +984,7 @@
 							</div>
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="min-w-36" portalProps={menuPortalTarget ? { to: menuPortalTarget } : undefined}>
+					<DropdownMenu.Content align="end" class="w-auto min-w-36" portalProps={menuPortalTarget ? { to: menuPortalTarget } : undefined}>
 						{#if nativeSupported}
 							<DropdownMenu.Item onclick={switchToOriginal}>
 								{#if userMode !== "transcode"}
@@ -1008,6 +1039,7 @@
 						<Volume2Icon class="size-5" />
 					{/if}
 				</Button>
+				{#if volumeSettable}
 				<input
 					type="range"
 					min="0"
@@ -1018,6 +1050,7 @@
 					aria-label="Volume"
 					class="volume-slider hidden h-11 w-16 cursor-pointer appearance-none rounded-full bg-transparent md:block"
 				/>
+				{/if}
 			</div>
 
 			<Button variant="ghost" size="icon-touch" class="text-white/80 hover:bg-transparent hover:text-white"

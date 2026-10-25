@@ -6,7 +6,8 @@ export const longpress: Action<HTMLElement, () => void> = (node, callback) => {
 	let fired = false;
 
 	function start(e: PointerEvent) {
-		if (e.button !== 0 && e.pointerType !== "touch") return;
+		// Touch and pen only: a still mouse hold would toggle selection and eat the click
+		if (e.pointerType === "mouse") return;
 		fired = false;
 		timer = setTimeout(() => {
 			fired = true;

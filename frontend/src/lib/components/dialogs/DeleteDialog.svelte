@@ -2,6 +2,8 @@
 	import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
 	import { Button } from "$lib/components/ui/button/index.js";
 	import { deleteFiles } from "$lib/api/files.js";
+	import { trashEnabled as trashStore } from "$lib/stores/trashEnabled.svelte.js";
+	import { basename } from "$lib/utils";
 	import { toast } from "svelte-sonner";
 
 	let {
@@ -20,8 +22,20 @@
 	const submitting = $derived(submittingAction !== null);
 
 	const itemName = $derived(
-		paths.length === 1 ? `"${paths[0].split("/").pop()}"` : `${paths.length} items`
+		paths.length === 1 ? `"${basename(paths[0])}"` : `${paths.length} items`
 	);
+
+	const restoreNote = $derived.by(() => {
+		const h = trashStore.purgeAgeHours;
+		if (h === null || h <= 0) return "Trashed files can be restored.";
+		const span = h >= 24 ? `${Math.floor(h / 24)} day${Math.floor(h / 24) === 1 ? "" : "s"}` : `${Math.floor(h)} hour${Math.floor(h) === 1 ? "" : "s"}`;
+		return `Trashed files can be restored for ${span}, then they're purged.`;
+	});
+
+	// The flag can be stale (changed on another device); re-read it whenever the dialog opens
+	$effect(() => {
+		if (open) trashStore.refresh();
+	});
 
 	async function doDelete(permanent: boolean) {
 		submittingAction = permanent ? "permanent" : "trash";
@@ -39,6 +53,12 @@
 			open = false;
 			onsuccess();
 		} catch (e) {
+			// Server refused a trash move because trash is off; the dialog now asks for permanent
+			if ((e as { status?: number }).status === 409 && (e as Error).message === "trash is disabled") {
+				trashStore.set(false);
+				toast.info("Trash is turned off, so these can only be deleted permanently");
+				return;
+			}
 			toast.error(e instanceof Error ? e.message : "Delete failed");
 		} finally {
 			submittingAction = null;
@@ -51,7 +71,7 @@
 		<AlertDialog.Header>
 			{#if trashEnabled}
 				<AlertDialog.Title>Delete {itemName}?</AlertDialog.Title>
-				<AlertDialog.Description>Trashed files can be restored. Permanent deletion can't be undone.</AlertDialog.Description>
+				<AlertDialog.Description>{restoreNote} Permanent deletion can't be undone.</AlertDialog.Description>
 			{:else}
 				<AlertDialog.Title>Permanently delete {itemName}?</AlertDialog.Title>
 				<AlertDialog.Description>This can't be undone.</AlertDialog.Description>
@@ -67,7 +87,7 @@
 					{submittingAction === "trash" ? "Moving…" : "Move to trash"}
 				</AlertDialog.Action>
 			{:else}
-				<AlertDialog.Action disabled={submitting} onclick={() => doDelete(true)}>
+				<AlertDialog.Action variant="destructive" disabled={submitting} onclick={() => doDelete(true)}>
 					{submittingAction === "permanent" ? "Deleting…" : "Delete"}
 				</AlertDialog.Action>
 			{/if}

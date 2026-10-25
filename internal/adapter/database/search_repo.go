@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"time"
@@ -72,17 +73,19 @@ func (r *SearchRepo) Delete(path string) error {
 }
 
 func (r *SearchRepo) DeleteTree(path string) error {
-	_, err := r.db.Exec("DELETE FROM files WHERE path = ? OR path LIKE ? || '/%' ESCAPE '\\'", path, escapeLike(path))
+	lo, hi := childRange(path)
+	_, err := r.db.Exec("DELETE FROM files WHERE path = ? OR (path >= ? AND path < ?)", path, lo, hi)
 	return err
 }
 
-func (r *SearchRepo) Search(query string, limit int) ([]domain.SearchResult, int, error) {
+// Search runs the MATCH under ctx so an abandoned request frees its pool connection.
+func (r *SearchRepo) Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, int, error) {
 	ftsQuery := buildFTSQuery(query)
 	if ftsQuery == "" {
 		return nil, 0, nil
 	}
 
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.name, f.path, f.is_dir
 		FROM file_search s
 		JOIN files f ON f.id = s.rowid
@@ -107,7 +110,7 @@ func (r *SearchRepo) Search(query string, limit int) ([]domain.SearchResult, int
 	}
 
 	var total int
-	err = r.db.QueryRow("SELECT COUNT(*) FROM file_search WHERE file_search MATCH ?", ftsQuery).Scan(&total)
+	err = r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM file_search WHERE file_search MATCH ?", ftsQuery).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,22 +126,28 @@ func (r *SearchRepo) DeleteStale(olderThan int64) (int64, error) {
 	return res.RowsAffected()
 }
 
+// UpdatePath bumps indexed_at so a concurrent scan's DeleteStale keeps the row.
 func (r *SearchRepo) UpdatePath(oldPath, newPath, newName string) error {
-	_, err := r.db.Exec("UPDATE files SET path = ?, name = ? WHERE path = ?", newPath, newName, oldPath)
+	_, err := r.db.Exec("UPDATE files SET path = ?, name = ?, indexed_at = ? WHERE path = ?", newPath, newName, time.Now().Unix(), oldPath)
 	return err
 }
 
 func (r *SearchRepo) UpdatePathPrefix(oldPrefix, newPrefix string) error {
 	newName := newPrefix[strings.LastIndex(newPrefix, "/")+1:]
+	lo, hi := childRange(oldPrefix)
 	_, err := r.db.Exec(`
 		UPDATE files SET
 			path = ? || substr(path, ?),
-			name = CASE WHEN path = ? THEN ? ELSE name END
-		WHERE path = ? OR path LIKE ? || '/%' ESCAPE '\'`,
-		newPrefix, utf8.RuneCountInString(oldPrefix)+1, oldPrefix, newName, oldPrefix, escapeLike(oldPrefix),
+			name = CASE WHEN path = ? THEN ? ELSE name END,
+			indexed_at = ?
+		WHERE path = ? OR (path >= ? AND path < ?)`,
+		newPrefix, utf8.RuneCountInString(oldPrefix)+1, oldPrefix, newName, time.Now().Unix(), oldPrefix, lo, hi,
 	)
 	return err
 }
+
+// Each prefix phrase is ANDed into the MATCH; cap them to bound query cost.
+const maxFTSTokens = 16
 
 // buildFTSQuery builds an FTS5 prefix query from user input. Each token is
 // emitted as a quoted prefix phrase ("report.pdf"*) so filename punctuation
@@ -149,20 +158,27 @@ func buildFTSQuery(input string) string {
 	cleaned := strings.ReplaceAll(input, "-", " ")
 
 	tokens := strings.Fields(cleaned)
-	out := make([]string, 0, len(tokens))
+	out := make([]string, 0, min(len(tokens), maxFTSTokens))
+	seen := make(map[string]bool, len(tokens))
 	for _, t := range tokens {
 		// All-punctuation tokens tokenize to an empty phrase; skip them.
 		if !strings.ContainsFunc(t, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
 			continue
 		}
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
 		out = append(out, `"`+strings.ReplaceAll(t, `"`, `""`)+`"*`)
+		if len(out) == maxFTSTokens {
+			break
+		}
 	}
 	return strings.Join(out, " ")
 }
 
-// escapeLike escapes SQL LIKE metacharacters so the value is matched
-// literally when used with ESCAPE '\'.
-func escapeLike(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return r.Replace(s)
+// childRange bounds every path under dir, byte-exact unlike LIKE ("0" is the byte after "/").
+func childRange(dir string) (lo, hi string) {
+	p := strings.TrimSuffix(dir, "/")
+	return p + "/", p + "0"
 }

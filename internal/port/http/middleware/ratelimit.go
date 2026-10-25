@@ -32,8 +32,8 @@ func NewRateLimiter(trustedProxy bool) *RateLimiter {
 }
 
 // Middleware atomically checks the lockout gate and pre-records the current
-// request as a failure before dispatching. Handlers MUST call RecordSuccess on
-// success to roll back the increment; failures require no handler action. The
+// request as a failure before dispatching. Handlers MUST call RecordSuccess (admin
+// auth) or UndoAttempt (share verify) on success; failures require no handler action. The
 // pre-increment closes the check-then-act race where concurrent requests all
 // read the same low count and pass the gate in parallel.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
@@ -54,7 +54,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			elapsed := time.Since(a.lastFail)
 			if elapsed < cooldown {
 				rl.mu.Unlock()
-				slog.Info("security_event", "event", "rate_limit_triggered", "ip", key, "path", r.URL.Path, "fail_count", a.failCount)
+				slog.Info("security_event", "event", "rate_limit_triggered", "ip", key, "path", redactSharePath(r.URL.Path), "fail_count", a.failCount)
 				remaining := int((cooldown - elapsed).Seconds()) + 1
 				w.Header().Set("Retry-After", strconv.Itoa(remaining))
 				http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
@@ -80,18 +80,32 @@ func cooldownFor(failCount int) time.Duration {
 	}
 }
 
-// RecordSuccess rolls back the pre-increment applied by Middleware. Called by
-// handlers after a successful authentication.
+// RecordSuccess deletes the key's whole failure history, not just this request's increment.
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.attempts, rl.clientKey(r))
 }
 
+// UndoAttempt removes only this request's pre-increment, for share verify
+func (rl *RateLimiter) UndoAttempt(r *http.Request) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	key := rl.clientKey(r)
+	a, ok := rl.attempts[key]
+	if !ok {
+		return
+	}
+	a.failCount--
+	if a.failCount <= 0 {
+		delete(rl.attempts, key)
+	}
+}
+
 // clientKey returns the lockout-map key for a request. IPv6 is masked to /64
 // so rotating within an attacker-controlled prefix cannot dodge the lockout;
 // IPv4 keys on the full address. Middleware and RecordSuccess must use the
-// same key or the success rollback misses.
+// same key or the success reset misses.
 func (rl *RateLimiter) clientKey(r *http.Request) string {
 	ip := ClientIP(r, rl.trustedProxy)
 	if ip == "" {

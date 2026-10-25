@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -23,6 +25,15 @@ const (
 	argonSaltLen = 16
 	argonKeyLen  = 32
 )
+
+// Cap concurrent argon2 runs, since each one allocates argonMemory KiB
+var (
+	authArgon = make(chan struct{}, 2)
+	// Own slot for public share checks, so a flood cannot stall admin login
+	shareArgon = make(chan struct{}, 1)
+)
+
+var ErrInvalidCredentials = errors.New("invalid credentials")
 
 // dummyHash absorbs argon2 work on Login when no admin account exists, so the
 // request's latency does not leak first-run state. Generated once from random
@@ -49,9 +60,8 @@ type UserRepo interface {
 }
 
 type SessionRepo interface {
-	Create(s *domain.Session) error
+	CreateForHash(s *domain.Session, passwordHash string) (bool, error)
 	GetByID(id string) (*domain.Session, error)
-	UpdateLastActive(id string) error
 	Delete(id string) error
 	DeleteOtherSessions(userID int64, keepSessionID string) (int64, error)
 	DeleteExpired() (int64, error)
@@ -100,10 +110,10 @@ func (a *AuthService) Setup(password string) (*domain.Session, error) {
 		return nil, fmt.Errorf("create admin: %w", err)
 	}
 
-	return a.createSession(user.ID)
+	return a.createSession(user.ID, hash)
 }
 
-func (a *AuthService) Login(password string) (*domain.Session, error) {
+func (a *AuthService) Login(ctx context.Context, password string) (*domain.Session, error) {
 	user, err := a.users.GetByUsername("admin")
 	if err != nil {
 		return nil, fmt.Errorf("get admin: %w", err)
@@ -111,15 +121,19 @@ func (a *AuthService) Login(password string) (*domain.Session, error) {
 	if user == nil {
 		// Absorb argon2 work so Login latency doesn't reveal whether an admin
 		// has been configured. Result is discarded.
-		verifyPassword(password, dummyHash)
-		return nil, fmt.Errorf("invalid credentials")
+		verifyPassword(ctx, authArgon, password, dummyHash)
+		return nil, ErrInvalidCredentials
 	}
 
-	if !verifyPassword(password, user.PasswordHash) {
-		return nil, fmt.Errorf("invalid credentials")
+	ok, err := verifyPassword(ctx, authArgon, password, user.PasswordHash)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrInvalidCredentials
 	}
 
-	return a.createSession(user.ID)
+	return a.createSession(user.ID, user.PasswordHash)
 }
 
 func (a *AuthService) Logout(sessionID string) error {
@@ -136,17 +150,9 @@ func (a *AuthService) ValidateSession(sessionID string) (*domain.Session, error)
 		return nil, nil
 	}
 
-	now := time.Now().Unix()
-	if session.ExpiresAt < now {
+	if session.ExpiresAt < time.Now().Unix() {
 		a.sessions.Delete(hashed)
 		return nil, nil
-	}
-
-	// Throttle last_active_at updates to once per minute
-	if now-session.LastActiveAt > 60 {
-		if err := a.sessions.UpdateLastActive(hashed); err != nil {
-			slog.Warn("failed to update session activity", "error", err)
-		}
 	}
 
 	session.ID = sessionID // hand back the raw id; the hash never leaves the repo boundary
@@ -170,11 +176,8 @@ func (a *AuthService) StartCleanup(interval time.Duration) {
 	}()
 }
 
-// ChangePassword verifies the current password, stores the new hash, rotates
-// the caller's session (closing any pre-change cookie-leak window), and
-// invalidates all other sessions. Returns the new session so the caller can
-// emit a fresh cookie.
-func (a *AuthService) ChangePassword(currentPassword, newPassword string) (*domain.Session, error) {
+// ChangePassword rotates sessions before storing the hash, so a failure never leaves old sessions valid.
+func (a *AuthService) ChangePassword(ctx context.Context, currentPassword, newPassword string) (*domain.Session, error) {
 	user, err := a.users.GetByUsername("admin")
 	if err != nil {
 		return nil, fmt.Errorf("get admin: %w", err)
@@ -183,7 +186,11 @@ func (a *AuthService) ChangePassword(currentPassword, newPassword string) (*doma
 		return nil, fmt.Errorf("user not found")
 	}
 
-	if !verifyPassword(currentPassword, user.PasswordHash) {
+	ok, err := verifyPassword(ctx, authArgon, currentPassword, user.PasswordHash)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, fmt.Errorf("invalid current password")
 	}
 
@@ -192,26 +199,64 @@ func (a *AuthService) ChangePassword(currentPassword, newPassword string) (*doma
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	if err := a.users.UpdatePassword("admin", hash); err != nil {
-		return nil, fmt.Errorf("update password: %w", err)
-	}
-
-	newSession, err := a.createSession(user.ID)
+	newSession, err := a.createSession(user.ID, user.PasswordHash)
 	if err != nil {
 		return nil, fmt.Errorf("rotate session: %w", err)
 	}
 
 	// Deletes the caller's previous session along with all others (anything
-	// not equal to newSession.ID). Not ignoring this error is the whole point
-	// of post-change invalidation.
-	if _, err := a.sessions.DeleteOtherSessions(user.ID, hashSessionID(newSession.ID)); err != nil {
+	// not equal to newSession.ID).
+	keep := hashSessionID(newSession.ID)
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, keep); err != nil {
+		return nil, fmt.Errorf("invalidate other sessions: %w", err)
+	}
+
+	if err := a.users.UpdatePassword("admin", hash); err != nil {
+		return nil, fmt.Errorf("update password: %w", err)
+	}
+
+	// Sweep again: a login that verified the old hash may have landed before the update
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, keep); err != nil {
 		return nil, fmt.Errorf("invalidate other sessions: %w", err)
 	}
 
 	return newSession, nil
 }
 
-func (a *AuthService) createSession(userID int64) (*domain.Session, error) {
+// ResetPassword sets a random admin password and revokes every session. Returns the new password.
+func (a *AuthService) ResetPassword() (string, error) {
+	user, err := a.users.GetByUsername("admin")
+	if err != nil {
+		return "", fmt.Errorf("get admin: %w", err)
+	}
+	if user == nil {
+		return "", fmt.Errorf("no admin account yet; open the web UI to run setup")
+	}
+	raw := make([]byte, 15)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	password := base64.RawURLEncoding.EncodeToString(raw)
+	hash, err := hashPassword(password)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	// Sessions first, like ChangePassword; "" matches no stored id, so all go
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, ""); err != nil {
+		return "", fmt.Errorf("revoke sessions: %w", err)
+	}
+	if err := a.users.UpdatePassword("admin", hash); err != nil {
+		return "", fmt.Errorf("update password: %w", err)
+	}
+	// Sweep again: a login that verified the old hash may have landed before the update
+	if _, err := a.sessions.DeleteOtherSessions(user.ID, ""); err != nil {
+		return "", fmt.Errorf("revoke sessions: %w", err)
+	}
+	return password, nil
+}
+
+// createSession stores a session bound to passwordHash; a hash change since verification refuses it
+func (a *AuthService) createSession(userID int64, passwordHash string) (*domain.Session, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("generate session token: %w", err)
@@ -245,8 +290,12 @@ func (a *AuthService) createSession(userID int64) (*domain.Session, error) {
 	// mirroring PAT storage. CSRF token stays plaintext (inert without the id).
 	stored := *session
 	stored.ID = hashSessionID(session.ID)
-	if err := a.sessions.Create(&stored); err != nil {
+	created, err := a.sessions.CreateForHash(&stored, passwordHash)
+	if err != nil {
 		return nil, err
+	}
+	if !created {
+		return nil, ErrInvalidCredentials
 	}
 	return session, nil
 }
@@ -264,7 +313,9 @@ func hashPassword(password string) (string, error) {
 		return "", err
 	}
 
+	authArgon <- struct{}{}
 	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	<-authArgon
 
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, argonMemory, argonTime, argonThreads,
@@ -273,10 +324,11 @@ func hashPassword(password string) (string, error) {
 	), nil
 }
 
-func verifyPassword(password, hash string) bool {
+// verifyPassword waits for a slot in sem. Error only if ctx ends first.
+func verifyPassword(ctx context.Context, sem chan struct{}, password, hash string) (bool, error) {
 	parts := strings.Split(hash, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
-		return false
+		return false, nil
 	}
 
 	var memory uint32
@@ -284,19 +336,25 @@ func verifyPassword(password, hash string) bool {
 	var threads uint8
 	_, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &threads)
 	if err != nil {
-		return false
+		return false, nil
 	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
-		return false
+		return false, nil
 	}
 
 	expectedKey, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
-		return false
+		return false, nil
 	}
 
+	select {
+	case sem <- struct{}{}:
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 	key := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(expectedKey)))
-	return subtle.ConstantTimeCompare(key, expectedKey) == 1
+	<-sem
+	return subtle.ConstantTimeCompare(key, expectedKey) == 1, nil
 }

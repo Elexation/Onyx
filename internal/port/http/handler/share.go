@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -86,6 +87,7 @@ func (h *ShareHandler) GetByPath(w http.ResponseWriter, r *http.Request) {
 
 	link, err := h.shares.GetByPath(path)
 	if err != nil {
+		slog.Warn("share lookup failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up share"})
 		return
 	}
@@ -101,6 +103,7 @@ func (h *ShareHandler) GetByPath(w http.ResponseWriter, r *http.Request) {
 func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 	links, err := h.shares.List()
 	if err != nil {
+		slog.Warn("share list failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list shares"})
 		return
 	}
@@ -114,6 +117,7 @@ func (h *ShareHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *ShareHandler) Count(w http.ResponseWriter, r *http.Request) {
 	count, err := h.shares.Count()
 	if err != nil {
+		slog.Warn("share count failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to count shares"})
 		return
 	}
@@ -130,8 +134,12 @@ func (h *ShareHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.shares.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found"})
+			return
+		}
 		slog.Warn("share delete failed", "id", id, "error", err)
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "share not found"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete share"})
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,9 +56,10 @@ func buildDSN(dbPath string) string {
 		"foreign_keys(ON)",
 	}
 
+	// Escape the path: in a file: URI, "#", "?" and "%HH" would open a different database
 	var b strings.Builder
 	b.WriteString("file:")
-	b.WriteString(filepath.ToSlash(dbPath))
+	b.WriteString((&url.URL{Path: filepath.ToSlash(dbPath)}).EscapedPath())
 	for i, p := range pragmas {
 		if i == 0 {
 			b.WriteByte('?')

@@ -38,7 +38,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	thumbsHandler := handler.NewThumbsHandler(thumbs)
 	streamHandler := handler.NewStreamHandler(probe, transcode)
 	storageHandler := handler.NewStorageHandler(files)
-	changesHandler := handler.NewChangesHandler(events)
+	changesHandler := handler.NewChangesHandler(events, auth)
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
@@ -124,10 +124,9 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	})
 
 	// Public share API routes (no auth). All read endpoints sit behind
-	// streamRL: CLAUDE.md mandates rate-limiting any public-share endpoint
-	// triggering expensive I/O (recursive zip, transcoding, file reads).
-	// /verify keeps shareRL (auth-lockout type) for password brute-force
-	// resistance with handler-side RecordSuccess rollback.
+	// streamRL because unauthenticated callers can trigger expensive I/O
+	// (recursive zip, transcoding, file reads). /verify keeps shareRL
+	// (auth-lockout type) for password brute-force resistance.
 	r.With(shareRL.Middleware).Post("/api/public/s/{token}/verify", publicHandler.Verify)
 	r.Group(func(r chi.Router) {
 		r.Use(streamRL.Middleware)
@@ -149,7 +148,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.NotFound(apiAware404(web.SPAHandler()))
 
 	// Intercept /api/upload before Chi to avoid path mangling.
-	// OPTIONS pass through without auth (tus CORS preflight).
+	// OPTIONS is answered in-process without auth or CORS headers.
 	return uploadInterceptor(auth, tokens, tus, uploadCL, trustedProxy, requireHTTPS, r)
 }
 

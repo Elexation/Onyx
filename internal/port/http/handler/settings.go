@@ -32,6 +32,7 @@ func NewSettingsHandler(settings *service.SettingsService, shares *service.Share
 func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	all, err := h.settings.GetAll()
 	if err != nil {
+		slog.Warn("settings load failed", "error", err)
 		http.Error(w, `{"error":"failed to load settings"}`, http.StatusInternalServerError)
 		return
 	}

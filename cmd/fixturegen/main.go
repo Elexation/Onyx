@@ -192,10 +192,7 @@ func spliceEXIFOrientation(in *bytes.Buffer, orientation uint16) *bytes.Buffer {
 	return out
 }
 
-// decodeCenterPixel reads an image file, decodes it via image.Decode (same
-// chain the server uses), samples the center pixel, and prints "R G B" on
-// stdout with each channel scaled to 0-255. Used by the phase 19 animated
-// GIF test to prove the thumbnail pipeline returned frame 1 content.
+// decodeCenterPixel prints the center pixel as "R G B" (0-255), decoded like the server does.
 func decodeCenterPixel(path string) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -73,12 +74,19 @@ func (s *ShareService) Create(filePath string, isDir bool, expiresIn *time.Durat
 		return nil, "", fmt.Errorf("sharing is disabled")
 	}
 
+	// Backslash paths would be stored non-canonically; resolveSharePath rejects them too
+	if strings.Contains(filePath, `\`) {
+		return nil, "", fmt.Errorf("invalid share path")
+	}
 	cleaned := path.Clean(filePath)
 	if cleaned == "/" || cleaned == "." || cleaned == "" {
 		return nil, "", fmt.Errorf("invalid share path")
 	}
 	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") {
 		return nil, "", fmt.Errorf("invalid share path")
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		cleaned = "/" + cleaned
 	}
 	info, err := s.files.GetFileInfo(cleaned)
 	if err != nil {
@@ -167,6 +175,16 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 		return nil, nil, nil
 	}
 
+	// Disabled sharing must not depend on DeleteAll having succeeded
+	enabledStr, err := s.settings.Get(domain.SettingSharesEnabled)
+	if err != nil {
+		slog.Warn("share validate: settings read failed", "error", err)
+		return nil, nil, nil
+	}
+	if !domain.GetBool(enabledStr) {
+		return nil, nil, nil
+	}
+
 	// Defensive orphan check: covers OS-level deletes that bypassed the
 	// cascade hooks (file removed via SFTP, etc.). Stat is cheap; the
 	// uniform 403/404 elsewhere keeps us from being a token oracle.
@@ -185,12 +203,13 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 // CheckPassword reports whether password matches the share's stored hash.
 // When the link is missing or passwordless it burns the same argon2 work
 // against a throwaway hash, so Verify latency cannot reveal token existence.
-func (s *ShareService) CheckPassword(link *domain.ShareLink, pwHash *string, password string) bool {
+func (s *ShareService) CheckPassword(ctx context.Context, link *domain.ShareLink, pwHash *string, password string) bool {
 	if link == nil || pwHash == nil {
-		verifyPassword(password, dummyHash)
+		verifyPassword(ctx, shareArgon, password, dummyHash)
 		return false
 	}
-	return verifyPassword(password, *pwHash)
+	ok, _ := verifyPassword(ctx, shareArgon, password, *pwHash)
+	return ok
 }
 
 func (s *ShareService) List() ([]domain.ShareLink, error) {
@@ -212,7 +231,11 @@ func (s *ShareService) RecordAccess(id int64) {
 }
 
 func (s *ShareService) DeleteAll() (int64, error) {
-	return s.repo.DeleteAll()
+	n, err := s.repo.DeleteAll()
+	if err == nil && n > 0 {
+		recordIf(s.events, "share.changed", ShareChangedPayload{Kind: "revoke"})
+	}
+	return n, err
 }
 
 func (s *ShareService) Count() (int64, error) {
@@ -233,6 +256,7 @@ func (s *ShareService) CleanExpired() {
 
 func (s *ShareService) StartCleanup(interval time.Duration) {
 	go func() {
+		s.CleanExpired()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {

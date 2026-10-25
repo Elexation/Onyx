@@ -125,11 +125,20 @@ type ThumbnailService struct {
 // NewThumbnailService wires the service. ffmpeg is probed here; if missing,
 // video thumbnails will return StatusUnsupported.
 func NewThumbnailService(s *storage.LocalStorage, dataDir, thumbDir string) (*ThumbnailService, error) {
-	store, err := storage.NewThumbStore(thumbDir)
+	// ffmpeg calls reject relative paths, and the defaults (data, .cache) are relative
+	absThumbDir, err := filepath.Abs(thumbDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve thumb dir: %w", err)
+	}
+	store, err := storage.NewThumbStore(absThumbDir)
 	if err != nil {
 		return nil, err
 	}
-	realRoot, err := filepath.EvalSymlinks(dataDir)
+	absDataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data dir: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(absDataDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data dir: %w", err)
 	}
@@ -141,7 +150,7 @@ func NewThumbnailService(s *storage.LocalStorage, dataDir, thumbDir string) (*Th
 		storage:  s,
 		store:    store,
 		ffmpeg:   media.Detect(),
-		dataDir:  dataDir,
+		dataDir:  absDataDir,
 		realRoot: realRoot,
 		jobs:     make(chan thumbJob, 1000),
 		workers:  workers,

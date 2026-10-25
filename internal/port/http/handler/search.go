@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/service"
@@ -26,8 +27,17 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, total, err := h.search.Search(query, 20)
+	// Characters, not bytes, to match the search box's maxlength
+	if utf8.RuneCountInString(query) > service.MaxSearchQueryLen {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "search query too long"})
+		return
+	}
+
+	results, total, err := h.search.Search(r.Context(), query, 20)
 	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
 		slog.Warn("search failed", "query", query, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "search failed"})
 		return

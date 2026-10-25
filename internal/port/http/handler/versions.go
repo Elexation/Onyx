@@ -30,6 +30,7 @@ func (h *VersionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.versions.ListVersions(path)
 	if err != nil {
+		slog.Warn("version list failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list versions"})
 		return
 	}
@@ -62,6 +63,7 @@ func (h *VersionHandler) Restore(w http.ResponseWriter, r *http.Request) {
 func (h *VersionHandler) Count(w http.ResponseWriter, r *http.Request) {
 	count, err := h.versions.Count()
 	if err != nil {
+		slog.Warn("version count failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to count versions"})
 		return
 	}

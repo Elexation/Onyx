@@ -15,15 +15,25 @@ func NewTokenRepo(db *sql.DB) *TokenRepo {
 	return &TokenRepo{db: db}
 }
 
-func (r *TokenRepo) Create(name, tokenHash, tokenLast8, scope string, createdAt int64, expiresAt *int64) (int64, error) {
+func (r *TokenRepo) Create(name, tokenHash, tokenLast8, scope string, createdAt int64, expiresAt *int64, maxActive int) (int64, bool, error) {
+	// Drop expired rows first so the cap can count every row and still bound the table
+	if _, err := r.db.Exec("DELETE FROM personal_access_tokens WHERE expires_at IS NOT NULL AND expires_at < ?", createdAt); err != nil {
+		return 0, false, fmt.Errorf("purge expired tokens: %w", err)
+	}
 	res, err := r.db.Exec(
-		"INSERT INTO personal_access_tokens (name, token_hash, token_last8, scope, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-		name, tokenHash, tokenLast8, scope, createdAt, expiresAt,
+		`INSERT INTO personal_access_tokens (name, token_hash, token_last8, scope, created_at, expires_at)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE (SELECT COUNT(*) FROM personal_access_tokens) < ?`,
+		name, tokenHash, tokenLast8, scope, createdAt, expiresAt, maxActive,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert token: %w", err)
+		return 0, false, fmt.Errorf("insert token: %w", err)
 	}
-	return res.LastInsertId()
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, false, nil
+	}
+	id, err := res.LastInsertId()
+	return id, err == nil, err
 }
 
 func (r *TokenRepo) GetByTokenHash(tokenHash string) (*domain.PersonalAccessToken, error) {
@@ -82,14 +92,14 @@ func (r *TokenRepo) Delete(id int64) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("token not found")
+		return fmt.Errorf("token %w", domain.ErrNotFound)
 	}
 	return nil
 }
 
-func (r *TokenRepo) Count() (int64, error) {
+func (r *TokenRepo) CountActive(now int64) (int64, error) {
 	var n int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM personal_access_tokens").Scan(&n)
+	err := r.db.QueryRow("SELECT COUNT(*) FROM personal_access_tokens WHERE expires_at IS NULL OR expires_at >= ?", now).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count tokens: %w", err)
 	}

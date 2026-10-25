@@ -28,7 +28,7 @@ func newChangesHandlerForTest(t *testing.T) (*ChangesHandler, *service.EventStor
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	es := service.NewEventStore(db)
-	return NewChangesHandler(es), es, db
+	return NewChangesHandler(es, stubSessionValidator{}), es, db
 }
 
 func insertBackdatedEvent(t *testing.T, db *sql.DB, eventType string, createdAt int64) int64 {

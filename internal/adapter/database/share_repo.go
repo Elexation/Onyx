@@ -113,7 +113,7 @@ func (r *ShareRepo) Delete(id int64) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("share link not found")
+		return fmt.Errorf("share link %w", domain.ErrNotFound)
 	}
 	return nil
 }
@@ -165,10 +165,10 @@ func (r *ShareRepo) DeleteByPath(p string) (int64, error) {
 // whose file_path is a descendant of dirPath. Used when a directory is
 // trashed/deleted to cascade-clean shares pointing inside it.
 func (r *ShareRepo) DeleteByPathRecursive(dirPath string) (int64, error) {
-	prefix := strings.TrimSuffix(dirPath, "/") + "/"
+	lo, hi := childRange(dirPath)
 	res, err := r.db.Exec(
-		`DELETE FROM share_links WHERE file_path = ? OR file_path LIKE ? || '%' ESCAPE '\'`,
-		dirPath, escapeLike(prefix),
+		`DELETE FROM share_links WHERE file_path = ? OR (file_path >= ? AND file_path < ?)`,
+		dirPath, lo, hi,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("delete shares recursive: %w", err)
@@ -209,11 +209,12 @@ func (r *ShareRepo) UpdatePathRecursive(oldDir, newDir string) (int64, error) {
 	n1, _ := res1.RowsAffected()
 
 	// Prefix update for descendants. substr is 1-indexed; cut after the old prefix.
+	lo, hi := childRange(oldPrefix)
 	res2, err := tx.Exec(
 		`UPDATE share_links
 		 SET file_path = ? || substr(file_path, ?)
-		 WHERE file_path LIKE ? || '%' ESCAPE '\'`,
-		newPrefix, utf8.RuneCountInString(oldPrefix)+1, escapeLike(oldPrefix),
+		 WHERE file_path >= ? AND file_path < ?`,
+		newPrefix, utf8.RuneCountInString(oldPrefix)+1, lo, hi,
 	)
 	if err != nil {
 		tx.Rollback()

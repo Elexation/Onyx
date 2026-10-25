@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -100,14 +101,15 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Collapse non-existent token and wrong password into a single 403 to
 	// avoid an existence oracle that lets brute force enumerate valid tokens.
 	// CheckPassword burns argon2 work either way to keep timing uniform.
-	if !h.shares.CheckPassword(link, pwHash, req.Password) {
+	if !h.shares.CheckPassword(r.Context(), link, pwHash, req.Password) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}
 
-	h.rl.RecordSuccess(r)
+	h.rl.UndoAttempt(r)
 	sessionID, err := h.createSession(token)
 	if err != nil {
+		slog.Warn("share session create failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -141,7 +143,7 @@ func (h *PublicHandler) Download(w http.ResponseWriter, r *http.Request) {
 	filePath := link.FilePath
 	if link.IsDir {
 		subPath := extractSubPath(r, token)
-		resolved, ok := resolveSharePath(link, subPath)
+		resolved, ok := h.shareTarget(link, subPath)
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
@@ -190,7 +192,7 @@ func (h *PublicHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
-	if err := h.files.WriteZip(w, []string{link.FilePath}); err != nil {
+	if err := h.files.WriteZip(w, []string{link.FilePath}, true); err != nil {
 		if !errors.Is(err, service.ErrZipSizeExceeded) {
 			slog.Error("share zip stream error", "error", err)
 		}
@@ -214,7 +216,7 @@ func (h *PublicHandler) Raw(w http.ResponseWriter, r *http.Request) {
 	filePath := link.FilePath
 	if link.IsDir {
 		subPath := extractSubPath2(r, token, "raw")
-		resolved, ok := resolveSharePath(link, subPath)
+		resolved, ok := h.shareTarget(link, subPath)
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 			return
@@ -289,7 +291,7 @@ func (h *PublicHandler) redirectDirectNavigate(w http.ResponseWriter, r *http.Re
 func (h *PublicHandler) extractShareStreamPath(w http.ResponseWriter, r *http.Request, link *domain.ShareLink, urlSegment string) (string, bool) {
 	token := chi.URLParam(r, "token")
 	subPath := extractSubPath2(r, token, urlSegment)
-	filePath, ok := resolveSharePath(link, subPath)
+	filePath, ok := h.shareTarget(link, subPath)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
 		return "", false
@@ -321,7 +323,7 @@ func (h *PublicHandler) StreamInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.probe == nil || !h.probe.HasFFprobe() {
-		http.Error(w, `{"error":"ffprobe not available"}`, http.StatusNotImplemented)
+		http.Error(w, `{"error":"ffmpeg or ffprobe not available"}`, http.StatusNotImplemented)
 		return
 	}
 	filePath, ok := h.extractShareStreamPath(w, r, link, "stream/info")
@@ -437,7 +439,7 @@ func (h *PublicHandler) StreamInit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
-	initPath := filepath.Join(session.Dir(), media.HLSInitName(variant))
+	initPath := filepath.Join(session.Dir(), media.HLSInitName(variant, session.VariantCount()))
 	if err := waitForStableFile(r.Context(), initPath); err != nil {
 		http.Error(w, `{"error":"init segment not ready"}`, http.StatusGatewayTimeout)
 		return
@@ -476,6 +478,10 @@ func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
 		writeFileError(w, err)
 		return
 	}
+	if variant >= session.VariantCount() {
+		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
+		return
+	}
 	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum)
 	if err != nil {
 		if errors.Is(err, service.ErrSegmentTimeout) {
@@ -510,6 +516,7 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 	if link.IsDir {
 		items, err := h.files.ListDirectory(link.FilePath, false)
 		if err != nil {
+			slog.Warn("share list failed", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list directory"})
 			return
 		}
@@ -611,13 +618,7 @@ func extractSubPath2(r *http.Request, token string, segment string) string {
 	return p
 }
 
-// resolveSharePath accepts a sub-path and returns the absolute file path it
-// refers to within the share, or false if it escapes scope. For single-file
-// shares, subPath is ignored. For directory shares, subPath may be either
-// share-relative (e.g. "/movie.mkv") or already fully-qualified under the
-// share base (e.g. "/shared/movie.mkv"; this happens when HLS playlist
-// content, rewritten by rewriteShareHLS, flows back through the subsequent
-// playlist/segment requests).
+// resolveSharePath maps a share sub-path to a data path. False if it escapes or names a dotfile
 func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
 	if !link.IsDir {
 		return link.FilePath, true
@@ -632,13 +633,39 @@ func resolveSharePath(link *domain.ShareLink, subPath string) (string, bool) {
 		return "", false
 	}
 	subPath = path.Clean(subPath)
-	sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
-	if strings.HasPrefix(subPath, sharePrefix) {
-		return subPath, true
+	for _, seg := range strings.Split(subPath, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return "", false
+		}
 	}
+	sharePrefix := strings.TrimSuffix(link.FilePath, "/") + "/"
 	filePath := path.Join(link.FilePath, subPath)
 	if !strings.HasPrefix(filePath, sharePrefix) {
 		return "", false
+	}
+	return filePath, true
+}
+
+// Like resolveSharePath, but checks on-disk names so 8.3 aliases can't reach dotfiles
+func (h *PublicHandler) shareTarget(link *domain.ShareLink, subPath string) (string, bool) {
+	filePath, ok := resolveSharePath(link, subPath)
+	if !ok || !link.IsDir {
+		return filePath, ok
+	}
+	long, err := h.files.LongPath(filePath)
+	if err != nil {
+		// Missing paths 404 downstream; anything else fails closed
+		return filePath, errors.Is(err, fs.ErrNotExist)
+	}
+	subSegs := strings.Split(strings.Trim(path.Clean(subPath), "/"), "/")
+	longSegs := strings.Split(strings.Trim(long, "/"), "/")
+	if len(longSegs) < len(subSegs) {
+		return "", false
+	}
+	for _, seg := range longSegs[len(longSegs)-len(subSegs):] {
+		if strings.HasPrefix(seg, ".") {
+			return "", false
+		}
 	}
 	return filePath, true
 }

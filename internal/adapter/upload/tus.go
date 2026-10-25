@@ -56,6 +56,8 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 		// forwarded headers, a TLS-terminating proxy with a plain-HTTP upstream
 		// gets http:// URLs and the SPA's PATCHes are blocked as mixed content.
 		RespectForwardedHeaders: trustedProxy,
+		// Finalize runs for every completed upload, so a partial would land as a file
+		DisableConcatenation: true,
 		// Finalize synchronously, in the request goroutine, before the 204 is
 		// returned. This runs up to the client's concurrency wide (not serialized
 		// through one channel consumer) and lets a finalize failure propagate to
@@ -132,7 +134,13 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
 					tusd.NewError("ERR_UPLOAD_SIZE_UNKNOWN", "deferred-length uploads are not allowed", http.StatusBadRequest)
 			}
-			maxStr, _ := settings.Get(domain.SettingUploadMaxSize)
+			// Fail closed: this is the only per-file size check
+			maxStr, err := settings.Get(domain.SettingUploadMaxSize)
+			if err != nil {
+				slog.Warn("read upload size cap", "error", err)
+				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
+					tusd.NewError("ERR_SETTINGS_UNAVAILABLE", "could not check upload size limit", http.StatusServiceUnavailable)
+			}
 			maxSize := domain.GetInt64(maxStr)
 			if maxSize > 0 && hook.Upload.Size > maxSize {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},
@@ -160,9 +168,7 @@ func (t *TusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.handler.ServeHTTP(w, r)
 }
 
-// cleanupStaleUploads removes incomplete uploads with no write progress for
-// 24 hours (1 hour if no bytes ever arrived), plus orphaned .info files.
-// Runs on startup and every hour.
+// cleanupStaleUploads drops staging files idle 24h (1h if empty) and orphaned .info files
 func (t *TusHandler) cleanupStaleUploads() {
 	t.doCleanup()
 	ticker := time.NewTicker(1 * time.Hour)

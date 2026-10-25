@@ -58,6 +58,11 @@ func (s *VersionService) SetEvents(r EventRecorder) {
 // versioning is disabled, the file exceeds the max size, or the file does
 // not exist yet.
 func (s *VersionService) CreateVersion(filePath string) error {
+	return s.createVersion(filePath, 0)
+}
+
+// createVersion is CreateVersion with keepID exempt from the large-file cap.
+func (s *VersionService) createVersion(filePath string, keepID int64) error {
 	enabled, err := s.settings.Get(domain.SettingVersionsEnabled)
 	if err != nil {
 		return fmt.Errorf("get versions enabled: %w", err)
@@ -117,19 +122,23 @@ func (s *VersionService) CreateVersion(filePath string) error {
 
 	// Hard cap for large files.
 	if info.Size() > largeFileThreshold {
-		s.enforceLargeFileCap(filePath)
+		s.enforceLargeFileCap(filePath, keepID)
 	}
 	recordIf(s.events, "version.changed", VersionChangedPayload{Kind: "add", ID: v.ID})
 	return nil
 }
 
-func (s *VersionService) enforceLargeFileCap(filePath string) {
+func (s *VersionService) enforceLargeFileCap(filePath string, keepID int64) {
 	versions, err := s.repo.ListByPath(filePath)
 	if err != nil {
 		slog.Warn("large-file cap: list versions", "path", filePath, "error", err)
 		return
 	}
 	for i := largeFileMaxVersions; i < len(versions); i++ {
+		// A restore's own target must survive its safety snapshot
+		if versions[i].ID == keepID {
+			continue
+		}
 		if err := s.deleteVersionRow(versions[i]); err != nil {
 			slog.Warn("large-file cap: delete version", "id", versions[i].ID, "error", err)
 		}
@@ -152,12 +161,8 @@ func (s *VersionService) RestoreVersion(id int64) error {
 		return fmt.Errorf("version not found")
 	}
 
-	// Safety: version the current file before replacing. A hard failure
-	// here aborts the restore so we don't clobber the current content with
-	// no backup. CreateVersion returns nil when the current file doesn't
-	// exist (legitimate: user deleted it and is restoring) or versioning
-	// is disabled.
-	if err := s.CreateVersion(v.FilePath); err != nil {
+	// Back up the current file first; skipped (nil) if missing, too big or unversioned, so the UI confirms
+	if err := s.createVersion(v.FilePath, v.ID); err != nil {
 		return fmt.Errorf("create safety version before restore: %w", err)
 	}
 
@@ -173,17 +178,18 @@ func (s *VersionService) RestoreVersion(id int64) error {
 	return nil
 }
 
-// DeleteAllVersions removes every version for the given data-relative file
-// path. Used when a file is permanently deleted (e.g. from trash) so its
-// version history doesn't linger as orphan records.
-func (s *VersionService) DeleteAllVersions(filePath string) error {
+// DeleteVersionsBefore drops filePath's versions up to cutoff, so a newer file there keeps its own
+func (s *VersionService) DeleteVersionsBefore(filePath string, cutoff int64) error {
 	filePath = ensureLeadingSlash(filePath)
 	versions, err := s.repo.ListByPath(filePath)
 	if err != nil {
-		return fmt.Errorf("list versions for delete-all: %w", err)
+		return fmt.Errorf("list versions for delete: %w", err)
 	}
 	var firstErr error
 	for _, v := range versions {
+		if v.CreatedAt > cutoff {
+			continue
+		}
 		if err := s.deleteVersionRow(v); err != nil {
 			slog.Warn("delete-all versions: failed", "id", v.ID, "error", err)
 			if firstErr == nil {

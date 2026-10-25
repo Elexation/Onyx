@@ -134,11 +134,7 @@ func (s *VersionStore) RestoreVersion(filePath, versionRel string) error {
 		return fmt.Errorf("restore destination escapes data directory")
 	}
 
-	// reflink.Auto requires the destination to not exist; remove first.
-	if err := os.Remove(dstAbs); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove current file: %w", err)
-	}
-
+	// reflink.Auto renames a temp over dst; never remove dst first or a failure loses it
 	if err := reflink.Auto(srcAbs, dstAbs); err != nil {
 		return fmt.Errorf("restore version: %w", err)
 	}
@@ -157,8 +153,7 @@ func (s *VersionStore) DeleteVersion(versionRel string) error {
 	return nil
 }
 
-// RenameFile moves all version files for a renamed data file. Operates on
-// versions-relative paths returned from StoreVersion.
+// RenameFile moves a renamed file's versions; takes data paths, not StoreVersion results
 func (s *VersionStore) RenameFile(oldFilePath, newFilePath string) error {
 	// Lexical safety checks on both paths before touching the filesystem.
 	if _, err := s.safeVersionsPath(strings.TrimPrefix(oldFilePath, "/")); err != nil {

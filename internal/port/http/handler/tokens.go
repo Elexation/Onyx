@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -37,7 +39,7 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
 		return
 	}
-	if len(req.Name) > 255 {
+	if utf8.RuneCountInString(req.Name) > 255 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name must not exceed 255 characters"})
 		return
 	}
@@ -50,7 +52,7 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := err.Error()
 		switch {
-		case strings.Contains(msg, "maximum"):
+		case errors.Is(err, service.ErrTokenLimit):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": msg})
 		case msg == "expiration must be in the future":
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
@@ -62,6 +64,7 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("security_event", "event", "token_create", "name", req.Name)
+	noStore(w)
 	tok.Token = fullToken
 	writeJSON(w, http.StatusCreated, tok)
 }
@@ -70,6 +73,7 @@ func (h *TokenHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *TokenHandler) List(w http.ResponseWriter, r *http.Request) {
 	tokens, err := h.tokens.List()
 	if err != nil {
+		slog.Warn("token list failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list tokens"})
 		return
 	}
@@ -89,8 +93,12 @@ func (h *TokenHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tokens.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "token not found"})
+			return
+		}
 		slog.Warn("token delete failed", "id", id, "error", err)
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "token not found"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete token"})
 		return
 	}
 

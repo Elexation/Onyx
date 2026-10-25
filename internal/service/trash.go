@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
@@ -44,6 +46,12 @@ type TrashService struct {
 	versions    *VersionService
 	shares      ShareCleaner
 	events      EventRecorder
+	lockPath    func(p string) (unlock func())
+}
+
+// SetPathLocker shares FileService's finalize lock so restores and uploads to one path serialize
+func (s *TrashService) SetPathLocker(lock func(p string) (unlock func())) {
+	s.lockPath = lock
 }
 
 func NewTrashService(repo TrashRepo, settings *SettingsService, dataDir, trashDir string) (*TrashService, error) {
@@ -89,6 +97,17 @@ func (s *TrashService) cascadeShareDelete(p string, isDir bool) {
 	if _, err := s.shares.DeleteForPath(p, isDir); err != nil {
 		slog.Warn("trash: cascade share delete failed", "path", p, "isDir", isDir, "error", err)
 	}
+}
+
+// trashBlobName swaps out "\" and fits NAME_MAX with the id prefix; OriginalPath keeps the name
+func trashBlobName(id, base string) string {
+	base = strings.ReplaceAll(base, `\`, "_")
+	maxBase := 255 - len(id) - 1
+	for len(base) > maxBase {
+		_, size := utf8.DecodeLastRuneInString(base)
+		base = base[:len(base)-size]
+	}
+	return id + "-" + base
 }
 
 // resolveDataSubpath performs a lexical safety check on a data-relative path
@@ -154,11 +173,13 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	if err != nil {
 		return MoveToTrashResult{Path: filePath, Error: err.Error()}
 	}
-	resolvedSrc, err := s.verifyInsideDataDir(srcAbs)
+	// Contain the parent, not the target: a symlink is trashed as the link itself
+	resolvedParent, err := s.verifyInsideDataDir(filepath.Dir(srcAbs))
 	if err != nil {
 		return MoveToTrashResult{Path: filePath, Error: "invalid path"}
 	}
-	info, err := os.Stat(resolvedSrc)
+	resolvedSrc := filepath.Join(resolvedParent, filepath.Base(srcAbs))
+	info, err := os.Lstat(resolvedSrc)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return MoveToTrashResult{Path: filePath, Error: "not found"}
@@ -180,11 +201,13 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 
 	id, err := generateID()
 	if err != nil {
-		return MoveToTrashResult{Path: filePath, Error: fmt.Sprintf("generate id: %s", err)}
+		slog.Warn("trash: generate id failed", "error", err)
+		return MoveToTrashResult{Path: filePath, Error: "move to trash failed"}
 	}
 
-	clean := strings.TrimLeft(filePath, "/")
-	trashName := id + "-" + filepath.Base(clean)
+	// Record the path that was actually moved, not the raw request string
+	originalPath := canonPath(filePath)
+	trashName := trashBlobName(id, path.Base(originalPath))
 	dstAbs := filepath.Join(s.trashDir, trashName)
 
 	if err := os.Rename(resolvedSrc, dstAbs); err != nil {
@@ -193,7 +216,7 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 			return MoveToTrashResult{Path: filePath, Error: "move to trash failed"}
 		}
 		// Cross-device: copy then delete original
-		if err := copyTree(resolvedSrc, dstAbs); err != nil {
+		if err := copyItem(resolvedSrc, dstAbs); err != nil {
 			os.RemoveAll(dstAbs)
 			slog.Warn("trash: cross-device copy failed", "path", filePath, "error", err)
 			return MoveToTrashResult{Path: filePath, Error: "copy to trash failed"}
@@ -206,15 +229,17 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 
 	item := &domain.TrashItem{
 		ID:           id,
-		OriginalPath: "/" + clean,
+		OriginalPath: originalPath,
 		TrashPath:    trashName,
 		DeletedAt:    time.Now().Unix(),
 		Size:         size,
 		IsDir:        info.IsDir(),
 	}
 	if err := s.repo.Insert(item); err != nil {
-		// Move back on DB failure
-		os.Rename(dstAbs, resolvedSrc)
+		// Move back on DB failure; after a cross-device copy this fails too, so log it
+		if rerr := os.Rename(dstAbs, resolvedSrc); rerr != nil {
+			slog.Error("trash: rollback failed, item left in trash dir without a record", "path", filePath, "blob", dstAbs, "error", rerr)
+		}
 		slog.Warn("trash: record insert failed", "path", filePath, "error", err)
 		return MoveToTrashResult{Path: filePath, Error: "record trash item failed"}
 	}
@@ -248,7 +273,8 @@ func (s *TrashService) CheckRestoreConflicts(ids []string) ([]RestoreConflict, e
 		if err != nil {
 			continue
 		}
-		info, err := os.Stat(dstAbs)
+		// Lstat, matching Restore: a dangling symlink is still a conflict
+		info, err := os.Lstat(dstAbs)
 		if err != nil {
 			continue
 		}
@@ -294,17 +320,18 @@ func (s *TrashService) CheckRestoreConflicts(ids []string) ([]RestoreConflict, e
 //   - "replace":    displace the existing item to trash, then restore.
 //     Reversible: the displaced item lives in trash with the same OriginalPath.
 //   - "keepBoth":   auto-suffix (e.g. "Foo (1)") until a free name is found.
-//   - "skip":       no filesystem action, returns ("", nil). Trash record stays.
+//   - "skip":       if the path is occupied, no filesystem action and ("", nil);
+//     the trash record stays. A free path restores normally.
 //   - "":           back-compat: error if the path is occupied.
 //
-// Returns the final restored path (empty for skip).
+// Returns the final restored path, or "" when the item was skipped.
 func (s *TrashService) Restore(id, strategy string) (string, error) {
 	item, err := s.repo.GetByID(id)
 	if err != nil {
 		return "", fmt.Errorf("get trash item: %w", err)
 	}
 	if item == nil {
-		return "", fmt.Errorf("trash item not found")
+		return "", fmt.Errorf("trash item %w", domain.ErrNotFound)
 	}
 
 	// Lexical check on the stored original path before any filesystem
@@ -314,9 +341,15 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 		return "", fmt.Errorf("invalid original path in trash record")
 	}
 
+	// Hold the finalize lock so an upload can't land between the check and the rename
+	if s.lockPath != nil {
+		defer s.lockPath(item.OriginalPath)()
+	}
+
 	finalPath := item.OriginalPath
 
-	if _, err := os.Stat(dstAbs); err == nil {
+	// Lstat: a dangling symlink still occupies the name
+	if _, err := os.Lstat(dstAbs); err == nil {
 		switch strategy {
 		case "skip":
 			return "", nil
@@ -336,6 +369,13 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 				return "", fmt.Errorf("compute relative path: %w", err)
 			}
 			finalPath = "/" + filepath.ToSlash(rel)
+			// Lock the suffixed name too, then check it is still free
+			if s.lockPath != nil {
+				defer s.lockPath(finalPath)()
+			}
+			if _, err := os.Lstat(dstAbs); err == nil {
+				return "", fmt.Errorf("cannot restore: %s was just taken, try again", finalPath)
+			}
 		default:
 			return "", fmt.Errorf("cannot restore: a file or directory already exists at %s", item.OriginalPath)
 		}
@@ -360,7 +400,7 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 		if !isCrossDevice(err) {
 			return "", fmt.Errorf("restore file: %w", err)
 		}
-		if err := copyTree(srcAbs, dstAbs); err != nil {
+		if err := copyItem(srcAbs, dstAbs); err != nil {
 			os.RemoveAll(dstAbs)
 			return "", fmt.Errorf("restore copy: %w", err)
 		}
@@ -370,8 +410,10 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 	}
 
 	if err := s.repo.Delete(id); err != nil {
-		// Move back to trash on DB failure
-		os.Rename(dstAbs, srcAbs)
+		// Move back to trash on DB failure; after a cross-device copy this can fail too
+		if rerr := os.Rename(dstAbs, srcAbs); rerr != nil {
+			slog.Error("trash: restore rollback failed, record points at a missing blob", "id", id, "path", dstAbs, "error", rerr)
+		}
 		return "", fmt.Errorf("remove trash record: %w", err)
 	}
 
@@ -416,7 +458,7 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 		return fmt.Errorf("get trash item: %w", err)
 	}
 	if item == nil {
-		return fmt.Errorf("trash item not found")
+		return fmt.Errorf("trash item %w", domain.ErrNotFound)
 	}
 
 	if strings.ContainsAny(item.TrashPath, "/\\") || item.TrashPath == ".." || item.TrashPath == "." || item.TrashPath == "" {
@@ -431,20 +473,12 @@ func (s *TrashService) permanentDeleteWithKind(id, kind string) error {
 		return fmt.Errorf("remove trash record: %w", err)
 	}
 
-	// Cascade: drop any version history attached to this file's original
-	// path. Dir items don't have per-path versions of their own, but files
-	// inside the dir would. We don't walk those here because trash stores
-	// the dir as an opaque blob, so version cleanup for dir contents is
-	// left to retention.
+	// Drop versions from before the trashing (dir contents are left to retention); shares went at trash time
 	if s.versions != nil && !item.IsDir {
-		if err := s.versions.DeleteAllVersions(item.OriginalPath); err != nil {
+		if err := s.versions.DeleteVersionsBefore(item.OriginalPath, item.DeletedAt); err != nil {
 			slog.Warn("trash permanent delete: cleanup versions", "path", item.OriginalPath, "error", err)
 		}
 	}
-
-	// Defensive cascade: shares were already removed at trash time, but
-	// items predating this fix may still carry share rows.
-	s.cascadeShareDelete(item.OriginalPath, item.IsDir)
 
 	recordIf(s.events, "trash.changed", TrashChangedPayload{Kind: kind, ID: id})
 	return nil
@@ -470,13 +504,12 @@ func (s *TrashService) EmptyTrash() error {
 		if err := s.repo.Delete(item.ID); err != nil {
 			slog.Warn("empty trash: remove record failed", "id", item.ID, "error", err)
 		}
+		// Version scope and no share cascade: see permanentDeleteWithKind.
 		if s.versions != nil && !item.IsDir {
-			if err := s.versions.DeleteAllVersions(item.OriginalPath); err != nil {
+			if err := s.versions.DeleteVersionsBefore(item.OriginalPath, item.DeletedAt); err != nil {
 				slog.Warn("empty trash: cleanup versions", "path", item.OriginalPath, "error", err)
 			}
 		}
-		// Defensive cascade: see permanentDeleteWithKind.
-		s.cascadeShareDelete(item.OriginalPath, item.IsDir)
 	}
 
 	if len(items) > 0 {
@@ -585,6 +618,18 @@ func isCrossDevice(err error) bool {
 		return errors.Is(linkErr.Err, syscall.EXDEV)
 	}
 	return false
+}
+
+// copyItem is copyTree, except a top-level symlink is recreated, never followed
+func copyItem(src, dst string) error {
+	if info, err := os.Lstat(src); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, dst)
+	}
+	return copyTree(src, dst)
 }
 
 func copyTree(src, dst string) error {

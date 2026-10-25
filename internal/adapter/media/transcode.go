@@ -51,7 +51,8 @@ func SelectRungs(sourceHeight, capHeight int) []Rendition {
 	}
 	if len(out) == 0 {
 		out = []Rendition{{
-			Height:   sourceHeight,
+			// yuv420p needs even dimensions; an odd height fails every libx264 run
+			Height:   sourceHeight &^ 1,
 			VBitrate: "1400k",
 			MaxRate:  "1540k",
 			BufSize:  "2100k",
@@ -72,8 +73,8 @@ type HLSOptions struct {
 }
 
 // BuildHLSCommand returns an unstarted exec.Cmd configured to produce
-// one fMP4 variant per Rendition into OutDir/stream_{N}/. Writes
-// init.mp4 + data{NNNNNN}.m4s per variant. The scratch _ffmpeg.m3u8
+// one fMP4 variant per Rendition into OutDir/stream_{N}/. Writes an init
+// segment (see HLSInitName) + data{NNNNNN}.m4s per variant. The scratch _ffmpeg.m3u8
 // playlists are written by ffmpeg but ignored by the service; the
 // service writes its own master.m3u8 + stream_{N}/playlist.m3u8 with
 // absolute server URIs.
@@ -207,6 +208,9 @@ func buildFilterComplex(rungs []Rendition, enc Encoder) string {
 			b.WriteString(",format=nv12,hwupload")
 		case EncoderQSV:
 			b.WriteString(",format=nv12,hwupload=extra_hw_frames=16")
+		case EncoderNVENC, EncoderAMF:
+			// Pin 8-bit 4:2:0; 10-bit or 4:2:2 sources fail High-profile encoder open
+			b.WriteString(",format=yuv420p")
 		}
 		fmt.Fprintf(&b, "[v%dout]", i)
 		if i < n-1 {
@@ -312,10 +316,10 @@ func HLSSegmentName(variant, n int) string {
 	return fmt.Sprintf("stream_%d/data%06d.m4s", variant, n)
 }
 
-// HLSInitName returns the on-disk filename for variant v's init segment
-// (relative to the session cache directory). ffmpeg substitutes %v into
-// both the segment dir and the init basename when var_stream_map is set,
-// so the actual path is stream_{v}/init_{v}.mp4.
-func HLSInitName(variant int) string {
+// HLSInitName is variant v's init file; ffmpeg adds _{v} only with several variants
+func HLSInitName(variant, variantCount int) string {
+	if variantCount <= 1 {
+		return fmt.Sprintf("stream_%d/init.mp4", variant)
+	}
 	return fmt.Sprintf("stream_%d/init_%d.mp4", variant, variant)
 }

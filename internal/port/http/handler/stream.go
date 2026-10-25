@@ -48,7 +48,7 @@ func (h *StreamHandler) Info(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.probe.HasFFprobe() {
-		http.Error(w, `{"error":"ffprobe not available"}`, http.StatusNotImplemented)
+		http.Error(w, `{"error":"ffmpeg or ffprobe not available"}`, http.StatusNotImplemented)
 		return
 	}
 
@@ -162,7 +162,7 @@ func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
-	initPath := filepath.Join(session.Dir(), media.HLSInitName(variant))
+	initPath := filepath.Join(session.Dir(), media.HLSInitName(variant, session.VariantCount()))
 	if err := waitForStableFile(r.Context(), initPath); err != nil {
 		http.Error(w, `{"error":"init segment not ready"}`, http.StatusGatewayTimeout)
 		return
@@ -195,6 +195,10 @@ func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
 	session, err := h.transcode.Ensure(r.Context(), filePath)
 	if err != nil {
 		writeFileError(w, err)
+		return
+	}
+	if variant >= session.VariantCount() {
+		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
 	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum)

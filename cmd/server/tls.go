@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,7 +36,7 @@ func resolveTLS(settings *service.SettingsService, configDir string) (enabled bo
 	} else if v := os.Getenv("ONYX_TLS"); v != "" {
 		slog.Warn("ONYX_TLS is deprecated, use ONYX_HTTPS instead")
 		enabled = v == "true"
-		envOverrides[domain.SettingServerTLSEnabled] = "ONYX_HTTPS"
+		envOverrides[domain.SettingServerTLSEnabled] = "ONYX_TLS"
 	} else {
 		v, err := settings.Get(domain.SettingServerTLSEnabled)
 		if err == nil {
@@ -247,11 +248,14 @@ func (l *tlsRedirectListener) Close() error {
 	return l.Listener.Close()
 }
 
+const maxRedirectRequestBytes = 64 << 10
+
 func redirectHTTP(conn net.Conn, port, canonicalDomain string, trustedProxy bool) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	req, err := http.ReadRequest(bufio.NewReader(conn))
+	// Cap what a pre-auth client can make us buffer; ReadRequest itself is unbounded.
+	req, err := http.ReadRequest(bufio.NewReader(io.LimitReader(conn, maxRedirectRequestBytes)))
 	if err != nil {
 		return
 	}
@@ -260,8 +264,13 @@ func redirectHTTP(conn net.Conn, port, canonicalDomain string, trustedProxy bool
 	if host == "" {
 		return
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
+	// TLS shares this port, so the port the client dialed is the right target.
+	if h, p, err := net.SplitHostPort(host); err == nil {
 		host = h
+		// Host is client input; only a real port number replaces the configured one
+		if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+			port = strconv.Itoa(n)
+		}
 	}
 	if canonicalDomain != "" {
 		host = canonicalDomain

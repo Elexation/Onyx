@@ -74,7 +74,7 @@ func NewProbeService(s *storage.LocalStorage, dataDir string) (*ProbeService, er
 	}, nil
 }
 
-// HasFFprobe reports whether ffprobe is available on PATH.
+// HasFFprobe reports whether both ffmpeg and ffprobe were found (FFmpeg.Available).
 func (ps *ProbeService) HasFFprobe() bool { return ps.ffmpeg.Available() }
 
 // StartJanitor periodically evicts expired cache entries. Stops cleanly

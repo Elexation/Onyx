@@ -23,6 +23,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
+		os.Exit(runResetPassword())
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -30,12 +34,11 @@ func main() {
 	configDir := env("ONYX_CONFIG", "config")
 	cacheDir := env("ONYX_CACHE", ".cache")
 
-	// Trash and versions dirs are CWD-relative and hardcoded; refuse to run
-	// if an operator's data dir would overlap with them (e.g. ONYX_DATA=".").
-	// Overlap would leak trash/version state via showHidden listings.
+	// Refuse to run if the data dir overlaps any app dir (e.g. ONYX_DATA=".").
+	// Overlap would serve trash, versions, the DB or tls.key as user files.
 	trashDir := ".trash"
 	versionsDir := ".versions"
-	if err := ensureNoDirOverlap(dataDir, trashDir, versionsDir); err != nil {
+	if err := ensureNoDirOverlap(dataDir, trashDir, versionsDir, configDir, cacheDir); err != nil {
 		slog.Error("invalid directory layout", "error", err)
 		os.Exit(1)
 	}
@@ -83,6 +86,7 @@ func main() {
 		os.Exit(1)
 	}
 	trashService.SetEvents(eventStore)
+	trashService.SetPathLocker(fileService.LockPath)
 	fileService.SetTrash(trashService, settingsService)
 	trashService.StartAutoPurge(1 * time.Hour)
 
@@ -229,7 +233,7 @@ func main() {
 
 	var handler http.Handler = router
 	if canonicalDomain != "" {
-		handler = middleware.DomainCanon(canonicalDomain, tlsEnabled, trustedProxy, port)(handler)
+		handler = middleware.DomainCanon(canonicalDomain, trustedProxy)(handler)
 	}
 
 	slog.Info("starting server", "port", port, "tls", tlsEnabled, "domain", canonicalDomain, "envOverrides", envOverrides)
@@ -315,7 +319,7 @@ func resolveListenPort(settings *service.SettingsService) (string, map[string]st
 }
 
 // ensureNoDirOverlap rejects configurations where dataDir overlaps with any
-// of the sibling dirs (trash, versions). Overlap includes equality, nesting,
+// of the sibling dirs (trash, versions, config, cache). Overlap includes equality, nesting,
 // or path-prefix relationships after absolute-path resolution.
 func ensureNoDirOverlap(dataDir string, siblings ...string) error {
 	dataAbs, err := filepath.Abs(dataDir)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -34,6 +35,10 @@ func (h *FileOpsHandler) MakeDir(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "a file with this name already exists"})
 			return
 		}
+		if errors.Is(err, service.ErrInvalidDirPath) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid folder name"})
+			return
+		}
 		writeFileError(w, err)
 		return
 	}
@@ -60,6 +65,11 @@ func (h *FileOpsHandler) Rename(w http.ResponseWriter, r *http.Request) {
 		var conflict *service.ConflictError
 		if errors.As(err, &conflict) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": conflict.Error()})
+			return
+		}
+		var invalid *service.InvalidRenameError
+		if errors.As(err, &invalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Error()})
 			return
 		}
 		writeFileError(w, err)
@@ -138,6 +148,12 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Paths) > 500 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
+		return
+	}
+
+	// Cookie sessions get a 409 so the SPA re-asks; token callers keep the permanent fallback
+	if !req.Permanent && !middleware.IsBearerAuth(r.Context()) && !h.files.TrashEnabled() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "trash is disabled", "code": "trash_disabled"})
 		return
 	}
 

@@ -15,16 +15,18 @@ import (
 const (
 	ssePollInterval      = 500 * time.Millisecond
 	sseHeartbeatInterval = 30 * time.Second
+	sseSessionCheck      = 10 * time.Second // close the stream soon after logout, password change or expiry
 	sseWriteTimeout      = 10 * time.Second // per-write deadline; a non-reading client must not wedge the goroutine
 	sseRetryMs           = 5000
 )
 
 type ChangesHandler struct {
-	events *service.EventStore
+	events   *service.EventStore
+	sessions middleware.SessionValidator
 }
 
-func NewChangesHandler(events *service.EventStore) *ChangesHandler {
-	return &ChangesHandler{events: events}
+func NewChangesHandler(events *service.EventStore, sessions middleware.SessionValidator) *ChangesHandler {
+	return &ChangesHandler{events: events, sessions: sessions}
 }
 
 type sseEvent struct {
@@ -62,6 +64,7 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if cursor < 0 {
 		latest, err := h.events.LatestID()
 		if err != nil {
+			slog.Warn("changes: read latest event failed", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read latest event"})
 			return
 		}
@@ -84,12 +87,27 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	defer poll.Stop()
 	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
+	sessionCheck := time.NewTicker(sseSessionCheck)
+	defer sessionCheck.Stop()
 
 	ctx := r.Context()
+	session := middleware.SessionFromContext(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-sessionCheck.C:
+			if session == nil {
+				continue
+			}
+			s, err := h.sessions.ValidateSession(session.ID)
+			if err != nil {
+				slog.Warn("changes: session check failed", "error", err)
+				continue
+			}
+			if s == nil {
+				return
+			}
 		case <-heartbeat.C:
 			_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 			if _, err := fmt.Fprintf(w, ": heartbeat\n\n"); err != nil {

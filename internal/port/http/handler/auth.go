@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -31,6 +32,7 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
 	firstRun, err := h.auth.IsFirstRun()
 	if err != nil {
+		slog.Warn("auth status failed", "error", err)
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -62,12 +64,12 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
-	if len([]rune(body.Password)) < 8 {
-		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
-		return
-	}
 	if len(body.Password) > 1024 {
 		http.Error(w, `{"error":"password must not exceed 1024 bytes"}`, http.StatusBadRequest)
+		return
+	}
+	if len([]rune(body.Password)) < 8 {
+		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -77,6 +79,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"admin already exists"}`, http.StatusBadRequest)
 			return
 		}
+		slog.Warn("setup failed", "error", err)
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -108,8 +111,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.auth.Login(body.Password)
+	session, err := h.auth.Login(r.Context(), body.Password)
 	if err != nil {
+		if !errors.Is(err, service.ErrInvalidCredentials) {
+			slog.Warn("login failed", "error", err)
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
 		slog.Info("security_event", "event", "login_failure", "ip", h.clientIP(r))
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
@@ -142,12 +150,12 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"current and new password are required"}`, http.StatusBadRequest)
 		return
 	}
-	if len([]rune(body.NewPassword)) < 8 {
-		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
-		return
-	}
 	if len(body.CurrentPassword) > 1024 || len(body.NewPassword) > 1024 {
 		http.Error(w, `{"error":"password must not exceed 1024 bytes"}`, http.StatusBadRequest)
+		return
+	}
+	if len([]rune(body.NewPassword)) < 8 {
+		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -157,12 +165,13 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newSession, err := h.auth.ChangePassword(body.CurrentPassword, body.NewPassword)
+	newSession, err := h.auth.ChangePassword(r.Context(), body.CurrentPassword, body.NewPassword)
 	if err != nil {
 		if err.Error() == "invalid current password" {
 			http.Error(w, `{"error":"invalid current password"}`, http.StatusBadRequest)
 			return
 		}
+		slog.Warn("change password failed", "error", err)
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}

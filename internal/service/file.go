@@ -76,6 +76,13 @@ var ErrUploadInvalidPath = errors.New("invalid upload path")
 // ErrDirBlockedByFile: a MakeDir target name is taken by a file.
 var ErrDirBlockedByFile = errors.New("a file occupies the folder name")
 
+var ErrInvalidDirPath = errors.New("invalid folder name")
+
+// InvalidRenameError is a rename the client asked for wrongly; its text is safe to show
+type InvalidRenameError struct{ Reason string }
+
+func (e *InvalidRenameError) Error() string { return e.Reason }
+
 // lockFinalize acquires the finalize lock for dest, creating it on first use.
 func (s *FileService) lockFinalize(dest string) *finalizeLock {
 	s.finalizeMu.Lock()
@@ -98,6 +105,13 @@ func (s *FileService) unlockFinalize(dest string, l *finalizeLock) {
 		delete(s.finalizeLocks, dest)
 	}
 	s.finalizeMu.Unlock()
+}
+
+// LockPath takes the same finalize lock CompleteUpload holds for p. Returns the unlock.
+func (s *FileService) LockPath(p string) func() {
+	key := strings.TrimPrefix(canonPath(p), "/")
+	l := s.lockFinalize(key)
+	return func() { s.unlockFinalize(key, l) }
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
@@ -214,6 +228,11 @@ func (s *FileService) GetFileInfo(filePath string) (*domain.FileInfo, error) {
 	return s.storage.Stat(filePath)
 }
 
+// LongPath expands Windows 8.3 short names in filePath; unchanged elsewhere
+func (s *FileService) LongPath(filePath string) (string, error) {
+	return s.storage.LongPath(filePath)
+}
+
 // OpenFile returns a reader, mod time, and size for serving a file.
 func (s *FileService) OpenFile(filePath string) (io.ReadSeekCloser, time.Time, int64, error) {
 	return s.storage.Open(filePath)
@@ -246,9 +265,9 @@ func (cw *maxBytesWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (s *FileService) WriteZip(w io.Writer, paths []string) error {
+func (s *FileService) WriteZip(w io.Writer, paths []string, skipHidden bool) error {
 	cw := &maxBytesWriter{w: w, max: MaxZipBytes}
-	err := s.storage.WriteZip(cw, paths)
+	err := s.storage.WriteZip(cw, paths, skipHidden)
 	if errors.Is(err, ErrZipSizeExceeded) {
 		slog.Warn("zip aborted: size cap exceeded", "max_bytes", MaxZipBytes, "written", cw.n)
 		return ErrZipSizeExceeded
@@ -259,7 +278,13 @@ func (s *FileService) WriteZip(w io.Writer, paths []string) error {
 // MakeDir creates a directory. The parent must exist and the target must not.
 func (s *FileService) MakeDir(dirPath string) error {
 	if dirPath == "" || dirPath == "/" {
-		return fmt.Errorf("invalid directory path")
+		return ErrInvalidDirPath
+	}
+	// Same name rules as Rename, so "../x" can't escape the intended parent
+	for _, seg := range strings.Split(strings.Trim(dirPath, "/"), "/") {
+		if seg == "" || seg == "." || seg == ".." || strings.Contains(seg, `\`) {
+			return ErrInvalidDirPath
+		}
 	}
 	if err := s.storage.MakeDir(dirPath); err != nil {
 		if errors.Is(err, storage.ErrFileAtPath) {
@@ -267,7 +292,7 @@ func (s *FileService) MakeDir(dirPath string) error {
 		}
 		return err
 	}
-	full := ensureSlashPrefix(dirPath)
+	full := canonPath(dirPath)
 	if s.indexer != nil {
 		s.indexer.NotifyCreated(full, true, 0, time.Now().Unix())
 	}
@@ -283,13 +308,19 @@ func (s *FileService) MakeDir(dirPath string) error {
 // newName must be a bare name with no path separators.
 func (s *FileService) Rename(filePath, newName string) error {
 	if newName == "" {
-		return fmt.Errorf("new name must not be empty")
+		return &InvalidRenameError{"new name must not be empty"}
 	}
 	if strings.ContainsAny(newName, "/\\") {
-		return fmt.Errorf("new name must not contain path separators")
+		return &InvalidRenameError{"new name must not contain path separators"}
 	}
 	if newName == "." || newName == ".." {
-		return fmt.Errorf("new name must not be . or ..")
+		return &InvalidRenameError{"new name must not be . or .."}
+	}
+
+	// Bookkeeping must key on the path storage actually renames
+	filePath = canonPath(filePath)
+	if filePath == "/" {
+		return &InvalidRenameError{"cannot rename the root folder"}
 	}
 
 	// Check source exists
@@ -298,10 +329,9 @@ func (s *FileService) Rename(filePath, newName string) error {
 		return err
 	}
 
-	// Check target doesn't exist
-	parent := filePath[:strings.LastIndex(filePath, "/")+1]
-	targetPath := parent + newName
-	if _, err := s.storage.Stat(targetPath); err == nil {
+	// Lstat: a dangling symlink at the target still occupies the name
+	targetPath := path.Join(path.Dir(filePath), newName)
+	if _, err := s.storage.Lstat(targetPath); err == nil {
 		// Allow case-only renames (same file on case-insensitive FS)
 		if !s.storage.SameFile(filePath, targetPath) {
 			return &ConflictError{Path: targetPath}
@@ -368,9 +398,8 @@ func (s *FileService) Move(paths []string, destination string) ([]storage.OpResu
 		if !r.Success {
 			continue
 		}
-		oldPath := ensureSlashPrefix(paths[i])
-		base := oldPath[strings.LastIndex(oldPath, "/")+1:]
-		newPath := strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base
+		oldPath := canonPath(paths[i])
+		newPath := path.Join(canonPath(destination), path.Base(oldPath))
 		if s.indexer != nil {
 			s.indexer.NotifyMoved(oldPath, newPath, isDir[paths[i]])
 		}
@@ -404,6 +433,15 @@ func ensureSlashPrefix(p string) string {
 	return "/" + p
 }
 
+// canonPath returns p the way storage resolves it, rooted at "/".
+func canonPath(p string) string {
+	c := path.Clean(strings.TrimLeft(p, "/"))
+	if c == "." {
+		return "/"
+	}
+	return "/" + c
+}
+
 // Copy duplicates paths into a destination directory.
 func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResult, error) {
 	info, err := s.storage.Stat(destination)
@@ -418,15 +456,12 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 	}
 
 	results := s.storage.Copy(paths, destination)
-	for i, r := range results {
+	for _, r := range results {
 		if !r.Success {
 			continue
 		}
-		base := paths[i]
-		if idx := strings.LastIndex(base, "/"); idx >= 0 {
-			base = base[idx+1:]
-		}
-		newPath := ensureSlashPrefix(strings.TrimRight(ensureSlashPrefix(destination), "/") + "/" + base)
+		// r.Path is the copy's actual (possibly uniquified) destination
+		newPath := r.Path
 		if s.indexer != nil {
 			if info, err := s.storage.Stat(newPath); err == nil {
 				s.indexer.NotifyCopied(newPath, info.IsDir, info.Size, info.ModTime)
@@ -439,6 +474,15 @@ func (s *FileService) Copy(paths []string, destination string) ([]storage.OpResu
 		})
 	}
 	return results, nil
+}
+
+// TrashEnabled reports whether Delete would trash; a settings error counts as enabled, like Delete
+func (s *FileService) TrashEnabled() bool {
+	if s.trash == nil || s.settings == nil {
+		return false
+	}
+	enabled, err := s.settings.Get(domain.SettingTrashEnabled)
+	return err != nil || domain.GetBool(enabled)
 }
 
 // Delete removes files and directories. When trash is enabled and permanent
@@ -484,7 +528,7 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 		if !r.Success {
 			continue
 		}
-		full := ensureSlashPrefix(paths[i])
+		full := canonPath(paths[i])
 		deleted = append(deleted, full)
 		if !wentToTrash {
 			s.cascadeShareDelete(full, preStatIsDir[paths[i]])
@@ -493,12 +537,15 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 	if s.indexer != nil && len(deleted) > 0 {
 		s.indexer.NotifyDeleted(deleted)
 	}
-	for _, p := range deleted {
-		recordIf(s.events, "file.changed", FileChangedPayload{
-			Path:       p,
-			ParentPath: parentOf(p),
-			Kind:       "delete",
-		})
+	// MoveToTrash already emitted file.changed for trashed paths
+	if !wentToTrash {
+		for _, p := range deleted {
+			recordIf(s.events, "file.changed", FileChangedPayload{
+				Path:       p,
+				ParentPath: parentOf(p),
+				Kind:       "delete",
+			})
+		}
 	}
 	return results
 }
@@ -537,7 +584,9 @@ func (s *FileService) CheckConflicts(targetDir string, relativePaths []string) (
 // shared with the tus create callback so traversal-shaped metadata is
 // refused before any bytes transfer.
 func CleanUploadPaths(targetDir, relativePath string) (cleanTarget, cleanRel string, err error) {
-	fpTarget := filepath.Clean(filepath.FromSlash(strings.TrimLeft(targetDir, "/")))
+	// Trim both separators: on Windows a leading "\" would re-root filepath.Join
+	leading := "/" + string(filepath.Separator)
+	fpTarget := filepath.Clean(strings.TrimLeft(filepath.FromSlash(targetDir), leading))
 	sep := string(filepath.Separator)
 	if fpTarget == ".." || strings.HasPrefix(fpTarget, ".."+sep) {
 		return "", "", ErrUploadInvalidTarget
@@ -546,7 +595,7 @@ func CleanUploadPaths(targetDir, relativePath string) (cleanTarget, cleanRel str
 	if uploadPathTooLarge(cleanTarget) {
 		return "", "", ErrUploadInvalidTarget
 	}
-	fpRel := filepath.Clean(filepath.FromSlash(strings.TrimLeft(relativePath, "/")))
+	fpRel := filepath.Clean(strings.TrimLeft(filepath.FromSlash(relativePath), leading))
 	if fpRel == "" || fpRel == "." || fpRel == ".." || strings.HasPrefix(fpRel, ".."+sep) {
 		return "", "", ErrUploadInvalidPath
 	}
@@ -640,6 +689,10 @@ func (s *FileService) CompleteUpload(targetDir, relativePath, conflictStrategy, 
 						return "", fmt.Errorf("%w (%v)", ErrUploadBlockedByFile, err)
 					}
 					return "", fmt.Errorf("unique name: %w", err)
+				}
+				// destPath freed up and is already locked; locking it again would deadlock
+				if unique == destPath {
+					break
 				}
 				lu := s.lockFinalize(unique)
 				taken, err := s.storage.Exists(unique)

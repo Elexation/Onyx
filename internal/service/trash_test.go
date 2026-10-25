@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
@@ -369,7 +370,8 @@ func TestMoveToTrash_NoSharesWired_NoOp(t *testing.T) {
 	}
 }
 
-func TestEmptyTrash_CascadesShareDelete(t *testing.T) {
+// A purge must not cascade shares by path: a newer item there may own the share
+func TestEmptyTrash_DoesNotCascadeShareDelete(t *testing.T) {
 	trash, dataDir, _, _, _ := setupTrashTest(t)
 	cleaner := &fakeShareCleaner{}
 	trash.SetShares(cleaner)
@@ -383,17 +385,12 @@ func TestEmptyTrash_CascadesShareDelete(t *testing.T) {
 		t.Fatalf("empty trash: %v", err)
 	}
 
-	calls := cleaner.snapshot()
-	if len(calls) != 2 {
-		t.Fatalf("expected 2 cascade calls during empty, got %d (%+v)", len(calls), calls)
-	}
-	gotPaths := map[string]bool{calls[0].Path: true, calls[1].Path: true}
-	if !gotPaths["/a.txt"] || !gotPaths["/b.txt"] {
-		t.Errorf("expected cascade for /a.txt and /b.txt, got %+v", calls)
+	if calls := cleaner.snapshot(); len(calls) != 0 {
+		t.Errorf("expected no share cascade during empty, got %+v", calls)
 	}
 }
 
-func TestPermanentDelete_CascadesShareDelete(t *testing.T) {
+func TestPermanentDelete_DoesNotCascadeShareDelete(t *testing.T) {
 	trash, dataDir, _, _, _ := setupTrashTest(t)
 	cleaner := &fakeShareCleaner{}
 	trash.SetShares(cleaner)
@@ -404,9 +401,8 @@ func TestPermanentDelete_CascadesShareDelete(t *testing.T) {
 	if err := trash.PermanentDelete(id); err != nil {
 		t.Fatalf("permanent delete: %v", err)
 	}
-	calls := cleaner.snapshot()
-	if len(calls) != 1 || calls[0].Path != "/perm.txt" {
-		t.Errorf("expected one cascade for /perm.txt, got %+v", calls)
+	if calls := cleaner.snapshot(); len(calls) != 0 {
+		t.Errorf("expected no share cascade on purge, got %+v", calls)
 	}
 }
 
@@ -440,5 +436,19 @@ func TestCheckRestoreConflicts_FiltersNonConflicts(t *testing.T) {
 	}
 	if c.Restoring.ModTime == 0 {
 		t.Error("restoring.modTime not populated from trash blob")
+	}
+}
+
+func TestTrashBlobName_FitsNameMaxAndDropsBackslash(t *testing.T) {
+	id := strings.Repeat("a", 32)
+	name := trashBlobName(id, strings.Repeat("é", 200)+`\x.txt`)
+	if len(name) > 255 {
+		t.Fatalf("name is %d bytes, want <= 255", len(name))
+	}
+	if strings.Contains(name, `\`) {
+		t.Errorf("backslash survived: %q", name)
+	}
+	if !utf8.ValidString(name) {
+		t.Errorf("truncation split a rune: %q", name)
 	}
 }

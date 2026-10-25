@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -61,6 +62,11 @@ func (s *LocalStorage) Move(paths []string, destination string) []OpResult {
 
 	for i, p := range paths {
 		p = cleanPath(p)
+		// The EXDEV fallback copies, and copying a tree into itself never ends
+		if s.insideSelf(p, destination) {
+			results[i] = OpResult{Path: "/" + p, Error: "cannot move a directory into itself"}
+			continue
+		}
 		name := path.Base(p)
 		dst := path.Join(destination, name)
 
@@ -82,7 +88,7 @@ func (s *LocalStorage) Move(paths []string, destination string) []OpResult {
 
 		results[i] = OpResult{Path: "/" + p, Success: err == nil}
 		if err != nil {
-			results[i].Error = err.Error()
+			results[i].Error = opError("move", p, err)
 		}
 	}
 
@@ -101,7 +107,7 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 		p = cleanPath(p)
 		// Copying a tree into itself recurses unboundedly (copyDir creates
 		// dst before reading src), so reject self-containment up front.
-		if p == "." || destination == p || strings.HasPrefix(destination, p+"/") {
+		if s.insideSelf(p, destination) {
 			results[i] = OpResult{Path: "/" + p, Error: "cannot copy a directory into itself"}
 			continue
 		}
@@ -116,11 +122,31 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 		err = s.copyOne(p, dst)
 		results[i] = OpResult{Path: "/" + dst, Success: err == nil}
 		if err != nil {
-			results[i].Error = err.Error()
+			results[i].Error = opError("copy", p, err)
 		}
 	}
 
 	return results
+}
+
+// insideSelf reports whether dst is p or under it, by file identity so case and alias forms count
+func (s *LocalStorage) insideSelf(p, dst string) bool {
+	if p == "." || dst == p || strings.HasPrefix(dst, p+"/") {
+		return true
+	}
+	src, err := s.root.Stat(p)
+	if err != nil || !src.IsDir() {
+		return false
+	}
+	// Windows also splits on \ and folds x\..\y
+	for d := filepath.ToSlash(filepath.Clean(filepath.FromSlash(dst))); ; d = path.Dir(d) {
+		if fi, err := s.root.Stat(d); err == nil && os.SameFile(src, fi) {
+			return true
+		}
+		if d == "." || d == "/" {
+			return false
+		}
+	}
 }
 
 // uniqueName returns dst unchanged if it doesn't exist, otherwise appends
@@ -131,9 +157,7 @@ func (s *LocalStorage) uniqueName(dst string) (string, error) {
 	}
 
 	dir := path.Dir(dst)
-	base := path.Base(dst)
-	ext := path.Ext(base)
-	name := base[:len(base)-len(ext)]
+	name, ext := splitName(path.Base(dst))
 
 	candidate := path.Join(dir, name+" (copy)"+ext)
 	if _, err := s.root.Lstat(candidate); err != nil {
@@ -160,18 +184,43 @@ func (s *LocalStorage) Delete(paths []string) []OpResult {
 
 		// Check existence first; RemoveAll is idempotent on missing paths
 		if _, err := s.root.Lstat(p); err != nil {
-			results[i] = OpResult{Path: "/" + p, Success: false, Error: err.Error()}
+			results[i] = OpResult{Path: "/" + p, Success: false, Error: opError("delete", p, err)}
 			continue
 		}
 
 		err := s.root.RemoveAll(p)
 		results[i] = OpResult{Path: "/" + p, Success: err == nil}
 		if err != nil {
-			results[i].Error = err.Error()
+			results[i].Error = opError("delete", p, err)
 		}
 	}
 
 	return results
+}
+
+// opError logs err and returns a fixed client-facing message, so syscall text never leaks.
+func opError(op, p string, err error) string {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "not found"
+	case errors.Is(err, os.ErrExist):
+		return "already exists"
+	case errors.Is(err, os.ErrPermission):
+		return "permission denied"
+	case errors.Is(err, syscall.ENOSPC):
+		return "not enough disk space"
+	}
+	slog.Warn("storage operation failed", "op", op, "path", p, "error", err)
+	return op + " failed"
+}
+
+// splitName splits base into stem and extension, keeping dotfiles like ".env" whole.
+func splitName(base string) (string, string) {
+	ext := path.Ext(base)
+	if ext == base {
+		return base, ""
+	}
+	return base[:len(base)-len(ext)], ext
 }
 
 // OpResult reports the outcome of a single item in a batch operation.
@@ -399,7 +448,9 @@ func (s *LocalStorage) CheckHardlink(dir string) error {
 		return err
 	}
 	// Linking succeeded; a failed cleanup must not be reported as a link failure.
-	_ = os.Remove(linkPath)
+	if err := os.Remove(linkPath); err != nil {
+		slog.Warn("hardlink probe cleanup failed", "path", linkPath, "error", err)
+	}
 	return nil
 }
 
@@ -417,9 +468,7 @@ func (s *LocalStorage) UniqueName(filePath string) (string, error) {
 	}
 
 	dir := path.Dir(filePath)
-	base := path.Base(filePath)
-	ext := path.Ext(base)
-	name := base[:len(base)-len(ext)]
+	name, ext := splitName(path.Base(filePath))
 
 	for i := 1; i <= 999; i++ {
 		candidate := path.Join(dir, fmt.Sprintf("%s (%d)%s", name, i, ext))

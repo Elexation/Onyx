@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -83,6 +84,7 @@ func (s *SettingsService) Update(updates map[string]string) (saved []string, err
 			continue
 		}
 		if err := s.repo.Set(key, value); err != nil {
+			slog.Warn("settings save failed", "key", key, "error", err)
 			errors[key] = "failed to save"
 			continue
 		}

@@ -102,16 +102,13 @@ func (s *TranscodeSession) Hash() string { return s.hash }
 
 // Dir returns the absolute path to the session's cache directory.
 // Contains master.m3u8 and one stream_{N}/ subdirectory per variant
-// (init.mp4, data{NNNNNN}.m4s, playlist.m3u8).
+// (init segment per media.HLSInitName, data{NNNNNN}.m4s, playlist.m3u8).
 func (s *TranscodeSession) Dir() string { return s.dir }
 
 // VariantCount returns the number of ABR variants in this session.
 func (s *TranscodeSession) VariantCount() int { return len(s.renditions) }
 
-// TranscodeService starts, caches, and serves multi-variant HLS fMP4
-// transcodes. Sessions are keyed by a hash derived from absolute path
-// + mtime + size + cap + encoder, so any source change, cap change, or
-// encoder swap invalidates the cache naturally.
+// TranscodeService serves HLS fMP4 transcodes; an encoder flip reuses the live session on purpose
 type TranscodeService struct {
 	storage   *storage.LocalStorage
 	probe     *ProbeService
@@ -249,8 +246,8 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 
 	encoder := ts.Encoder()
 	rungs := media.SelectRungs(info.Height, ts.maxHeight)
-	hash := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, encoder)
-	srcKey := sessionKey(absPath, stat.ModTime, stat.Size, ts.maxHeight, "")
+	hash := sessionKey(absPath, relPath, stat.ModTime, stat.Size, ts.maxHeight, encoder)
+	srcKey := sessionKey(absPath, relPath, stat.ModTime, stat.Size, ts.maxHeight, "")
 
 	ts.mu.Lock()
 	if existing := ts.findSessionLocked(hash, srcKey); existing != nil {
@@ -342,7 +339,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPa
 		return nil, fmt.Errorf("write master: %w", err)
 	}
 	for v, r := range rungs {
-		if err := writeVariantPlaylist(sessionDir, info.Duration, info.Framerate, relPath, v, r); err != nil {
+		if err := writeVariantPlaylist(sessionDir, info.Duration, relPath, v, r); err != nil {
 			return nil, fmt.Errorf("write variant playlist: %w", err)
 		}
 	}
@@ -829,13 +826,10 @@ func (ts *TranscodeService) resolveSafePath(relPath string) (string, error) {
 	return resolved, nil
 }
 
-// sessionKey is the cache key. Includes cap + encoder so a config
-// change (lower ONYX_MAX_TRANSCODE_HEIGHT or different ONYX_HWACCEL)
-// naturally invalidates existing cached transcodes; old entries age
-// out via the cleanup loop.
-func sessionKey(absPath string, mtime, size int64, cap int, encoder media.Encoder) string {
+// sessionKey includes relPath: playlists embed it, so two aliases of one file can't share
+func sessionKey(absPath, relPath string, mtime, size int64, cap int, encoder media.Encoder) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\n%d\n%d\n%d\n%s", absPath, mtime, size, cap, encoder)
+	fmt.Fprintf(h, "%s\n%s\n%d\n%d\n%d\n%s", absPath, relPath, mtime, size, cap, encoder)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -879,31 +873,14 @@ func writeMasterPlaylist(dir string, info *media.ProbeInfo, relPath string, rung
 // writeVariantPlaylist writes stream_{v}/playlist.m3u8, a full VOD
 // playlist for variant v listing every segment up to the probed
 // duration. Init and segment URIs are absolute server paths.
-func writeVariantPlaylist(dir string, duration, framerate float64, relPath string, variant int, _ media.Rendition) error {
+func writeVariantPlaylist(dir string, duration float64, relPath string, variant int, _ media.Rendition) error {
 	variantDir := filepath.Join(dir, media.VariantDir(variant))
 	if err := os.MkdirAll(variantDir, 0o755); err != nil {
 		return err
 	}
 
-	// Compute accurate segment duration from the encoder GOP. The encoder
-	// places keyframes every gopFrames frames, so the actual segment
-	// duration depends on the source framerate rather than being exactly
-	// HLSSegmentSeconds.
-	gopFrames := media.HLSSegmentSeconds * 30
-	if framerate > 0 {
-		gopFrames = int(math.Round(framerate * float64(media.HLSSegmentSeconds)))
-	}
-	if gopFrames <= 0 {
-		gopFrames = media.HLSSegmentSeconds * 30
-	}
+	// Fixed 6s everywhere; an fps-derived length (6.006s on NTSC) drifts and drops the ending
 	actualSegDur := float64(media.HLSSegmentSeconds)
-	if framerate > 0 {
-		actualSegDur = float64(gopFrames) / framerate
-	}
-	if actualSegDur <= 0 {
-		actualSegDur = float64(media.HLSSegmentSeconds)
-	}
-
 	segCount := int(math.Ceil(duration / actualSegDur))
 	initURL := buildStreamURL(fmt.Sprintf("/api/stream/init/%d", variant), relPath)
 	var b strings.Builder
@@ -1125,9 +1102,9 @@ func (ts *TranscodeService) shouldReprobe() bool {
 	case "none", "software", "libx264":
 		return false
 	case "", "auto":
-		return media.EncoderPriority(ts.encoder) > 0
+		return media.EncoderPriority(ts.Encoder()) > 0
 	default:
-		return ts.encoder == media.EncoderSoftware
+		return ts.Encoder() == media.EncoderSoftware
 	}
 }
 

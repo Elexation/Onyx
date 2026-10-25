@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 )
@@ -22,13 +23,15 @@ func Logging(next http.Handler) http.Handler {
 }
 
 // redactSharePath masks the token segment in share URLs; share tokens are
-// bearer credentials and must not land in access logs.
+// bearer credentials and must not land in any log line. Matches on the
+// cleaned path, since routing serves //api/public/s/<token> too.
 func redactSharePath(p string) string {
-	if strings.HasPrefix(p, "/api/public/s/") {
-		return redactTokenSegment(p, len("/api/public/s/"))
+	c := path.Clean("/" + p)
+	if strings.HasPrefix(c, "/api/public/s/") {
+		return redactTokenSegment(c, len("/api/public/s/"))
 	}
-	if strings.HasPrefix(p, "/s/") {
-		return redactTokenSegment(p, len("/s/"))
+	if strings.HasPrefix(c, "/s/") {
+		return redactTokenSegment(c, len("/s/"))
 	}
 	return p
 }

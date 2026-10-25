@@ -9,7 +9,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/service"
@@ -194,7 +196,7 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition("attachment", zipName))
 
-	if err := h.files.WriteZip(w, paths); err != nil {
+	if err := h.files.WriteZip(w, paths, false); err != nil {
 		if !errors.Is(err, service.ErrZipSizeExceeded) {
 			slog.Error("zip stream error", "error", err)
 		}
@@ -209,6 +211,9 @@ func extractWildcard(r *http.Request, prefix string) string {
 	}
 	return p
 }
+
+// Windows ERROR_INVALID_NAME, e.g. a "?" in a name; another errno elsewhere
+const errorInvalidName = syscall.Errno(123)
 
 // writeFileError maps filesystem errors to HTTP status codes.
 func writeFileError(w http.ResponseWriter, err error) {
@@ -226,9 +231,12 @@ func writeFileError(w http.ResponseWriter, err error) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "a folder with this name already exists"})
 			return
 		}
-		// Path traversal attempts from os.Root
-		http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
-		return
+		// Only client-shaped paths are 400; os.Root's escape error is unexported, so match its text
+		if pathErr.Err.Error() == "path escapes from parent" || errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENAMETOOLONG) ||
+			errors.Is(err, syscall.ENOTDIR) || (runtime.GOOS == "windows" && errors.Is(err, errorInvalidName)) {
+			http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	if os.IsNotExist(err) {

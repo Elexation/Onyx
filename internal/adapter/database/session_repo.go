@@ -16,15 +16,21 @@ func NewSessionRepo(db *sql.DB) *SessionRepo {
 	return &SessionRepo{db: db}
 }
 
-func (r *SessionRepo) Create(s *domain.Session) error {
-	_, err := r.db.Exec(
-		"INSERT INTO sessions (id, user_id, csrf_token, created_at, last_active_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-		s.ID, s.UserID, s.CSRFToken, s.CreatedAt, s.LastActiveAt, s.ExpiresAt,
+// CreateForHash inserts s only while the user's stored hash is still passwordHash. False if it changed.
+func (r *SessionRepo) CreateForHash(s *domain.Session, passwordHash string) (bool, error) {
+	result, err := r.db.Exec(
+		`INSERT INTO sessions (id, user_id, csrf_token, created_at, last_active_at, expires_at)
+		SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash = ?)`,
+		s.ID, s.UserID, s.CSRFToken, s.CreatedAt, s.LastActiveAt, s.ExpiresAt, s.UserID, passwordHash,
 	)
 	if err != nil {
-		return fmt.Errorf("create session: %w", err)
+		return false, fmt.Errorf("create session: %w", err)
 	}
-	return nil
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("create session: %w", err)
+	}
+	return n == 1, nil
 }
 
 func (r *SessionRepo) GetByID(id string) (*domain.Session, error) {
@@ -40,17 +46,6 @@ func (r *SessionRepo) GetByID(id string) (*domain.Session, error) {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
 	return s, nil
-}
-
-func (r *SessionRepo) UpdateLastActive(id string) error {
-	_, err := r.db.Exec(
-		"UPDATE sessions SET last_active_at = ? WHERE id = ?",
-		time.Now().Unix(), id,
-	)
-	if err != nil {
-		return fmt.Errorf("update session last active: %w", err)
-	}
-	return nil
 }
 
 func (r *SessionRepo) Delete(id string) error {

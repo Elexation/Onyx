@@ -43,7 +43,7 @@ func (l *ConcurrencyLimiter) Middleware(next http.Handler) http.Handler {
 		l.mu.Lock()
 		if l.counts[ip] >= l.max {
 			l.mu.Unlock()
-			slog.Info("security_event", "event", "concurrency_limit_triggered", "ip", ip, "path", r.URL.Path)
+			slog.Info("security_event", "event", "concurrency_limit_triggered", "ip", ip, "path", redactSharePath(r.URL.Path))
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, `{"error":"too many concurrent requests"}`, http.StatusTooManyRequests)
 			return
@@ -52,7 +52,7 @@ func (l *ConcurrencyLimiter) Middleware(next http.Handler) http.Handler {
 		// in-flight entry (eviction would corrupt the held counter).
 		if _, present := l.counts[ip]; !present && len(l.counts) >= concurrencyMaxEntries {
 			l.mu.Unlock()
-			slog.Warn("concurrency limiter map full", "path", r.URL.Path)
+			slog.Warn("concurrency limiter map full", "path", redactSharePath(r.URL.Path))
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, `{"error":"server overloaded"}`, http.StatusServiceUnavailable)
 			return

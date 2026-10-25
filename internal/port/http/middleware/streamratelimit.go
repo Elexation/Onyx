@@ -14,7 +14,7 @@ import (
 // exceeds real-time playback (~0.25 rps for 4s segments).
 //
 // Distinct from RateLimiter (which throttles auth-event failures and
-// requires handler-side RecordSuccess rollback): this limiter is purely
+// requires handler-side RecordSuccess or UndoAttempt rollback): this limiter is purely
 // request-rate-based, never requires handler participation, and recovers
 // continuously rather than imposing lockout cooldowns.
 type StreamRateLimiter struct {
@@ -74,7 +74,7 @@ func (l *StreamRateLimiter) Middleware(next http.Handler) http.Handler {
 		if b.tokens < 1 {
 			wait := (1 - b.tokens) / streamRefillRate
 			l.mu.Unlock()
-			slog.Info("security_event", "event", "stream_rate_limit_triggered", "ip", ip, "path", r.URL.Path)
+			slog.Info("security_event", "event", "stream_rate_limit_triggered", "ip", ip, "path", redactSharePath(r.URL.Path))
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait)+1))
 			http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
 			return

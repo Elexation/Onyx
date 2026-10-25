@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,6 +25,7 @@ func NewTrashHandler(trash *service.TrashService) *TrashHandler {
 func (h *TrashHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.trash.List()
 	if err != nil {
+		slog.Warn("trash list failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list trash"})
 		return
 	}
@@ -31,7 +33,11 @@ func (h *TrashHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = []domain.TrashItem{}
 	}
 
-	count, _ := h.trash.Count()
+	count, err := h.trash.Count()
+	if err != nil {
+		slog.Warn("trash count failed", "error", err)
+		count = len(items)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": count})
 }
 
@@ -53,6 +59,10 @@ func (h *TrashHandler) Restore(w http.ResponseWriter, r *http.Request) {
 
 	path, err := h.trash.Restore(id, strategy)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "trash item not found"})
+			return
+		}
 		// Conflict path stays 409 for back-compat (the conflict message is
 		// already generic and contains no internal paths).
 		if strings.HasPrefix(err.Error(), "cannot restore: a file or directory already exists") {
@@ -67,7 +77,8 @@ func (h *TrashHandler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strategy == "skip" {
+	// Skip only skips when the path is taken; a free path restores normally
+	if path == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "skipped"})
 		return
 	}
@@ -93,6 +104,7 @@ func (h *TrashHandler) CheckRestoreConflicts(w http.ResponseWriter, r *http.Requ
 	}
 	conflicts, err := h.trash.CheckRestoreConflicts(body.IDs)
 	if err != nil {
+		slog.Warn("trash restore conflict check failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check conflicts"})
 		return
 	}
@@ -111,6 +123,10 @@ func (h *TrashHandler) PermanentDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.trash.PermanentDelete(id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "trash item not found"})
+			return
+		}
 		slog.Warn("trash permanent delete failed", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
 		return
@@ -134,6 +150,7 @@ func (h *TrashHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 func (h *TrashHandler) Count(w http.ResponseWriter, r *http.Request) {
 	count, err := h.trash.Count()
 	if err != nil {
+		slog.Warn("trash count failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to count trash"})
 		return
 	}

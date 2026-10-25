@@ -21,8 +21,7 @@ type LocalStorage struct {
 	dataPath string
 }
 
-// NewLocalStorage opens the given directory as a confined root.
-// All subsequent operations are sandboxed; path traversal is impossible.
+// NewLocalStorage opens dataPath as an os.Root; only AdoptFile and CheckHardlink bypass it
 func NewLocalStorage(dataPath string) (*LocalStorage, error) {
 	root, err := os.OpenRoot(dataPath)
 	if err != nil {
@@ -257,9 +256,8 @@ func (s *LocalStorage) detectFileMIME(filePath, name string) string {
 	return DetectMIME(name, buf[:n])
 }
 
-// WriteZip streams a zip archive containing the given paths to w.
-// Directories are walked recursively. Each top-level item appears at the archive root.
-func (s *LocalStorage) WriteZip(w io.Writer, paths []string) error {
+// WriteZip streams paths as a zip; skipHidden leaves out dot-named entries inside folders
+func (s *LocalStorage) WriteZip(w io.Writer, paths []string, skipHidden bool) error {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
@@ -272,7 +270,7 @@ func (s *LocalStorage) WriteZip(w io.Writer, paths []string) error {
 
 		baseName := path.Base(p)
 		if info.IsDir() {
-			if err := s.zipDir(zw, p, baseName); err != nil {
+			if err := s.zipDir(zw, p, baseName, skipHidden); err != nil {
 				return err
 			}
 		} else {
@@ -308,7 +306,7 @@ func (s *LocalStorage) zipFile(zw *zip.Writer, fsPath, archivePath string, info 
 	return err
 }
 
-func (s *LocalStorage) zipDir(zw *zip.Writer, fsPath, archivePath string) error {
+func (s *LocalStorage) zipDir(zw *zip.Writer, fsPath, archivePath string, skipHidden bool) error {
 	dir, err := s.root.Open(fsPath)
 	if err != nil {
 		return err
@@ -324,11 +322,14 @@ func (s *LocalStorage) zipDir(zw *zip.Writer, fsPath, archivePath string) error 
 	}
 
 	for _, entry := range entries {
+		if skipHidden && strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
 		childFs := path.Join(fsPath, entry.Name())
 		childArchive := archivePath + "/" + entry.Name()
 
 		if entry.IsDir() {
-			if err := s.zipDir(zw, childFs, childArchive); err != nil {
+			if err := s.zipDir(zw, childFs, childArchive, skipHidden); err != nil {
 				return err
 			}
 		} else {

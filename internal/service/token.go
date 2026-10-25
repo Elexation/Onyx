@@ -10,18 +10,22 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
 
 const MaxActiveTokens = 50
 
+var ErrTokenLimit = fmt.Errorf("maximum of %d active tokens reached. Revoke one to create another", MaxActiveTokens)
+
 type TokenRepo interface {
-	Create(name, tokenHash, tokenLast8, scope string, createdAt int64, expiresAt *int64) (int64, error)
+	// Create inserts only while fewer than maxActive unexpired tokens exist. False if at the cap.
+	Create(name, tokenHash, tokenLast8, scope string, createdAt int64, expiresAt *int64, maxActive int) (int64, bool, error)
 	GetByTokenHash(tokenHash string) (*domain.PersonalAccessToken, error)
 	List() ([]domain.PersonalAccessToken, error)
 	Delete(id int64) error
-	Count() (int64, error)
+	CountActive(now int64) (int64, error)
 	UpdateLastUsed(id, ts int64) error
 	DeleteExpired(now int64) (int64, error)
 }
@@ -46,19 +50,11 @@ func (s *TokenService) Create(name, scope string, expiresAt *int64) (*domain.Per
 	if name == "" {
 		return nil, "", fmt.Errorf("name is required")
 	}
-	if len(name) > 255 {
+	if utf8.RuneCountInString(name) > 255 {
 		return nil, "", fmt.Errorf("name must not exceed 255 characters")
 	}
 	if !domain.IsValidTokenScope(scope) {
 		return nil, "", fmt.Errorf("invalid scope")
-	}
-
-	count, err := s.repo.Count()
-	if err != nil {
-		return nil, "", fmt.Errorf("count tokens: %w", err)
-	}
-	if count >= MaxActiveTokens {
-		return nil, "", fmt.Errorf("maximum of %d active tokens reached. Revoke one to create another", MaxActiveTokens)
 	}
 
 	now := time.Now().Unix()
@@ -76,9 +72,12 @@ func (s *TokenService) Create(name, scope string, expiresAt *int64) (*domain.Per
 	tokenHash := hex.EncodeToString(hash[:])
 	tokenLast8 := fullToken[len(fullToken)-8:]
 
-	id, err := s.repo.Create(name, tokenHash, tokenLast8, scope, now, expiresAt)
+	id, created, err := s.repo.Create(name, tokenHash, tokenLast8, scope, now, expiresAt, MaxActiveTokens)
 	if err != nil {
 		return nil, "", err
+	}
+	if !created {
+		return nil, "", ErrTokenLimit
 	}
 
 	tok := &domain.PersonalAccessToken{
@@ -118,10 +117,13 @@ func (s *TokenService) ValidateToken(token string) (*domain.PersonalAccessToken,
 		return nil, nil
 	}
 
-	if err := s.repo.UpdateLastUsed(tok.ID, now); err != nil {
-		slog.Warn("failed to update token last_used_at", "id", tok.ID, "error", err)
+	// Throttle last_used_at writes to once per minute
+	if now-tok.LastUsedAt > 60 {
+		if err := s.repo.UpdateLastUsed(tok.ID, now); err != nil {
+			slog.Warn("failed to update token last_used_at", "id", tok.ID, "error", err)
+		}
+		tok.LastUsedAt = now
 	}
-	tok.LastUsedAt = now
 
 	return tok, nil
 }
@@ -139,7 +141,7 @@ func (s *TokenService) Delete(id int64) error {
 }
 
 func (s *TokenService) Count() (int64, error) {
-	return s.repo.Count()
+	return s.repo.CountActive(time.Now().Unix())
 }
 
 // CheckScope is a method wrapper over the package-level CheckScope helper so
@@ -163,6 +165,7 @@ func (s *TokenService) CleanExpired() {
 
 func (s *TokenService) StartCleanup(interval time.Duration) {
 	go func() {
+		s.CleanExpired()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
@@ -173,12 +176,12 @@ func (s *TokenService) StartCleanup(interval time.Duration) {
 
 // CheckScope decides whether a given (scope, method, path) combination is
 // allowed for a bearer-authenticated request. Admin-only endpoints
-// (/api/tokens, /api/auth, /api/settings) are blocked for all bearer tokens
-// regardless of scope; they require a real browser session.
+// (/api/tokens, /api/auth, /api/settings, /api/changes) are blocked for all
+// bearer tokens regardless of scope; they require a real browser session.
 func CheckScope(scope, method, path string) bool {
 	// Admin endpoints are never accessible via bearer token, even with full scope.
 	// A leaked token must not be able to create more tokens, change the password,
-	// or alter server settings.
+	// alter server settings, or watch the change feed.
 	if strings.HasPrefix(path, "/api/tokens") ||
 		strings.HasPrefix(path, "/api/auth") ||
 		strings.HasPrefix(path, "/api/settings") ||

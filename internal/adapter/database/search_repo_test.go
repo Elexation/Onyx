@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -29,23 +30,26 @@ func countByPath(t *testing.T, db *sql.DB, path string) int {
 	return n
 }
 
-func TestEscapeLike(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"normal", "normal"},
-		{"100%", `100\%`},
-		{"file_v2", `file\_v2`},
-		{`back\slash`, `back\\slash`},
-		{"100%_mixed\\", `100\%\_mixed\\`},
-		{"", ""},
+func TestDeleteTree_CaseExact(t *testing.T) {
+	repo, db := openTestDB(t)
+	now := time.Now().Unix()
+
+	repo.Upsert("a.txt", "/Docs/a.txt", false, 1, now)
+	repo.Upsert("b.txt", "/docs/b.txt", false, 1, now)
+	repo.Upsert("c.txt", "/Docs0/c.txt", false, 1, now)
+	repo.Upsert("d_%.txt", "/Docs/d_%.txt", false, 1, now)
+
+	if err := repo.DeleteTree("/Docs"); err != nil {
+		t.Fatalf("delete tree: %v", err)
 	}
-	for _, tt := range tests {
-		got := escapeLike(tt.input)
-		if got != tt.want {
-			t.Errorf("escapeLike(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+	if countByPath(t, db, "/Docs/a.txt") != 0 || countByPath(t, db, "/Docs/d_%.txt") != 0 {
+		t.Error("descendant not deleted")
+	}
+	if countByPath(t, db, "/docs/b.txt") != 1 {
+		t.Error("case-only sibling deleted")
+	}
+	if countByPath(t, db, "/Docs0/c.txt") != 1 {
+		t.Error("name-prefix sibling deleted")
 	}
 }
 
@@ -72,7 +76,7 @@ func TestSearch_FilenamePunctuation(t *testing.T) {
 		{`"`, ""},
 	}
 	for _, tt := range tests {
-		results, _, err := repo.Search(tt.query, 10)
+		results, _, err := repo.Search(context.Background(), tt.query, 10)
 		if err != nil {
 			t.Errorf("Search(%q) returned error: %v", tt.query, err)
 			continue

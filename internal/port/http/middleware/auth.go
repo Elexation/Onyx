@@ -2,11 +2,25 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/Elexation/onyx/internal/domain"
 )
+
+var bearerCSRFSentinel = randomSentinel()
+
+// Build an unguessable CSRF token for bearer pseudo-sessions.
+func randomSentinel() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("auth: init csrf sentinel: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
 
 type contextKey string
 
@@ -34,7 +48,12 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if bearer, ok := extractBearer(r); ok {
 				tok, err := tokens.ValidateToken(bearer)
-				if err != nil || tok == nil {
+				if err != nil {
+					slog.Warn("token validation failed", "error", err)
+					http.Error(w, `{"error":"internal server error"}`, http.StatusServiceUnavailable)
+					return
+				}
+				if tok == nil {
 					http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 					return
 				}
@@ -44,11 +63,11 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 				}
 				// Synthetic session for downstream handlers. UserID=0 and
 				// empty ID are intentional: bearer-authed requests have no
-				// session identity. CSRFToken is a non-matchable sentinel so
-				// a regression in IsBearerAuth can't bypass CSRF. Handlers
+				// session identity. CSRFToken is a random per-process sentinel
+				// so a regression in IsBearerAuth can't bypass CSRF. Handlers
 				// that require a real session (ChangePassword) are guarded by
 				// the admin-endpoint block in CheckScope.
-				synthetic := &domain.Session{CSRFToken: "__bearer__"}
+				synthetic := &domain.Session{CSRFToken: bearerCSRFSentinel}
 				ctx := ContextWithSession(r.Context(), synthetic)
 				ctx = context.WithValue(ctx, authMethodKey, AuthMethodBearer)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -67,6 +86,7 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 
 			session, err := sessions.ValidateSession(cookie.Value)
 			if err != nil {
+				slog.Warn("session validation failed", "error", err)
 				http.Error(w, `{"error":"internal server error"}`, http.StatusServiceUnavailable)
 				return
 			}

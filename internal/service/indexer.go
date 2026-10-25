@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
 	"strings"
@@ -17,7 +18,7 @@ type SearchRepo interface {
 	UpsertBatch(items []database.FileEntry) error
 	Delete(path string) error
 	DeleteTree(path string) error
-	Search(query string, limit int) ([]domain.SearchResult, int, error)
+	Search(ctx context.Context, query string, limit int) ([]domain.SearchResult, int, error)
 	DeleteStale(olderThan int64) (int64, error)
 	UpdatePath(oldPath, newPath, newName string) error
 	UpdatePathPrefix(oldPrefix, newPrefix string) error

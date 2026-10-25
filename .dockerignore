@@ -1,16 +1,30 @@
-data/
-config/
-.cache/
-.trash/
-.versions/
-.git/
-node_modules/
+# Allowlist: only what the image build reads; new top-level folders stay out
+*
+!cmd/
+!internal/
+!web/
+!frontend/
+!go.mod
+!go.sum
+!entrypoint.sh
+
+# Build output, dependencies and local files inside the allowed folders
+web/build/
 frontend/node_modules/
 frontend/build/
-web/build/
-test-results/
-*.exe
-*.png
-todo.txt
-.env
-.env.*
+frontend/.svelte-kit/
+frontend/tests/
+frontend/test-results/
+**/*.exe
+**/.env
+**/.env.*
+
+# Server state a dev run left inside them (its working dir was a subfolder)
+*/config/
+*/data/
+**/.trash/
+**/.versions/
+**/.cache/
+**/*.db
+**/*.db-shm
+**/*.db-wal

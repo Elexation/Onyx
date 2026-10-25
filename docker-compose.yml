@@ -5,10 +5,7 @@ services:
     ports:
       - "${ONYX_PORT:-8080}:8080"
     volumes:
-      # One mount, not five. Upload finalization hardlinks from the cache into
-      # the data root and trash moves rename into .trash; both fall back to a
-      # full copy across a mount boundary, silently. .trash and .versions are
-      # not configurable and land here via the image's WORKDIR.
+      # All state on one mount, or uploads and trash moves fall back to full copies
       - ./store:/store
     environment:
       - ONYX_DATA=/store/data
@@ -27,11 +24,11 @@ services:
       # 720, 1080, 1440, 2160. Defaults to 2160.
       # - ONYX_MAX_TRANSCODE_HEIGHT=2160
       # Enable built-in HTTPS. Auto-generates a self-signed cert
-      # in /config on first run. Set to true and restart.
+      # in /store/config on first run. Set to true and restart.
       # - ONYX_HTTPS=true
       # Optional: use your own cert/key instead of auto-generated.
-      # - ONYX_TLS_CERT=/config/custom.crt
-      # - ONYX_TLS_KEY=/config/custom.key
+      # - ONYX_TLS_CERT=/store/config/custom.crt
+      # - ONYX_TLS_KEY=/store/config/custom.key
       # Trust reverse proxy headers (X-Forwarded-Proto, X-Real-IP).
       # Required when running behind nginx, Caddy, Traefik, etc.
       # - ONYX_TRUSTED_PROXY=true
@@ -42,6 +39,9 @@ services:
       # Map the redirect port in `ports:` (e.g. "80:80").
       # - ONYX_HTTPS_REDIRECT=true
       # - ONYX_HTTPS_REDIRECT_PORT=80
+      # NVIDIA (NVENC) only, together with `runtime: nvidia` below:
+      # - NVIDIA_VISIBLE_DEVICES=all
+      # - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     restart: always
     # --- GPU passthrough (uncomment the section matching your hardware) ---
     #
@@ -49,10 +49,8 @@ services:
     #   sudo apt install nvidia-container-toolkit
     #   sudo nvidia-ctk runtime configure --runtime=docker
     #   sudo systemctl restart docker
+    # Then uncomment this line and the two NVIDIA_* entries in environment above.
     # runtime: nvidia
-    # environment:
-    #   - NVIDIA_VISIBLE_DEVICES=all
-    #   - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     #
     # Intel (VAAPI/QSV) or AMD (VAAPI/AMF): just pass through /dev/dri:
     # devices:

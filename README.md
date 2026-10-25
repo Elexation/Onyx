@@ -31,17 +31,19 @@ store/
   .versions/
 ```
 
-Keep these on one mount. Finishing an upload and deleting a file are both renames within `store/`, and Docker treats separate bind mounts as separate filesystems, so splitting them turns each into a full copy with no error. Onyx warns at startup if it detects this.
+Keep these on one mount. Finishing an upload hardlinks the file from `cache/` into `data/`, and deleting a file renames it into `.trash/`. Docker treats separate bind mounts as separate filesystems, so splitting them turns each into a full copy with no error. Onyx warns at startup when upload hardlinking fails; a split-off `.trash/` or `.versions/` degrades without a warning.
 
-Upgrading from a release that mounted these separately:
+Upgrading from a release that mounted these separately (rebuild, since the old image has no `/store` working directory):
 
 ```bash
 docker compose down
 mkdir -p store
 mv data config .trash .versions store/
 mv .cache store/cache
-docker compose up -d
+docker compose up -d --build
 ```
+
+If you built the image from this folder after the move to `store/`, older builds may have copied `store/` into Docker's build cache. Clear it with `docker builder prune` (and `docker image prune` on the legacy builder).
 
 ### Docker Run
 
@@ -57,13 +59,22 @@ docker run -d \
   onyx:latest
 ```
 
+### Forgotten Password
+
+```bash
+./onyx reset-password                                 # binary, from the server's working directory
+docker exec -u 1000:1000 onyx /onyx reset-password    # Docker (use your PUID:PGID)
+```
+
+Prints a new random admin password and signs out every session. It reads the same `ONYX_CONFIG` as the server and is safe to run while the server is up. Log in with it, then change it in Settings.
+
 ## Environment Variables
 
 ### Server
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ONYX_PORT` | `8080` | Port the server listens on. In Docker, also set the host-side port mapping. |
+| `ONYX_PORT` | `8080` | Port the server listens on. With the bundled compose file it only sets the host-side port; the container keeps listening on 8080. |
 | `ONYX_HTTPS` | `false` | Enable built-in HTTPS. Auto-generates a self-signed cert on first run. |
 | `ONYX_TLS_CERT` | *(auto)* | Path to a custom TLS certificate. Must be set with `ONYX_TLS_KEY`. |
 | `ONYX_TLS_KEY` | *(auto)* | Path to a custom TLS private key. Must be set with `ONYX_TLS_CERT`. |
@@ -145,11 +156,12 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
-Then add to your compose file:
+Then add `runtime: nvidia` to the service, and these two entries to its existing `environment:` list (a second `environment:` key is a YAML error; the bundled compose file has both commented out):
 
 ```yaml
 runtime: nvidia
 environment:
+  # ...existing entries...
   - NVIDIA_VISIBLE_DEVICES=all
   - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
 ```
@@ -274,19 +286,17 @@ anyway, disable it for that path or the file list stops updating live.
 
 ## Development
 
-**Prerequisites:** Go 1.24+, Node.js 22+
+**Prerequisites:** Go 1.26+, Node.js 22+
 
 ```bash
 # Install dependencies
-go mod tidy
+go mod download
 cd frontend && npm install && cd ..
 go install github.com/air-verse/air@latest
 
-# Run backend (hot reload on :8080)
-make dev-backend
-
-# Run frontend (Vite on :5173, proxies /api to :8080)
-make dev-frontend
+# Run backend (air, hot reload on :8080) and frontend (Vite on :5173,
+# proxies /api to :8080) together; Ctrl+C stops both
+make dev
 
 # Production build
 make build

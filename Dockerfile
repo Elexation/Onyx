@@ -33,10 +33,9 @@ RUN chmod +x /entrypoint.sh
 WORKDIR /store
 # Build-time constant; the runtime port follows ONYX_PORT.
 EXPOSE 8080
+# Probe HTTPS first; plain HTTP must answer 200, since with TLS on it replies 301
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-	CMD if [ "$ONYX_HTTPS" = "true" ] || [ "$ONYX_TLS" = "true" ]; then \
-		curl -fsk https://localhost:${ONYX_PORT:-8080}/api/health; \
-	else \
-		curl -fs http://localhost:${ONYX_PORT:-8080}/api/health; \
-	fi || exit 1
+	CMD curl -fsk -o /dev/null https://localhost:${ONYX_PORT:-8080}/api/health \
+		|| [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${ONYX_PORT:-8080}/api/health)" = "200" ] \
+		|| exit 1
 ENTRYPOINT ["/entrypoint.sh"]

@@ -19,6 +19,7 @@ import (
 type LocalStorage struct {
 	root     *os.Root
 	dataPath string
+	lockPath func(p string) (unlock func())
 }
 
 // NewLocalStorage opens dataPath as an os.Root; only AdoptFile and CheckHardlink bypass it

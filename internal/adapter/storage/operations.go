@@ -67,32 +67,36 @@ func (s *LocalStorage) Move(paths []string, destination string) []OpResult {
 			results[i] = OpResult{Path: "/" + p, Error: "cannot move a directory into itself"}
 			continue
 		}
-		name := path.Base(p)
-		dst := path.Join(destination, name)
-
-		// os.Rename silently replaces an existing destination; fail the item
-		// instead. SameFile allows no-op moves into the current parent.
-		if _, statErr := s.root.Lstat(dst); statErr == nil && !s.SameFile(p, dst) {
-			results[i] = OpResult{Path: "/" + p, Error: "a file or directory already exists at /" + dst}
-			continue
-		}
-
-		err := s.root.Rename(p, dst)
-		if err != nil && isCrossDevice(err) {
-			// Cross-device: copy then delete original
-			err = s.copyOne(p, dst)
-			if err == nil {
-				err = s.root.RemoveAll(p)
-			}
-		}
-
-		results[i] = OpResult{Path: "/" + p, Success: err == nil}
-		if err != nil {
-			results[i].Error = opError("move", p, err)
-		}
+		results[i] = s.moveLocked(p, path.Join(destination, path.Base(p)))
 	}
 
 	return results
+}
+
+// moveLocked holds dst's lock from the conflict check through the rename, so an upload can't land between
+func (s *LocalStorage) moveLocked(p, dst string) OpResult {
+	defer s.lockDest(dst)()
+
+	// os.Rename silently replaces an existing destination; fail the item
+	// instead. SameFile allows no-op moves into the current parent.
+	if _, statErr := s.root.Lstat(dst); statErr == nil && !s.SameFile(p, dst) {
+		return OpResult{Path: "/" + p, Error: "a file or directory already exists at /" + dst}
+	}
+
+	err := s.root.Rename(p, dst)
+	if err != nil && isCrossDevice(err) {
+		// Cross-device: copy then delete original
+		err = s.copyOne(p, dst)
+		if err == nil {
+			err = s.root.RemoveAll(p)
+		}
+	}
+
+	res := OpResult{Path: "/" + p, Success: err == nil}
+	if err != nil {
+		res.Error = opError("move", p, err)
+	}
+	return res
 }
 
 // Copy duplicates paths into a destination directory.
@@ -111,22 +115,44 @@ func (s *LocalStorage) Copy(paths []string, destination string) []OpResult {
 			results[i] = OpResult{Path: "/" + p, Error: "cannot copy a directory into itself"}
 			continue
 		}
-		name := path.Base(p)
-		dst := path.Join(destination, name)
-		dst, err := s.uniqueName(dst)
-		if err != nil {
-			results[i] = OpResult{Path: "/" + path.Join(destination, name), Error: err.Error()}
-			continue
-		}
-
-		err = s.copyOne(p, dst)
-		results[i] = OpResult{Path: "/" + dst, Success: err == nil}
-		if err != nil {
-			results[i].Error = opError("copy", p, err)
-		}
+		results[i] = s.copyLocked(p, path.Join(destination, path.Base(p)))
 	}
 
 	return results
+}
+
+// copyLocked copies under the chosen name's lock, picking again if an upload took the name meanwhile
+func (s *LocalStorage) copyLocked(p, want string) OpResult {
+	for {
+		dst, err := s.uniqueName(want)
+		if err != nil {
+			return OpResult{Path: "/" + want, Error: err.Error()}
+		}
+		unlock := s.lockDest(dst)
+		if _, err := s.root.Lstat(dst); err == nil {
+			unlock()
+			continue
+		}
+		err = s.copyOne(p, dst)
+		unlock()
+		res := OpResult{Path: "/" + dst, Success: err == nil}
+		if err != nil {
+			res.Error = opError("copy", p, err)
+		}
+		return res
+	}
+}
+
+// SetPathLocker shares the upload finalize lock, so Move and Copy can't race an upload to one name
+func (s *LocalStorage) SetPathLocker(lock func(p string) (unlock func())) {
+	s.lockPath = lock
+}
+
+func (s *LocalStorage) lockDest(p string) func() {
+	if s.lockPath == nil {
+		return func() {}
+	}
+	return s.lockPath(p)
 }
 
 // insideSelf reports whether dst is p or under it, by file identity so case and alias forms count

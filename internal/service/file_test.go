@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/domain"
@@ -367,5 +368,34 @@ func TestCleanUploadPathsRejectsBackslashTraversal(t *testing.T) {
 	}
 	if _, _, err := CleanUploadPaths(`..\outside`, "f.txt"); !errors.Is(err, ErrUploadInvalidTarget) {
 		t.Fatalf("err = %v, want ErrUploadInvalidTarget", err)
+	}
+}
+
+func TestRename_WaitsForTargetLock(t *testing.T) {
+	fs, dataDir, _ := setupDeleteTest(t, &stubSettingsRepo{})
+	if err := os.WriteFile(filepath.Join(dataDir, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// An upload finalizing to b.txt holds its lock and lands while Rename waits
+	unlock := fs.LockPath("/b.txt")
+	done := make(chan error, 1)
+	go func() { done <- fs.Rename("/a.txt", "b.txt") }()
+	select {
+	case err := <-done:
+		t.Fatalf("rename finished while the target was locked: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "b.txt"), []byte("upload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	var conflict *ConflictError
+	if err := <-done; !errors.As(err, &conflict) {
+		t.Fatalf("want a conflict once the upload landed, got %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dataDir, "b.txt")); string(got) != "upload" {
+		t.Fatalf("uploaded file was replaced: %q", got)
 	}
 }

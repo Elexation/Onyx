@@ -115,7 +115,9 @@ func (s *FileService) LockPath(p string) func() {
 }
 
 func NewFileService(storage *storage.LocalStorage) *FileService {
-	return &FileService{storage: storage, finalizeLocks: make(map[string]*finalizeLock)}
+	s := &FileService{storage: storage, finalizeLocks: make(map[string]*finalizeLock)}
+	storage.SetPathLocker(s.LockPath)
+	return s
 }
 
 func (s *FileService) SetTrash(trash *TrashService, settings *SettingsService) {
@@ -329,16 +331,19 @@ func (s *FileService) Rename(filePath, newName string) error {
 		return err
 	}
 
-	// Lstat: a dangling symlink at the target still occupies the name
 	targetPath := path.Join(path.Dir(filePath), newName)
-	if _, err := s.storage.Lstat(targetPath); err == nil {
-		// Allow case-only renames (same file on case-insensitive FS)
-		if !s.storage.SameFile(filePath, targetPath) {
-			return &ConflictError{Path: targetPath}
+	// Hold the target's finalize lock from the check through the rename, so an upload can't land between
+	if err := func() error {
+		defer s.LockPath(targetPath)()
+		// Lstat: a dangling symlink at the target still occupies the name
+		if _, err := s.storage.Lstat(targetPath); err == nil {
+			// Allow case-only renames (same file on case-insensitive FS)
+			if !s.storage.SameFile(filePath, targetPath) {
+				return &ConflictError{Path: targetPath}
+			}
 		}
-	}
-
-	if err := s.storage.Rename(filePath, newName); err != nil {
+		return s.storage.Rename(filePath, newName)
+	}(); err != nil {
 		return err
 	}
 

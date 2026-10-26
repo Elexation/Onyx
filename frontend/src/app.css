@@ -44,6 +44,8 @@
 	--fab-clearance: 84px;
 	/* Upload panel height plus a gap while it shows; toasts stack above it */
 	--upload-panel-h: 0px;
+	/* Toast clearance from the bottom: the FAB below md, sonner's 24px above */
+	--toast-base: var(--fab-clearance);
 
 	--font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -143,4 +145,23 @@
 		appearance: textfield;
 	}
 
+}
+
+/* sonner switches to its mobile offset at 600px, but the FAB shows until md */
+@media (min-width: 48rem) {
+	:root {
+		--toast-base: 24px;
+	}
+}
+
+/* svelte-sonner's CSS is unlayered, so these overrides must stay outside @layer */
+:root [data-sonner-toaster] {
+	font-family: var(--font-sans);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+	box-shadow: none;
+	font-size: 14px;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"]:focus-visible {
+	box-shadow: 0 0 0 2px var(--ring);
 }

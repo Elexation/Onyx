@@ -12,6 +12,7 @@
 		class: className,
 		variant = "outline",
 		size = "default",
+		disabled = false,
 		...restProps
 	}: AlertDialogPrimitive.CancelProps & {
 		variant?: ButtonVariant;
@@ -19,9 +20,12 @@
 	} = $props();
 </script>
 
+<!-- bits-ui keeps disabled off the DOM button, so aria-disabled carries the styling and announcement -->
 <AlertDialogPrimitive.Cancel
 	bind:ref
 	data-slot="alert-dialog-cancel"
 	class={cn(buttonVariants({ variant, size }), "cn-alert-dialog-cancel", className)}
+	{disabled}
+	aria-disabled={disabled || undefined}
 	{...restProps}
 />

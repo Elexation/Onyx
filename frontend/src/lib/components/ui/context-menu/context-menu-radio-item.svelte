@@ -17,7 +17,7 @@
 <ContextMenuPrimitive.RadioItem
 	bind:ref
 	data-slot="context-menu-radio-item"
-	data-inset={inset}
+	data-inset={inset || undefined}
 	class={cn(
 		"focus:bg-accent focus:text-accent-foreground gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm data-[inset]:pl-8 [&_svg:not([class*='size-'])]:size-4 relative flex cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
 		className

@@ -16,7 +16,7 @@
 <div
 	bind:this={ref}
 	data-slot="dropdown-menu-label"
-	data-inset={inset}
+	data-inset={inset || undefined}
 	class={cn("text-muted-foreground px-1.5 py-1 text-xs font-medium data-[inset]:pl-8", className)}
 	{...restProps}
 >

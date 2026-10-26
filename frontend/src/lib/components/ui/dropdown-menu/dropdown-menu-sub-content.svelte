@@ -12,6 +12,6 @@
 <DropdownMenuPrimitive.SubContent
 	bind:ref
 	data-slot="dropdown-menu-sub-content"
-	class={cn("data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 bg-popover text-popover-foreground min-w-[96px] rounded-lg border border-border-2 p-1 duration-100 w-auto", className)}
+	class={cn("data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 bg-popover text-popover-foreground min-w-[96px] max-h-(--bits-floating-available-height) rounded-lg border border-border-2 p-1 duration-100 z-50 w-auto overflow-x-hidden overflow-y-auto", className)}
 	{...restProps}
 />

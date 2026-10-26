@@ -60,6 +60,6 @@
 <UploadPanel />
 <!-- Toasts sit above the audio dock, the upload panel and (on phones) the FAB -->
 <Toaster
-	offset={{ bottom: "calc(var(--dock-inset) + 24px + var(--upload-panel-h))" }}
-	mobileOffset={{ bottom: "calc(var(--dock-inset) + var(--fab-clearance) + var(--upload-panel-h))" }}
+	offset={{ bottom: "calc(var(--dock-inset) + var(--toast-base) + var(--upload-panel-h))" }}
+	mobileOffset={{ bottom: "calc(var(--dock-inset) + var(--toast-base) + var(--upload-panel-h))" }}
 />

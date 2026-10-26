@@ -111,7 +111,7 @@ func TestLookup_QueueOverflowKeepsInflightClean(t *testing.T) {
 		dataDir:  dataDir,
 		realRoot: realRoot,
 		jobs:     make(chan thumbJob, 1), // deliberately tiny
-		workers:  0,                       // no worker pool, channel stays full
+		workers:  0,                      // no worker pool, channel stays full
 		failTTL:  time.Minute,
 		lruTTL:   time.Minute,
 	}

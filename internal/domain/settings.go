@@ -6,38 +6,38 @@ import (
 )
 
 const (
-	SettingTrashEnabled  = "trash.enabled"
-	SettingTrashPurgeAge = "trash.purge_age"
-	SettingTrashMaxSize  = "trash.max_size"
-	SettingVersionsEnabled         = "versions.enabled"
-	SettingVersionsMaxCount        = "versions.max_count"
-	SettingVersionsMaxAge          = "versions.max_age"
-	SettingVersionsMaxFileSize     = "versions.max_file_size"
-	SettingVersionsMaxStorageBytes = "versions.max_storage"
-	SettingSharesEnabled = "shares.enabled"
-	SettingSessionLifetime = "session.lifetime"
-	SettingUploadMaxSize = "upload.max_size"
+	SettingTrashEnabled                  = "trash.enabled"
+	SettingTrashPurgeAge                 = "trash.purge_age"
+	SettingTrashMaxSize                  = "trash.max_size"
+	SettingVersionsEnabled               = "versions.enabled"
+	SettingVersionsMaxCount              = "versions.max_count"
+	SettingVersionsMaxAge                = "versions.max_age"
+	SettingVersionsMaxFileSize           = "versions.max_file_size"
+	SettingVersionsMaxStorageBytes       = "versions.max_storage"
+	SettingSharesEnabled                 = "shares.enabled"
+	SettingSessionLifetime               = "session.lifetime"
+	SettingUploadMaxSize                 = "upload.max_size"
 	SettingPlaybackDefaultQualityCeiling = "playback.default_quality_ceiling"
 
-	SettingServerListenPort  = "server.listen_port"
+	SettingServerListenPort = "server.listen_port"
 	SettingServerTLSEnabled = "server.tls_enabled"
 )
 
 var Defaults = map[string]string{
-	SettingTrashEnabled:  "true",
-	SettingTrashPurgeAge: "720h",       // 30 days
-	SettingTrashMaxSize:  "0",          // 0 = unlimited, stored in bytes
-	SettingVersionsEnabled:         "true",
-	SettingVersionsMaxCount:        "10",
-	SettingVersionsMaxAge:          "2160h",      // 90 days
-	SettingVersionsMaxFileSize:     "1073741824", // 1 GiB
-	SettingVersionsMaxStorageBytes: "0",          // 0 = unlimited, stored in bytes
-	SettingSharesEnabled:   "true",
-	SettingSessionLifetime: "720h", // 30 days
-	SettingUploadMaxSize:       "107374182400", // 100 GiB, the ceiling settings validation allows
-	SettingPlaybackDefaultQualityCeiling: "1080", // pixel height; 0 = unlimited
+	SettingTrashEnabled:                  "true",
+	SettingTrashPurgeAge:                 "720h", // 30 days
+	SettingTrashMaxSize:                  "0",    // 0 = unlimited, stored in bytes
+	SettingVersionsEnabled:               "true",
+	SettingVersionsMaxCount:              "10",
+	SettingVersionsMaxAge:                "2160h",      // 90 days
+	SettingVersionsMaxFileSize:           "1073741824", // 1 GiB
+	SettingVersionsMaxStorageBytes:       "0",          // 0 = unlimited, stored in bytes
+	SettingSharesEnabled:                 "true",
+	SettingSessionLifetime:               "720h",         // 30 days
+	SettingUploadMaxSize:                 "107374182400", // 100 GiB, the ceiling settings validation allows
+	SettingPlaybackDefaultQualityCeiling: "1080",         // pixel height; 0 = unlimited
 
-	SettingServerListenPort:  "8080",
+	SettingServerListenPort: "8080",
 	SettingServerTLSEnabled: "false",
 }
 

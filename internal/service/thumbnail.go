@@ -116,8 +116,8 @@ type ThumbnailService struct {
 	inflight sync.Map
 	workers  int
 
-	failTTL  time.Duration
-	lruTTL   time.Duration
+	failTTL time.Duration
+	lruTTL  time.Duration
 
 	events EventRecorder
 }

@@ -66,10 +66,14 @@ func (r *fakeTrashRepo) DeleteAll() ([]domain.TrashItem, error) {
 	return out, nil
 }
 
-func (r *fakeTrashRepo) Count() (int, error)                                  { r.mu.Lock(); defer r.mu.Unlock(); return len(r.items), nil }
-func (r *fakeTrashRepo) TotalSize() (int64, error)                            { return 0, nil }
-func (r *fakeTrashRepo) ListExpiredBefore(int64) ([]domain.TrashItem, error)  { return nil, nil }
-func (r *fakeTrashRepo) ListOldestFirst() ([]domain.TrashItem, error)         { return nil, nil }
+func (r *fakeTrashRepo) Count() (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.items), nil
+}
+func (r *fakeTrashRepo) TotalSize() (int64, error)                           { return 0, nil }
+func (r *fakeTrashRepo) ListExpiredBefore(int64) ([]domain.TrashItem, error) { return nil, nil }
+func (r *fakeTrashRepo) ListOldestFirst() ([]domain.TrashItem, error)        { return nil, nil }
 
 // fakeShareCleaner records share-cascade calls for assertion.
 type fakeShareCleaner struct {

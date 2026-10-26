@@ -79,7 +79,7 @@
 	onclick={handleBackdropClick}
 >
 	{#if type !== "pdf"}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 		<div class="flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-sm" onclick={(e) => e.stopPropagation()}>
 			{#if type !== "video"}
 				<h2 id="preview-modal-title" class="min-w-0 flex-1 truncate text-[15px] font-medium" title={file.name}>{file.name}</h2>

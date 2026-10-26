@@ -40,7 +40,8 @@
 
 	let pageHeights = $state<number[]>([]);
 	let baseHeights: number[] = [];
-	let baseWidths: number[] = [];
+	// The page markup reads it, so it must be reactive; raw because it is only reassigned
+	let baseWidths = $state.raw<number[]>([]);
 	let firstPageBaseWidth = 0;
 	let baseMaxWidth = 0;
 	let pageProxies: pdfjsLib.PDFPageProxy[] = [];
@@ -675,7 +676,7 @@
 {:else}
 	<div class="relative flex flex-1 flex-col overflow-hidden bg-neutral-700" data-preview-content>
 		{#if viewport.isMobile}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 			<div
 				class="absolute inset-x-0 top-0 z-10 flex items-center bg-zinc-800 px-2 py-2 transition-transform duration-200 ease-out"
 				class:-translate-y-full={!showMobileToolbar}
@@ -705,7 +706,7 @@
 				</div>
 			</div>
 		{:else}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 			<div class="flex items-center border-b border-border bg-zinc-900 px-3 py-1.5" onclick={(e) => e.stopPropagation()}>
 				<div class="min-w-0 flex-1 truncate pr-3 text-[15px] font-medium text-zinc-200" title={name}>{name ?? ""}</div>
 
@@ -790,7 +791,7 @@
 			</div>
 		{/if}
 
-		<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 		<div
 			bind:this={containerEl}
 			data-pdf-scroll

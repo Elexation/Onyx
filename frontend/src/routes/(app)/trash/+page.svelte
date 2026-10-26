@@ -451,7 +451,7 @@
 
 <svelte:window onkeydown={handlePageKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="flex min-h-full flex-col gap-4 p-4" onclick={clearSelection}>
 	<!-- Header (always visible) -->
 	<PageHeader
@@ -542,7 +542,7 @@
 		<!-- List -->
 		<ListCard class="flex-col" gridCols="md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px]">
 			{#snippet header()}
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div class="contents" onclick={(e) => e.stopPropagation()}>
 					<div>Name</div>
 					<div class="text-center">Deleted</div>

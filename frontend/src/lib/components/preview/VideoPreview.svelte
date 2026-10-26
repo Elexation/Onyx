@@ -744,7 +744,7 @@
 <svelte:window onkeydown={handleKeydown} onkeyup={handleKeyup} onblur={handleWindowBlur} />
 <svelte:document onfullscreenchange={() => { isFullscreen = document.fullscreenElement === containerEl; }} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
 	bind:this={containerEl}
 	class="group relative flex flex-1 items-center justify-center overflow-hidden bg-black"
@@ -860,6 +860,7 @@
 	{/if}
 
 	{#if !failed}
+	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div
 		class="absolute bottom-0 left-0 right-0 flex flex-col gap-2 bg-black/70 px-3 py-2 backdrop-blur-sm transition-opacity duration-200"
 		class:opacity-0={!controlsVisible}
@@ -878,6 +879,8 @@
 			}
 		}}
 	>
+		<!-- Hover preview only; the slider inside handles keyboard seeking -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="seek-bar relative w-full cursor-pointer"
 			onpointermove={handleSeekBarMove}

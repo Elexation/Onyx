@@ -896,7 +896,7 @@
 			currentDir={path || "/"}
 			onupload={(files, emptyDirs, targetDir) => handleUpload(files, emptyDirs, { targetDir })}
 		>
-			<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 			<div class="flex min-h-0 flex-1 flex-col p-4" onclick={() => { selection.clear(); bgMenuOpen = false; }} oncontextmenu={handleBgContextMenu}>
 				{#if activeView === "grid"}
 					<FileGrid
@@ -942,7 +942,7 @@
 
 {#if bgMenuOpen}
 	<!-- Backdrop: click-to-close. Keyboard equivalent is Escape (handled at page level). -->
-	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div class="fixed inset-0 z-50" onclick={() => (bgMenuOpen = false)} oncontextmenu={(e) => { e.preventDefault(); bgMenuOpen = false; }}></div>
 	<div
 		bind:this={bgMenuEl}

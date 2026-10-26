@@ -13,6 +13,22 @@ export type ProbeInfo = {
 
 export type ProbeStatus = "ok" | "no-video" | "error";
 
+let volumeSettable: boolean | null = null;
+
+// False on iOS and iPadOS, where media volume is read-only at any viewport width
+export function canSetMediaVolume(): boolean {
+	if (volumeSettable === null) {
+		try {
+			const probe = document.createElement("audio");
+			probe.volume = 0.5;
+			volumeSettable = probe.volume === 0.5;
+		} catch {
+			volumeSettable = false;
+		}
+	}
+	return volumeSettable;
+}
+
 export type ProbeResult = { status: ProbeStatus; info?: ProbeInfo };
 
 export function getStreamInfoUrl(path: string, infoBase = "/api/stream/info"): string {

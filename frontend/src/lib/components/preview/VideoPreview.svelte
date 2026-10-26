@@ -2,7 +2,7 @@
 	import { getPreviewUrl } from "$lib/preview.js";
 	import { encodeFilePath } from "$lib/utils";
 	import { formatMediaTime } from "$lib/utils/format.js";
-	import { fetchProbeInfo, canPlayNative, type ProbeInfo } from "$lib/media/capabilities";
+	import { fetchProbeInfo, canPlayNative, canSetMediaVolume, type ProbeInfo } from "$lib/media/capabilities";
 	import { getSettings } from "$lib/api/settings";
 	import type { FileInfo } from "$lib/types";
 	import type { HlsHandle, HlsLevel } from "$lib/media/hls";
@@ -40,16 +40,7 @@
 	let showControls = $state(true);
 	let failed = $state(false);
 	let reloadKey = $state(0);
-	// iOS keeps media volume read-only (always 1), at any viewport width
-	const volumeSettable = (() => {
-		try {
-			const probe = document.createElement("audio");
-			probe.volume = 0.5;
-			return probe.volume === 0.5;
-		} catch {
-			return false;
-		}
-	})();
+	const volumeSettable = canSetMediaVolume();
 	let probeInfo = $state<ProbeInfo | null>(null);
 	let controlsTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastSaveTime = 0;

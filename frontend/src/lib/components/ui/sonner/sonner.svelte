@@ -11,6 +11,7 @@
 
 <Sonner
 	class="toaster group"
+	theme="dark"
 	position="bottom-center"
 	mobileOffset={{ bottom: 80 }}
 	richColors

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from "svelte";
 	import { audioPlayer } from "$lib/stores/audioPlayer.svelte.js";
+	import { canSetMediaVolume } from "$lib/media/capabilities";
 	import { formatMediaTime } from "$lib/utils/format.js";
 	import PlayIcon from "@lucide/svelte/icons/play";
 	import PauseIcon from "@lucide/svelte/icons/pause";
@@ -11,6 +12,7 @@
 	import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
 
 	let audioEl = $state<HTMLAudioElement | null>(null);
+	const volumeSettable = canSetMediaVolume();
 	let volumeOpen = $state(false);
 	let volumePopupEl = $state<HTMLDivElement | null>(null);
 	let volumeBtnEl = $state<HTMLButtonElement | null>(null);
@@ -265,64 +267,66 @@
 				</span>
 			{/if}
 
-			<!-- Volume (desktop only) -->
-			<div class="relative hidden md:block">
-				<button
-					bind:this={volumeBtnEl}
-					class="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
-					onclick={handleVolumeClick}
-					aria-label="Volume"
-					aria-expanded={volumeOpen}
-				>
-					{#if audioPlayer.muted || audioPlayer.volume === 0}
-						<VolumeXIcon class="size-5" />
-					{:else if audioPlayer.volume < 0.5}
-						<Volume1Icon class="size-5" />
-					{:else}
-						<Volume2Icon class="size-5" />
-					{/if}
-				</button>
-
-				{#if volumeOpen}
-					<div
-						bind:this={volumePopupEl}
-						class="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 flex-col items-center rounded-lg border border-border-2 bg-card px-2 py-3"
+			<!-- Volume: desktop only, and never where volume is read-only (iPad) -->
+			{#if volumeSettable}
+				<div class="relative hidden md:block">
+					<button
+						bind:this={volumeBtnEl}
+						class="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
+						onclick={handleVolumeClick}
+						aria-label="Volume"
+						aria-expanded={volumeOpen}
 					>
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						{#if audioPlayer.muted || audioPlayer.volume === 0}
+							<VolumeXIcon class="size-5" />
+						{:else if audioPlayer.volume < 0.5}
+							<Volume1Icon class="size-5" />
+						{:else}
+							<Volume2Icon class="size-5" />
+						{/if}
+					</button>
+
+					{#if volumeOpen}
 						<div
-							class="relative h-24 w-1 cursor-pointer rounded-full bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-							role="slider"
-							tabindex={0}
-							aria-label="Volume"
-							aria-valuemin={0}
-							aria-valuemax={100}
-							aria-valuenow={Math.round(displayVolume * 100)}
-							onpointerdown={handleVolumeTrackDown}
-							onkeydown={handleVolumeKeydown}
+							bind:this={volumePopupEl}
+							class="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 flex-col items-center rounded-lg border border-border-2 bg-card px-2 py-3"
 						>
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="absolute inset-x-0 bottom-0 rounded-full bg-foreground"
-								style="height: {displayVolume * 100}%"
-							></div>
-							<div
-								class="absolute left-1/2 size-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-white"
-								style="bottom: {displayVolume * 100}%"
-							></div>
+								class="relative h-24 w-1 cursor-pointer rounded-full bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+								role="slider"
+								tabindex={0}
+								aria-label="Volume"
+								aria-valuemin={0}
+								aria-valuemax={100}
+								aria-valuenow={Math.round(displayVolume * 100)}
+								onpointerdown={handleVolumeTrackDown}
+								onkeydown={handleVolumeKeydown}
+							>
+								<div
+									class="absolute inset-x-0 bottom-0 rounded-full bg-foreground"
+									style="height: {displayVolume * 100}%"
+								></div>
+								<div
+									class="absolute left-1/2 size-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-white"
+									style="bottom: {displayVolume * 100}%"
+								></div>
+							</div>
+							<button
+								class="mt-3 flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+								onclick={toggleMute}
+								aria-label={audioPlayer.muted || audioPlayer.volume === 0 ? "Unmute" : "Mute"}
+							>
+								{#if audioPlayer.muted || audioPlayer.volume === 0}
+									<VolumeXIcon class="size-4" />
+								{:else}
+									<Volume2Icon class="size-4" />
+								{/if}
+							</button>
 						</div>
-						<button
-							class="mt-3 flex size-7 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-							onclick={toggleMute}
-							aria-label={audioPlayer.muted || audioPlayer.volume === 0 ? "Unmute" : "Mute"}
-						>
-							{#if audioPlayer.muted || audioPlayer.volume === 0}
-								<VolumeXIcon class="size-4" />
-							{:else}
-								<Volume2Icon class="size-4" />
-							{/if}
-						</button>
-					</div>
-				{/if}
-			</div>
+					{/if}
+				</div>
+			{/if}
 
 			<!-- Close -->
 			<button

@@ -148,15 +148,24 @@
 		cancelAll();
 	}
 
+	const visible = $derived(uploadState.hasItems || uploadState.preparing || uploadState.scanning);
+
 	$effect(() => {
-		if (!uploadState.hasItems && !uploadState.preparing && !uploadState.scanning) {
-			confirmingCancel = false;
-		}
+		if (!visible) confirmingCancel = false;
+	});
+
+	// Toasts stack above the panel through this variable, so they never cover its buttons
+	let panelHeight = $state(0);
+	$effect(() => {
+		const root = document.documentElement;
+		root.style.setProperty("--upload-panel-h", visible ? `${panelHeight + 8}px` : "0px");
+		return () => root.style.removeProperty("--upload-panel-h");
 	});
 </script>
 
-{#if uploadState.hasItems || uploadState.preparing || uploadState.scanning}
+{#if visible}
 	<div
+		bind:clientHeight={panelHeight}
 		class="fixed right-4 z-40 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border-2 bg-card bottom-[calc(var(--dock-inset)_+_var(--fab-clearance))] md:bottom-[calc(var(--dock-inset)_+_1rem)]"
 	>
 		<!-- Preparing: enumeration/enqueue phase, before items exist -->

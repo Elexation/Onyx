@@ -401,4 +401,4 @@
 		streamBase={streamBase()}
 	/>
 {/if}
-<Toaster theme="dark" />
+<Toaster />

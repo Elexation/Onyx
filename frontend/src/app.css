@@ -42,6 +42,8 @@
 	--dock-inset: 0px;
 	/* Room for the mobile FAB under floating panels and toasts */
 	--fab-clearance: 84px;
+	/* Upload panel height plus a gap while it shows; toasts stack above it */
+	--upload-panel-h: 0px;
 
 	--font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

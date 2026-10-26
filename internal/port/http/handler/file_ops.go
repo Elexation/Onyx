@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"runtime"
+	"strings"
 
 	"github.com/Elexation/onyx/internal/port/http/middleware"
 	"github.com/Elexation/onyx/internal/service"
@@ -59,6 +61,9 @@ func (h *FileOpsHandler) Rename(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path and newName are required"})
 		return
 	}
+	if rejectSepAlias(w, req.Path) {
+		return
+	}
 
 	err := h.files.Rename(req.Path, req.NewName)
 	if err != nil {
@@ -96,6 +101,9 @@ func (h *FileOpsHandler) Move(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
 		return
 	}
+	if rejectSepAlias(w, append(req.Paths, req.Destination)...) {
+		return
+	}
 
 	results, err := h.files.Move(req.Paths, req.Destination)
 	if err != nil {
@@ -121,6 +129,9 @@ func (h *FileOpsHandler) Copy(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Paths) > 500 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
+		return
+	}
+	if rejectSepAlias(w, append(req.Paths, req.Destination)...) {
 		return
 	}
 
@@ -150,6 +161,9 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many paths (max 500)"})
 		return
 	}
+	if rejectSepAlias(w, req.Paths...) {
+		return
+	}
 
 	// Cookie sessions get a 409 so the SPA re-asks; token callers keep the permanent fallback
 	if !req.Permanent && !middleware.IsBearerAuth(r.Context()) && !h.files.TrashEnabled() {
@@ -159,6 +173,20 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	results := h.files.Delete(req.Paths, req.Permanent)
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// rejectSepAlias 400s a Windows path containing \: storage splits on it, share/trash/event bookkeeping doesn't
+func rejectSepAlias(w http.ResponseWriter, paths ...string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	for _, p := range paths {
+		if strings.Contains(p, `\`) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid path"})
+			return true
+		}
+	}
+	return false
 }
 
 // decodeBody parses the JSON request body into dst.

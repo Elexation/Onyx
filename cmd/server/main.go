@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,13 @@ func main() {
 	tlsEnabled, certFile, keyFile, tlsOverrides := resolveTLS(settingsService, configDir)
 	for k, v := range tlsOverrides {
 		envOverrides[k] = v
+	}
+	// ONYX_TLS_KEY can point anywhere; a key in the data dir would be served as a file
+	if tlsEnabled {
+		if err := ensureOutsideData(dataDir, keyFile); err != nil {
+			slog.Error("invalid TLS key location", "error", err)
+			os.Exit(1)
+		}
 	}
 	manualCert := os.Getenv("ONYX_TLS_CERT") != ""
 
@@ -322,12 +330,12 @@ func resolveListenPort(settings *service.SettingsService) (string, map[string]st
 // of the sibling dirs (trash, versions, config, cache). Overlap includes equality, nesting,
 // or path-prefix relationships after absolute-path resolution.
 func ensureNoDirOverlap(dataDir string, siblings ...string) error {
-	dataAbs, err := filepath.Abs(dataDir)
+	dataAbs, err := resolvePath(dataDir)
 	if err != nil {
 		return fmt.Errorf("resolve data dir: %w", err)
 	}
 	for _, sibling := range siblings {
-		sibAbs, err := filepath.Abs(sibling)
+		sibAbs, err := resolvePath(sibling)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", sibling, err)
 		}
@@ -336,6 +344,48 @@ func ensureNoDirOverlap(dataDir string, siblings ...string) error {
 		}
 	}
 	return nil
+}
+
+// ensureOutsideData rejects a file inside dataDir, where the file browser and shares would serve it
+func ensureOutsideData(dataDir, file string) error {
+	dataAbs, err := resolvePath(dataDir)
+	if err != nil {
+		return fmt.Errorf("resolve data dir: %w", err)
+	}
+	fileAbs, err := resolvePath(file)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", file, err)
+	}
+	if overlaps(dataAbs, fileAbs) {
+		return fmt.Errorf("%q is inside the data dir %q", file, dataDir)
+	}
+	return nil
+}
+
+// resolvePath makes p absolute, follows symlinks in its existing prefix, and folds case on Windows/macOS
+func resolvePath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	// Walk up to the deepest part that exists; the rest may not be created yet
+	rest := ""
+	for cur := abs; ; {
+		if real, err := filepath.EvalSymlinks(cur); err == nil {
+			abs = filepath.Join(real, rest)
+			break
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		abs = strings.ToLower(abs)
+	}
+	return abs, nil
 }
 
 func overlaps(a, b string) bool {

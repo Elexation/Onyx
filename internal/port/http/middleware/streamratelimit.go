@@ -21,6 +21,8 @@ type StreamRateLimiter struct {
 	mu           sync.Mutex
 	buckets      map[string]*streamBucket
 	trustedProxy bool
+	burst        float64
+	refill       float64 // tokens per second
 }
 
 type streamBucket struct {
@@ -33,12 +35,27 @@ const (
 	streamBurstCapacity    = 20.0
 	streamRefillRate       = 5.0 // tokens per second
 	streamBucketCleanupAge = time.Hour
+
+	// A photo grid asks for every visible tile at once, far past the stream burst
+	thumbBurstCapacity = 200.0
+	thumbRefillRate    = 50.0
 )
 
 func NewStreamRateLimiter(trustedProxy bool) *StreamRateLimiter {
+	return newBucketLimiter(trustedProxy, streamBurstCapacity, streamRefillRate)
+}
+
+// NewThumbRateLimiter is a StreamRateLimiter sized for thumbnail grids
+func NewThumbRateLimiter(trustedProxy bool) *StreamRateLimiter {
+	return newBucketLimiter(trustedProxy, thumbBurstCapacity, thumbRefillRate)
+}
+
+func newBucketLimiter(trustedProxy bool, burst, refill float64) *StreamRateLimiter {
 	l := &StreamRateLimiter{
 		buckets:      make(map[string]*streamBucket),
 		trustedProxy: trustedProxy,
+		burst:        burst,
+		refill:       refill,
 	}
 	go l.cleanup()
 	return l
@@ -49,10 +66,7 @@ func NewStreamRateLimiter(trustedProxy bool) *StreamRateLimiter {
 // Retry-After seconds-until-next-token hint.
 func (l *StreamRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := ClientIP(r, l.trustedProxy)
-		if ip == "" {
-			ip = r.RemoteAddr
-		}
+		ip := ClientKey(r, l.trustedProxy)
 		now := time.Now()
 
 		l.mu.Lock()
@@ -61,18 +75,18 @@ func (l *StreamRateLimiter) Middleware(next http.Handler) http.Handler {
 			if len(l.buckets) >= streamMaxEntries {
 				l.evictOldestLocked()
 			}
-			b = &streamBucket{tokens: streamBurstCapacity, lastRefill: now}
+			b = &streamBucket{tokens: l.burst, lastRefill: now}
 			l.buckets[ip] = b
 		} else {
 			elapsed := now.Sub(b.lastRefill).Seconds()
-			b.tokens += elapsed * streamRefillRate
-			if b.tokens > streamBurstCapacity {
-				b.tokens = streamBurstCapacity
+			b.tokens += elapsed * l.refill
+			if b.tokens > l.burst {
+				b.tokens = l.burst
 			}
 			b.lastRefill = now
 		}
 		if b.tokens < 1 {
-			wait := (1 - b.tokens) / streamRefillRate
+			wait := (1 - b.tokens) / l.refill
 			l.mu.Unlock()
 			slog.Info("security_event", "event", "stream_rate_limit_triggered", "ip", ip, "path", redactSharePath(r.URL.Path))
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait)+1))

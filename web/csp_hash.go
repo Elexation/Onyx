@@ -2,4 +2,4 @@
 
 package web
 
-const ScriptHash = "'sha256-l9bVuN2VlDM8EN0OT5zBf/SZZz4poq/cQeF6nW7C6DE='"
+const ScriptHash = "'sha256-N4Wr5eD0XvT/QgPHIE39WvTxo25N1cBwJ4AQI0LOLLs='"

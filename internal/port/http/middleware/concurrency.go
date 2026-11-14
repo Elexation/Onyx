@@ -35,10 +35,7 @@ func NewConcurrencyLimiter(trustedProxy bool, maxPerIP int) *ConcurrencyLimiter 
 
 func (l *ConcurrencyLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := ClientIP(r, l.trustedProxy)
-		if ip == "" {
-			ip = r.RemoteAddr
-		}
+		ip := ClientKey(r, l.trustedProxy)
 
 		l.mu.Lock()
 		if l.counts[ip] >= l.max {

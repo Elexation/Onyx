@@ -100,8 +100,21 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	// Collapse non-existent token and wrong password into a single 403 to
 	// avoid an existence oracle that lets brute force enumerate valid tokens.
-	// CheckPassword burns argon2 work either way to keep timing uniform.
-	if !h.shares.CheckPassword(r.Context(), link, pwHash, req.Password) {
+	// VerifyPassword burns argon2 work either way to keep timing uniform.
+	ok, err := h.shares.VerifyPassword(r.Context(), token, link, pwHash, req.Password)
+	if err != nil {
+		var throttled *service.ShareThrottledError
+		if errors.As(err, &throttled) {
+			slog.Info("security_event", "event", "share_verify_throttled", "ip", middleware.ClientIP(r, h.trustedProxy), "retry_after", throttled.RetryAfter.Round(time.Second))
+			w.Header().Set("Retry-After", strconv.Itoa(int(throttled.RetryAfter.Seconds())+1))
+			http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
+			return
+		}
+		slog.Warn("share verify failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !ok {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect password"})
 		return
 	}

@@ -153,3 +153,22 @@ func IsHTTPS(r *http.Request, trustedProxy bool) bool {
 	}
 	return false
 }
+
+// ClientKey returns the per-client key every limiter counts against. IPv6 is
+// masked to /64 so rotating addresses within an attacker-controlled prefix
+// cannot dodge a limit; IPv4 keys on the full address. Every call site for one
+// limiter must use it, or a success reset or slot release misses its entry.
+func ClientKey(r *http.Request, trustedProxy bool) string {
+	ip := ClientIP(r, trustedProxy)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		return v4.String()
+	}
+	return parsed.Mask(net.CIDRMask(64, 128)).String()
+}

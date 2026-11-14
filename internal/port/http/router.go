@@ -22,6 +22,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	shareRL := middleware.NewRateLimiter(trustedProxy)
 	streamRL := middleware.NewStreamRateLimiter(trustedProxy)
 	trashRL := middleware.NewStreamRateLimiter(trustedProxy)
+	thumbRL := middleware.NewThumbRateLimiter(trustedProxy)
 	uploadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
 	sseCL := middleware.NewConcurrencyLimiter(trustedProxy, 10)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
@@ -74,9 +75,9 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Get("/download/zip", fileHandler.DownloadZip)
 		r.Get("/download/*", fileHandler.Download)
 		r.Get("/preview/*", fileHandler.Preview)
+		r.With(thumbRL.Middleware).Get("/thumbs/*", thumbsHandler.Get)
 		r.Group(func(r chi.Router) {
 			r.Use(streamRL.Middleware)
-			r.Get("/thumbs/*", thumbsHandler.Get)
 			r.Get("/search", searchHandler.Search)
 			r.Get("/stream/info/*", streamHandler.Info)
 			r.Get("/stream/master/*", streamHandler.Master)

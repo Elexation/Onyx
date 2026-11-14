@@ -2,18 +2,24 @@ package middleware
 
 import (
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 )
 
-const maxAttemptEntries = 10000
+const (
+	maxAttemptEntries = 10000
+	lockoutAfter      = 5 // failures before the cooldown starts
+)
 
 type loginAttempts struct {
 	failCount int
 	lastFail  time.Time
+}
+
+func (a *loginAttempts) lockedAt(now time.Time) bool {
+	return a.failCount >= lockoutAfter && now.Sub(a.lastFail) < cooldownFor(a.failCount)
 }
 
 type RateLimiter struct {
@@ -38,7 +44,7 @@ func NewRateLimiter(trustedProxy bool) *RateLimiter {
 // read the same low count and pass the gate in parallel.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := rl.clientKey(r)
+		key := ClientKey(r, rl.trustedProxy)
 
 		rl.mu.Lock()
 		a, ok := rl.attempts[key]
@@ -49,7 +55,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			a = &loginAttempts{}
 			rl.attempts[key] = a
 		}
-		if a.failCount >= 5 {
+		if a.failCount >= lockoutAfter {
 			cooldown := cooldownFor(a.failCount)
 			elapsed := time.Since(a.lastFail)
 			if elapsed < cooldown {
@@ -84,14 +90,14 @@ func cooldownFor(failCount int) time.Duration {
 func (rl *RateLimiter) RecordSuccess(r *http.Request) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	delete(rl.attempts, rl.clientKey(r))
+	delete(rl.attempts, ClientKey(r, rl.trustedProxy))
 }
 
 // UndoAttempt removes only this request's pre-increment, for share verify
 func (rl *RateLimiter) UndoAttempt(r *http.Request) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	key := rl.clientKey(r)
+	key := ClientKey(r, rl.trustedProxy)
 	a, ok := rl.attempts[key]
 	if !ok {
 		return
@@ -102,40 +108,21 @@ func (rl *RateLimiter) UndoAttempt(r *http.Request) {
 	}
 }
 
-// clientKey returns the lockout-map key for a request. IPv6 is masked to /64
-// so rotating within an attacker-controlled prefix cannot dodge the lockout;
-// IPv4 keys on the full address. Middleware and RecordSuccess must use the
-// same key or the success reset misses.
-func (rl *RateLimiter) clientKey(r *http.Request) string {
-	ip := ClientIP(r, rl.trustedProxy)
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return ip
-	}
-	if v4 := parsed.To4(); v4 != nil {
-		return v4.String()
-	}
-	return parsed.Mask(net.CIDRMask(64, 128)).String()
-}
-
-// evictOldestLocked removes the entry with the oldest lastFail. Caller must
-// hold rl.mu.
+// evictOldestLocked drops the oldest entry not in cooldown, so new keys can't wipe a live lockout. Caller holds rl.mu.
 func (rl *RateLimiter) evictOldestLocked() {
-	var oldestIP string
-	var oldestTime time.Time
-	first := true
-	for ip, a := range rl.attempts {
-		if first || a.lastFail.Before(oldestTime) {
-			oldestIP = ip
-			oldestTime = a.lastFail
-			first = false
+	now := time.Now()
+	var victim string
+	var victimFail time.Time
+	found, victimLocked := false, false
+	for key, a := range rl.attempts {
+		locked := a.lockedAt(now)
+		// All locked? Take the oldest anyway: refusing new keys would lock the admin out too.
+		if !found || (victimLocked && !locked) || (locked == victimLocked && a.lastFail.Before(victimFail)) {
+			victim, victimFail, victimLocked, found = key, a.lastFail, locked, true
 		}
 	}
-	if oldestIP != "" {
-		delete(rl.attempts, oldestIP)
+	if found {
+		delete(rl.attempts, victim)
 	}
 }
 

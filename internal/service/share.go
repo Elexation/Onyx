@@ -45,10 +45,11 @@ type ShareService struct {
 	settings *SettingsService
 	files    SharePathChecker
 	events   EventRecorder
+	guard    *shareGuard
 }
 
 func NewShareService(repo ShareRepo, settings *SettingsService, files SharePathChecker) *ShareService {
-	return &ShareService{repo: repo, settings: settings, files: files}
+	return &ShareService{repo: repo, settings: settings, files: files, guard: newShareGuard()}
 }
 
 func (s *ShareService) SetEvents(r EventRecorder) {
@@ -200,10 +201,22 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 	return link, pwHash, nil
 }
 
-// CheckPassword reports whether password matches the share's stored hash.
+// VerifyPassword checks a share password under the per-share limit. ShareThrottledError while it is in force.
+func (s *ShareService) VerifyPassword(ctx context.Context, token string, link *domain.ShareLink, pwHash *string, password string) (bool, error) {
+	if err := s.guard.begin(token); err != nil {
+		return false, err
+	}
+	if !s.checkPassword(ctx, link, pwHash, password) {
+		return false, nil
+	}
+	s.guard.undo(token)
+	return true, nil
+}
+
+// checkPassword reports whether password matches the share's stored hash.
 // When the link is missing or passwordless it burns the same argon2 work
 // against a throwaway hash, so Verify latency cannot reveal token existence.
-func (s *ShareService) CheckPassword(ctx context.Context, link *domain.ShareLink, pwHash *string, password string) bool {
+func (s *ShareService) checkPassword(ctx context.Context, link *domain.ShareLink, pwHash *string, password string) bool {
 	if link == nil || pwHash == nil {
 		verifyPassword(ctx, shareArgon, password, dummyHash)
 		return false

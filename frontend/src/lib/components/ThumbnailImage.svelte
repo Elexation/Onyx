@@ -44,6 +44,8 @@
 	let el: HTMLDivElement | null = $state(null);
 	let ownedUrl: string | null = null;
 	let imgRetried = false;
+	// Scrolled out of a virtual list mid-retry? Stop fetching for a tile nobody sees.
+	let destroyed = false;
 
 	const key = $derived(cacheKey(path, size, modTime));
 
@@ -94,10 +96,21 @@
 		return () => observer.disconnect();
 	});
 
+	const MAX_PENDING_POLLS = 3;
+	const MAX_THROTTLED_RETRIES = 5;
+
+	// Wait as long as Retry-After asks (1-10s), plus jitter so a whole grid doesn't retry at once
+	function throttleDelay(res: Response): number {
+		const seconds = Number(res.headers.get("Retry-After"));
+		const base = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 10) : 1;
+		return base * 1000 + Math.random() * 500;
+	}
+
 	async function load() {
 		loadState = "loading";
-		const maxAttempts = 3;
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		let pending = 0;
+		let throttled = 0;
+		while (!destroyed) {
 			try {
 				const thumbUrl = `/api/thumbs${encodeFilePath(path)}?size=${size}${modTime ? `&v=${modTime}` : ""}`;
 				const res = await fetch(thumbUrl, { credentials: "same-origin" });
@@ -111,8 +124,13 @@
 					cacheSet(key, { state: "loaded", blob });
 					return;
 				}
-				if (res.status === 202 && attempt < maxAttempts) {
+				if (res.status === 202 && ++pending < MAX_PENDING_POLLS) {
 					await new Promise((r) => setTimeout(r, 2000));
+					continue;
+				}
+				// Rate limited is not broken: retry instead of caching a failure for the session
+				if (res.status === 429 && ++throttled <= MAX_THROTTLED_RETRIES) {
+					await new Promise((r) => setTimeout(r, throttleDelay(res)));
 					continue;
 				}
 				fail();
@@ -122,7 +140,6 @@
 				return;
 			}
 		}
-		fail();
 	}
 
 	function fail() {
@@ -148,6 +165,7 @@
 	}
 
 	onDestroy(() => {
+		destroyed = true;
 		clearOwnedUrl();
 	});
 </script>

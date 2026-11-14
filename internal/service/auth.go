@@ -71,10 +71,11 @@ type AuthService struct {
 	users    UserRepo
 	sessions SessionRepo
 	settings *SettingsService
+	guard    *loginGuard
 }
 
 func NewAuthService(users UserRepo, sessions SessionRepo, settings *SettingsService) *AuthService {
-	return &AuthService{users: users, sessions: sessions, settings: settings}
+	return &AuthService{users: users, sessions: sessions, settings: settings, guard: newLoginGuard()}
 }
 
 func (a *AuthService) IsFirstRun() (bool, error) {
@@ -113,27 +114,57 @@ func (a *AuthService) Setup(password string) (*domain.Session, error) {
 	return a.createSession(user.ID, hash)
 }
 
-func (a *AuthService) Login(ctx context.Context, password string) (*domain.Session, error) {
+// Login returns a session plus the device cookie value to set. *LoginThrottledError if the shared limit holds.
+func (a *AuthService) Login(ctx context.Context, password, deviceToken string) (*domain.Session, string, error) {
 	user, err := a.users.GetByUsername("admin")
 	if err != nil {
-		return nil, fmt.Errorf("get admin: %w", err)
+		return nil, "", fmt.Errorf("get admin: %w", err)
 	}
 	if user == nil {
 		// Absorb argon2 work so Login latency doesn't reveal whether an admin
 		// has been configured. Result is discarded.
 		verifyPassword(ctx, authArgon, password, dummyHash)
-		return nil, ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
+	}
+
+	deviceID := deviceIDFromToken(user.PasswordHash, deviceToken)
+	attempt, err := a.guard.begin(user.PasswordHash, deviceID)
+	if err != nil {
+		return nil, "", err
 	}
 
 	ok, err := verifyPassword(ctx, authArgon, password, user.PasswordHash)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !ok {
-		return nil, ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
-	return a.createSession(user.ID, user.PasswordHash)
+	session, err := a.createSession(user.ID, user.PasswordHash)
+	if err != nil {
+		return nil, "", err
+	}
+	a.guard.succeed(attempt)
+	if deviceID == "" {
+		if deviceToken, err = newDeviceToken(user.PasswordHash); err != nil {
+			slog.Warn("device cookie not issued", "error", err)
+			deviceToken = ""
+		}
+	}
+	return session, deviceToken, nil
+}
+
+// DeviceToken mints a device cookie value for the current password. Empty if no admin exists.
+func (a *AuthService) DeviceToken() (string, error) {
+	user, err := a.users.GetByUsername("admin")
+	if err != nil {
+		return "", fmt.Errorf("get admin: %w", err)
+	}
+	if user == nil {
+		return "", nil
+	}
+	return newDeviceToken(user.PasswordHash)
 }
 
 func (a *AuthService) Logout(sessionID string) error {

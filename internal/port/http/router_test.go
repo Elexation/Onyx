@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
@@ -134,6 +136,49 @@ func TestRouterNoStoreSkipsSPA(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://x/files/docs", nil))
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Fatalf("Cache-Control = %q, want %q", got, "no-cache")
+	}
+}
+
+// Guessing spread over many addresses hits the shared limit, but a browser that logged in before gets through
+func TestRouterLoginSharedLimitAndDeviceCookie(t *testing.T) {
+	router, _ := newCacheTestRouter(t)
+	login := func(remote, password string, device *http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "http://x/api/auth/login", strings.NewReader(`{"password":"`+password+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remote
+		if device != nil {
+			req.AddCookie(device)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := login("198.51.100.1:1000", "correct horse battery", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login status = %d", rec.Code)
+	}
+	var device *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "onyx_device" {
+			device = c
+		}
+	}
+	if device == nil || device.Path != "/api/auth" || !device.HttpOnly || device.SameSite != http.SameSiteStrictMode || device.MaxAge <= 0 {
+		t.Fatalf("device cookie = %+v, want HttpOnly, SameSite=Strict, Path=/api/auth, long-lived", device)
+	}
+
+	for i := 0; i < 20; i++ {
+		if rec := login(fmt.Sprintf("203.0.113.%d:1000", i+1), "wrong guess", nil); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("guess %d status = %d, want 401", i+1, rec.Code)
+		}
+	}
+	rec = login("203.0.113.200:1000", "correct horse battery", nil)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("unknown browser: status = %d Retry-After = %q, want 429 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if rec := login("203.0.113.201:1000", "correct horse battery", &http.Cookie{Name: "onyx_device", Value: device.Value}); rec.Code != http.StatusOK {
+		t.Fatalf("known browser status = %d, want 200", rec.Code)
 	}
 }
 

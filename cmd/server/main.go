@@ -193,6 +193,22 @@ func main() {
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
+	trustedNets := middleware.DefaultTrustedProxies
+	if v := os.Getenv("ONYX_TRUSTED_PROXIES"); v != "" {
+		if !trustedProxy {
+			slog.Warn("ONYX_TRUSTED_PROXIES has no effect without ONYX_TRUSTED_PROXY=true, skipping")
+		} else {
+			nets, err := middleware.ParseTrustedProxies(v)
+			if err != nil {
+				slog.Error("invalid ONYX_TRUSTED_PROXIES", "value", v, "error", err)
+				os.Exit(1)
+			}
+			trustedNets = nets
+		}
+	} else if trustedProxy {
+		// Rootless Docker and Docker Desktop relay outside visitors from a private address, so the default can trust them
+		slog.Warn("ONYX_TRUSTED_PROXY=true without ONYX_TRUSTED_PROXIES trusts forwarded headers from every private address; set it to your proxy's exact address")
+	}
 
 	uploadStageDir := filepath.Join(cacheDir, "uploads")
 	tusHandler, err := upload.NewTusHandler(
@@ -242,6 +258,11 @@ func main() {
 	var handler http.Handler = router
 	if canonicalDomain != "" {
 		handler = middleware.DomainCanon(canonicalDomain, trustedProxy)(handler)
+	}
+	// Outermost, so DomainCanon and everything inside it see only headers a trusted proxy set
+	if trustedProxy {
+		handler = middleware.TrustedProxyFilter(trustedNets)(handler)
+		slog.Info("trusting forwarded headers only from these proxy addresses", "proxies", trustedNets)
 	}
 
 	slog.Info("starting server", "port", port, "tls", tlsEnabled, "domain", canonicalDomain, "envOverrides", envOverrides)

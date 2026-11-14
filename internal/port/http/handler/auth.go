@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +88,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	slog.Info("security_event", "event", "admin_setup", "ip", h.clientIP(r))
 	h.rl.RecordSuccess(r)
 	h.setSessionCookie(w, r, session)
+	h.issueDeviceCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
 		"csrfToken":     session.CSRFToken,
@@ -111,8 +113,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.auth.Login(r.Context(), body.Password)
+	var device string
+	if c, err := r.Cookie(deviceCookieName); err == nil {
+		device = c.Value
+	}
+	session, device, err := h.auth.Login(r.Context(), body.Password, device)
 	if err != nil {
+		var throttled *service.LoginThrottledError
+		if errors.As(err, &throttled) {
+			slog.Info("security_event", "event", "login_throttled", "ip", h.clientIP(r), "retry_after", throttled.RetryAfter.Round(time.Second))
+			w.Header().Set("Retry-After", strconv.Itoa(int(throttled.RetryAfter.Seconds())+1))
+			http.Error(w, `{"error":"too many attempts, try again later"}`, http.StatusTooManyRequests)
+			return
+		}
 		if !errors.Is(err, service.ErrInvalidCredentials) {
 			slog.Warn("login failed", "error", err)
 			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -126,6 +139,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	slog.Info("security_event", "event", "login_success", "ip", h.clientIP(r))
 	h.rl.RecordSuccess(r)
 	h.setSessionCookie(w, r, session)
+	if device != "" {
+		h.setDeviceCookie(w, r, device)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
 		"csrfToken":     session.CSRFToken,
@@ -179,6 +195,8 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	h.rl.RecordSuccess(r)
 	slog.Info("security_event", "event", "password_change", "ip", h.clientIP(r))
 	h.setSessionCookie(w, r, newSession)
+	// The old device cookie was signed with the old password, so re-issue for this browser
+	h.issueDeviceCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    "ok",
 		"csrfToken": newSession.CSRFToken,
@@ -219,6 +237,30 @@ func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, r *http.Request, s
 		Value:    session.ID,
 		Path:     "/",
 		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   h.requireHTTPS || middleware.IsHTTPS(r, h.trustedProxy),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// Marks a browser that logged in before; logout keeps it so the shared login limit still skips it
+const deviceCookieName = "onyx_device"
+
+func (h *AuthHandler) issueDeviceCookie(w http.ResponseWriter, r *http.Request) {
+	token, err := h.auth.DeviceToken()
+	if err != nil || token == "" {
+		slog.Warn("device cookie not issued", "error", err)
+		return
+	}
+	h.setDeviceCookie(w, r, token)
+}
+
+func (h *AuthHandler) setDeviceCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCookieName,
+		Value:    token,
+		Path:     "/api/auth",
+		MaxAge:   int(service.DeviceCookieMaxAge.Seconds()),
 		HttpOnly: true,
 		Secure:   h.requireHTTPS || middleware.IsHTTPS(r, h.trustedProxy),
 		SameSite: http.SameSiteStrictMode,

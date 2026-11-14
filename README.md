@@ -68,6 +68,10 @@ docker exec -u 1000:1000 onyx /onyx reset-password    # Docker (use your PUID:PG
 
 Prints a new random admin password and signs out every session. It reads the same `ONYX_CONFIG` as the server and is safe to run while the server is up. Log in with it, then change it in Settings.
 
+### Login Limits
+
+Each address is locked out briefly after 5 wrong passwords. On top of that, after 20 wrong passwords from browsers that have never signed in, Onyx makes all such browsers wait between attempts (10 seconds, rising to 30, then 60), wherever they connect from. A browser that has signed in before keeps a device cookie and skips that shared wait, so someone guessing from many addresses cannot lock you out of browsers you already use. Changing the password or running `reset-password` clears the shared wait and invalidates every device cookie.
+
 ## Environment Variables
 
 ### Server
@@ -81,7 +85,8 @@ Prints a new random admin password and signs out every session. It reads the sam
 | `ONYX_DOMAIN` | *(unset)* | Canonical hostname. Requests with a different `Host` header (e.g. an IP address) are 301-redirected to this domain. |
 | `ONYX_HTTPS_REDIRECT` | `false` | Start a separate HTTP listener that redirects to HTTPS. Requires `ONYX_HTTPS=true`. |
 | `ONYX_HTTPS_REDIRECT_PORT` | `80` | Port for the HTTP redirect listener. Map it in `ports:` (e.g. `"80:80"`). |
-| `ONYX_TRUSTED_PROXY` | `false` | Trust `X-Forwarded-Proto` and `X-Real-IP` headers. Enable when behind a reverse proxy (nginx, Caddy, Traefik). Also omits the internal port from domain redirects. |
+| `ONYX_TRUSTED_PROXY` | `false` | Trust `X-Forwarded-*` and `X-Real-IP` headers from the addresses in `ONYX_TRUSTED_PROXIES`. Enable when behind a reverse proxy (nginx, Caddy, Traefik). Also omits the internal port from domain redirects. |
+| `ONYX_TRUSTED_PROXIES` | *(private ranges)* | Comma-separated IPs or CIDRs your reverse proxy connects from; forwarded headers from any other address are dropped. Defaults to loopback, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` (Tailscale) and `fc00::/7`. Set it to your proxy's exact address. Requires `ONYX_TRUSTED_PROXY=true`. |
 | `ONYX_REQUIRE_HTTPS` | `false` | Force `Secure` flag on cookies and emit HSTS headers regardless of connection type. Use when TLS is terminated at the proxy, not by Onyx. |
 
 ### Storage
@@ -214,10 +219,21 @@ can be bounded. Its own limit (`upload.max_size` in Settings) defaults to
 widening the proxy if a single request that large would fill the disk.
 
 With `ONYX_TRUSTED_PROXY=true`, Onyx keys its rate limiters on `X-Real-IP`
-and falls back to the right-most `X-Forwarded-For` entry. The proxy must
-overwrite `X-Real-IP` with the connecting address; if a client-supplied
-value survives, every lockout and rate limit can be bypassed by varying the
-header.
+and falls back to the right-most `X-Forwarded-For` entry, but only for
+connections from an address in `ONYX_TRUSTED_PROXIES`. From any other
+address it drops the forwarded headers and logs a warning naming that
+address, so a wrong proxy address shows up in the logs rather than as
+shared lockouts or broken uploads. The proxy must still overwrite
+`X-Real-IP` with the connecting address; if a client-supplied value
+survives, the per-address lockout and rate limits can be bypassed by
+varying the header.
+
+Keep Onyx's own port unreachable except through the proxy. If the proxy
+shares Onyx's Docker network, drop the `ports:` mapping; if it runs on the
+host, publish `127.0.0.1:8080:8080`. Rootless Docker and Docker Desktop
+hand outside connections to the container from Docker's own private
+address, which the default trusted ranges include, so there set
+`ONYX_TRUSTED_PROXIES` to your proxy's exact address.
 
 ### nginx
 

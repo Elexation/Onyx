@@ -149,7 +149,17 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	// Intercept /api/upload before Chi to avoid path mangling.
 	// OPTIONS is answered in-process without auth or CORS headers.
-	return uploadInterceptor(auth, tokens, tus, uploadCL, trustedProxy, requireHTTPS, r)
+	return apiNoStore(uploadInterceptor(auth, tokens, tus, uploadCL, trustedProxy, requireHTTPS, r))
+}
+
+// Mark /api responses uncacheable unless handler overrides; outside chi and pre-normalize, so clean here
+func apiNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := path.Clean(r.URL.Path); p == "/api" || strings.HasPrefix(p, "/api/") {
+			w.Header().Set("Cache-Control", "private, no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // uploadInterceptor routes /api/upload requests directly to tusd,

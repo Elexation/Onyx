@@ -190,6 +190,42 @@ func TestRouterLoginSharedLimitAndDeviceCookie(t *testing.T) {
 	}
 }
 
+// A browser signed in before device cookies existed gets one on its next page load; others don't
+func TestRouterStatusIssuesDeviceCookie(t *testing.T) {
+	router, session := newCacheTestRouter(t)
+	status := func(cookies ...*http.Cookie) *http.Cookie {
+		req := httptest.NewRequest(http.MethodGet, "http://x/api/auth/status", nil)
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "onyx_device" {
+				return c
+			}
+		}
+		return nil
+	}
+
+	if c := status(); c != nil {
+		t.Fatal("signed-out browser got a device cookie")
+	}
+	issued := status(session)
+	if issued == nil || issued.Path != "/api/auth" || !issued.HttpOnly {
+		t.Fatalf("signed-in browser without one got %+v, want a device cookie", issued)
+	}
+	if c := status(session, &http.Cookie{Name: "onyx_device", Value: issued.Value}); c != nil {
+		t.Fatal("re-issued a device cookie to a browser that already had a valid one")
+	}
+	if c := status(session, &http.Cookie{Name: "onyx_device", Value: "forged.value"}); c == nil {
+		t.Fatal("forged device cookie was not replaced")
+	}
+}
+
 // A fresh install answers setup only to a caller holding the code from the server log
 func TestRouterSetupRequiresCode(t *testing.T) {
 	db, err := database.Open(filepath.Join(t.TempDir(), "onyx.db"))

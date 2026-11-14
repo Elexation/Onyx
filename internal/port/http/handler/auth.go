@@ -47,9 +47,26 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	if session != nil {
 		resp["authenticated"] = true
 		resp["csrfToken"] = session.CSRFToken
+		h.ensureDeviceCookie(w, r)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// Give a signed-in browser without a valid device cookie one, e.g. sessions from before device cookies existed
+func (h *AuthHandler) ensureDeviceCookie(w http.ResponseWriter, r *http.Request) {
+	var token string
+	if c, err := r.Cookie(deviceCookieName); err == nil {
+		token = c.Value
+	}
+	valid, err := h.auth.DeviceTokenValid(token)
+	if err != nil {
+		slog.Warn("device cookie check failed", "error", err)
+		return
+	}
+	if !valid {
+		h.issueDeviceCookie(w, r)
+	}
 }
 
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {

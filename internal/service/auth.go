@@ -216,6 +216,15 @@ func (a *AuthService) Login(ctx context.Context, password, deviceToken string) (
 	return session, deviceToken, nil
 }
 
+// DeviceTokenValid reports whether token is a device cookie signed for the current password
+func (a *AuthService) DeviceTokenValid(token string) (bool, error) {
+	user, err := a.users.GetByUsername("admin")
+	if err != nil {
+		return false, fmt.Errorf("get admin: %w", err)
+	}
+	return user != nil && deviceIDFromToken(user.PasswordHash, token) != "", nil
+}
+
 // DeviceToken mints a device cookie value for the current password. Empty if no admin exists.
 func (a *AuthService) DeviceToken() (string, error) {
 	user, err := a.users.GetByUsername("admin")

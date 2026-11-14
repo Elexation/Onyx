@@ -72,7 +72,7 @@ Prints a new random admin password and signs out every session. It reads the sam
 
 ### Login Limits
 
-Each address is locked out briefly after 5 wrong passwords. On top of that, after 20 wrong passwords from browsers that have never signed in, Onyx makes all such browsers wait between attempts (10 seconds, rising to 30, then 60), wherever they connect from. A browser that has signed in before keeps a device cookie and skips that shared wait, so someone guessing from many addresses cannot lock you out of browsers you already use. Changing the password or running `reset-password` clears the shared wait and invalidates every device cookie.
+Each address is locked out briefly after 5 wrong passwords. On top of that, after 20 wrong passwords from browsers that have never signed in, Onyx makes all such browsers wait between attempts (10 seconds, rising to 30, then 60), wherever they connect from. A browser that has signed in before keeps a device cookie (one already signed in gets it the next time the app loads) and skips that shared wait, so someone guessing from many addresses cannot lock you out of browsers you already use. Changing the password or running `reset-password` clears the shared wait and invalidates every device cookie.
 
 ## Environment Variables
 

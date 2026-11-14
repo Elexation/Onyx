@@ -59,7 +59,8 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Password string `json:"password"`
+		Password  string `json:"password"`
+		SetupCode string `json:"setupCode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -73,11 +74,20 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
 		return
 	}
+	if len(body.SetupCode) > 256 {
+		http.Error(w, `{"error":"invalid setup code"}`, http.StatusForbidden)
+		return
+	}
 
-	session, err := h.auth.Setup(body.Password)
+	session, err := h.auth.Setup(body.Password, body.SetupCode)
 	if err != nil {
 		if err.Error() == "admin already exists" {
 			http.Error(w, `{"error":"admin already exists"}`, http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, service.ErrInvalidSetupCode) {
+			slog.Info("security_event", "event", "setup_code_rejected", "ip", h.clientIP(r))
+			http.Error(w, `{"error":"invalid setup code"}`, http.StatusForbidden)
 			return
 		}
 		slog.Warn("setup failed", "error", err)

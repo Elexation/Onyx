@@ -77,6 +77,17 @@ func main() {
 	sessionRepo := database.NewSessionRepo(db)
 	authService := service.NewAuthService(userRepo, sessionRepo, settingsService)
 	authService.StartCleanup(10 * time.Minute)
+	setupPreset := os.Getenv("ONYX_SETUP_TOKEN")
+	setupCode, err := authService.InitSetupCode(setupPreset)
+	if err != nil {
+		slog.Error("invalid ONYX_SETUP_TOKEN", "error", err)
+		os.Exit(1)
+	}
+	if setupCode != "" && setupPreset != "" {
+		slog.Info("first-run setup is waiting: enter the ONYX_SETUP_TOKEN value as the setup code")
+	} else if setupCode != "" {
+		slog.Warn("first-run setup is waiting: enter this setup code on the setup page; it stops working once the admin exists", "setup_code", setupCode)
+	}
 
 	localStorage, err := storage.NewLocalStorage(dataDir)
 	if err != nil {

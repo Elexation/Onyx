@@ -71,7 +71,11 @@ func newCacheTestRouter(t *testing.T) (http.Handler, *http.Cookie) {
 	t.Cleanup(func() { db.Close() })
 	settings := service.NewSettingsService(database.NewSettingsRepo(db))
 	auth := service.NewAuthService(database.NewUserRepo(db), database.NewSessionRepo(db), settings)
-	session, err := auth.Setup("correct horse battery")
+	code, err := auth.InitSetupCode("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := auth.Setup("correct horse battery", code)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +183,44 @@ func TestRouterLoginSharedLimitAndDeviceCookie(t *testing.T) {
 	}
 	if rec := login("203.0.113.201:1000", "correct horse battery", &http.Cookie{Name: "onyx_device", Value: device.Value}); rec.Code != http.StatusOK {
 		t.Fatalf("known browser status = %d, want 200", rec.Code)
+	}
+}
+
+// A fresh install answers setup only to a caller holding the code from the server log
+func TestRouterSetupRequiresCode(t *testing.T) {
+	db, err := database.Open(filepath.Join(t.TempDir(), "onyx.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	settings := service.NewSettingsService(database.NewSettingsRepo(db))
+	auth := service.NewAuthService(database.NewUserRepo(db), database.NewSessionRepo(db), settings)
+	code, err := auth.InitSetupCode("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(auth, nil, settings, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false, false, false, "8080", map[string]string{})
+
+	setup := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "http://x/api/auth/setup", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+	for name, body := range map[string]string{
+		"no code":    `{"password":"correct horse battery"}`,
+		"wrong code": `{"password":"correct horse battery","setupCode":"AAAA-BBBB"}`,
+	} {
+		if rec := setup(body); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "invalid setup code") {
+			t.Fatalf("%s: status = %d body = %s, want 403 invalid setup code", name, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := setup(`{"password":"correct horse battery","setupCode":"` + code + `"}`); rec.Code != http.StatusOK {
+		t.Fatalf("setup with code: status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if first, _ := auth.IsFirstRun(); first {
+		t.Fatal("admin not created")
 	}
 }
 

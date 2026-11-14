@@ -33,8 +33,8 @@ export async function login(password: string): Promise<void> {
 	}
 }
 
-export async function setup(password: string): Promise<void> {
-	const res = await request<AuthStatus>("POST", "/api/auth/setup", { password });
+export async function setup(password: string, setupCode: string): Promise<void> {
+	const res = await request<AuthStatus>("POST", "/api/auth/setup", { password, setupCode });
 	auth.authenticated = true;
 	auth.firstRun = false;
 	if (res.csrfToken) {

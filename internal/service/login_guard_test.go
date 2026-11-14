@@ -157,7 +157,11 @@ func TestAuthLoginSharedLimit(t *testing.T) {
 	}
 	defer db.Close()
 	auth := NewAuthService(database.NewUserRepo(db), database.NewSessionRepo(db), NewSettingsService(database.NewSettingsRepo(db)))
-	if _, err := auth.Setup("right password"); err != nil {
+	code, err := auth.InitSetupCode("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.Setup("right password", code); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()

@@ -7,6 +7,7 @@
 
 	const MIN_PASSWORD_LENGTH = 8;
 
+	let setupCode = $state("");
 	let password = $state("");
 	let confirm = $state("");
 	let error = $state("");
@@ -27,7 +28,7 @@
 
 		loading = true;
 		try {
-			await request("POST", "/api/auth/setup", { password });
+			await request("POST", "/api/auth/setup", { password, setupCode });
 			window.location.href = "/files";
 		} catch (err) {
 			error = err instanceof Error ? err.message : "Setup failed";
@@ -67,6 +68,22 @@
 		<Card.Content>
 			<form onsubmit={handleSubmit} class="grid gap-4">
 				<div class="grid gap-2">
+					<Label for="setupCode">Setup code</Label>
+					<Input
+						id="setupCode"
+						autocomplete="off"
+						spellcheck={false}
+						class="font-mono"
+						placeholder="XXXX-XXXX-XXXX-…"
+						bind:value={setupCode}
+						required
+						autofocus
+					/>
+					<p class="text-[11px] text-muted-foreground">
+						Printed in the server log at startup. With Docker: <code class="font-mono whitespace-nowrap">docker logs onyx</code>
+					</p>
+				</div>
+				<div class="grid gap-2">
 					<Label for="username">Admin username</Label>
 					<Input id="username" value="admin" autocomplete="username" disabled />
 				</div>
@@ -79,7 +96,6 @@
 						placeholder="At least 8 characters"
 						bind:value={password}
 						required
-						autofocus
 					/>
 				</div>
 				<div class="grid gap-2">

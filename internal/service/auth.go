@@ -5,13 +5,16 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/crypto/argon2"
 
@@ -34,6 +37,10 @@ var (
 )
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
+
+var ErrInvalidSetupCode = errors.New("invalid setup code")
+
+const minSetupPresetLen = 16
 
 // dummyHash absorbs argon2 work on Login when no admin account exists, so the
 // request's latency does not leak first-run state. Generated once from random
@@ -72,6 +79,9 @@ type AuthService struct {
 	sessions SessionRepo
 	settings *SettingsService
 	guard    *loginGuard
+
+	setupMu   sync.Mutex
+	setupCode string
 }
 
 func NewAuthService(users UserRepo, sessions SessionRepo, settings *SettingsService) *AuthService {
@@ -86,13 +96,61 @@ func (a *AuthService) IsFirstRun() (bool, error) {
 	return !exists, nil
 }
 
-func (a *AuthService) Setup(password string) (*domain.Session, error) {
+// InitSetupCode arms first-run setup with preset, or a random code if preset is empty. Returns the code, "" if an admin exists.
+func (a *AuthService) InitSetupCode(preset string) (string, error) {
+	exists, err := a.users.Exists()
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return "", nil
+	}
+	display := preset
+	if preset == "" {
+		raw := make([]byte, 16)
+		if _, err := rand.Read(raw); err != nil {
+			return "", fmt.Errorf("generate setup code: %w", err)
+		}
+		code := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
+		var groups []string
+		for i := 0; i < len(code); i += 4 {
+			groups = append(groups, code[i:min(i+4, len(code))])
+		}
+		display = strings.Join(groups, "-")
+	} else if len(normalizeSetupCode(preset)) < minSetupPresetLen {
+		return "", fmt.Errorf("must be at least %d characters, not counting spaces and hyphens", minSetupPresetLen)
+	}
+	a.setupMu.Lock()
+	a.setupCode = normalizeSetupCode(display)
+	a.setupMu.Unlock()
+	return display, nil
+}
+
+// normalizeSetupCode ignores case, spaces and hyphens, so a code retyped from the log still matches
+func normalizeSetupCode(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || unicode.IsSpace(r) {
+			return -1
+		}
+		return unicode.ToUpper(r)
+	}, s)
+}
+
+// Setup creates the admin. ErrInvalidSetupCode unless code matches the one InitSetupCode armed.
+func (a *AuthService) Setup(password, code string) (*domain.Session, error) {
 	exists, err := a.users.Exists()
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, fmt.Errorf("admin already exists")
+	}
+
+	a.setupMu.Lock()
+	want := a.setupCode
+	a.setupMu.Unlock()
+	if want == "" || subtle.ConstantTimeCompare([]byte(normalizeSetupCode(code)), []byte(want)) != 1 {
+		return nil, ErrInvalidSetupCode
 	}
 
 	hash, err := hashPassword(password)
@@ -111,6 +169,9 @@ func (a *AuthService) Setup(password string) (*domain.Session, error) {
 		return nil, fmt.Errorf("create admin: %w", err)
 	}
 
+	a.setupMu.Lock()
+	a.setupCode = ""
+	a.setupMu.Unlock()
 	return a.createSession(user.ID, hash)
 }
 

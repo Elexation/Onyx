@@ -18,6 +18,8 @@ Open `http://localhost:8080`. To use a different port:
 ONYX_PORT=3000 docker compose up -d
 ```
 
+The first visit asks for a setup code before it creates the admin account, so nobody else who reaches a fresh install can claim it. Onyx prints the code to its log at startup (`docker logs onyx`, look for `setup_code=`); it changes on every restart until setup is done and stops working once the admin exists. For automated installs, set `ONYX_SETUP_TOKEN` to your own code instead.
+
 ### Storage Layout
 
 All application state lives under a single `store/` directory beside the compose file:
@@ -118,6 +120,7 @@ Relative values resolve against the working directory, which is `/store` in the 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ONYX_VERSION_RETENTION_INTERVAL` | `24h` | How often the version retention sweep runs. |
+| `ONYX_SETUP_TOKEN` | *(random)* | First-run setup code to use instead of a random one printed to the log, for automated installs. At least 16 characters, not counting spaces and hyphens. Ignored once the admin exists. |
 
 ## Hardware Video Acceleration
 

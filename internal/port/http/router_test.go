@@ -380,7 +380,12 @@ func TestRouterTokenLimits(t *testing.T) {
 		return do("POST", "/api/upload/", token, "", map[string]string{"Tus-Resumable": "1.0.0", "Upload-Length": "3", "Upload-Metadata": meta})
 	}
 	expect("upload token replace", create(uploadTok, "replace"), http.StatusForbidden)
-	expect("upload token keepBoth", create(uploadTok, "keepBoth"), http.StatusCreated)
+	kept := create(uploadTok, "keepBoth")
+	expect("upload token keepBoth", kept, http.StatusCreated)
+	// tus download is off: staged bytes are never served back
+	staged := "/api/upload/" + path.Base(kept.Header().Get("Location"))
+	expect("upload token reads a staged upload", do("GET", staged, uploadTok, "", map[string]string{"Tus-Resumable": "1.0.0"}), http.StatusMethodNotAllowed)
+	expect("browser reads a staged upload", do("GET", staged, "", "", map[string]string{"Tus-Resumable": "1.0.0"}), http.StatusMethodNotAllowed)
 
 	rec := create(fullTok, "replace")
 	expect("full token replace create", rec, http.StatusCreated)

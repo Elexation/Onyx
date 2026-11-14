@@ -66,6 +66,8 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 		RespectForwardedHeaders: trustedProxy,
 		// Finalize runs for every completed upload, so a partial would land as a file
 		DisableConcatenation: true,
+		// Nothing reads uploads back over tus, and a GET here would serve staged bytes outside the write deadline
+		DisableDownload: true,
 		// Finalize synchronously, in the request goroutine, before the 204 is
 		// returned. This runs up to the client's concurrency wide (not serialized
 		// through one channel consumer) and lets a finalize failure propagate to

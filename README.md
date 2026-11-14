@@ -107,6 +107,7 @@ Relative values resolve against the working directory, which is `/store` in the 
 |----------|---------|-------------|
 | `ONYX_HWACCEL` | `auto` | Hardware encoder preference: `auto`, `nvenc`, `qsv`, `vaapi`, `amf`, or `none` (software). |
 | `ONYX_MAX_TRANSCODE_HEIGHT` | `2160` | Cap the highest ABR rung. One of `480`, `720`, `1080`, `1440`, `2160`. |
+| `ONYX_TRANSCODE_CACHE_MAX` | `20GB` | Size limit for the transcode cache, e.g. `50GB` or `500MB` (units are powers of 1024). Past it, the oldest share-visitor and idle sessions are deleted first; videos you are watching are kept. `0` turns the limit off. |
 
 ### Docker
 

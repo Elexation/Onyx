@@ -40,6 +40,15 @@ const (
 	idleStopAfter     = 5 * time.Minute
 	idleCheckInterval = 1 * time.Minute
 
+	// idleDropAfter drops a session nobody has fetched a segment from for this long, cache included
+	idleDropAfter = 30 * time.Minute
+
+	// maxClientTranscodes caps ffmpeg runs per public visitor, so one can't take every public slot
+	maxClientTranscodes = 2
+
+	// youngCacheDir shields new unregistered dirs from the size limit: initSession builds before registering
+	youngCacheDir = 10 * time.Minute
+
 	// maxSessions caps the in-memory session map. Without this, a public-share
 	// holder iterating an IsDir share over many distinct videos can register
 	// one session per file forever (sweepCache only removes inactive on-disk
@@ -62,6 +71,18 @@ var ErrSessionNotFound = errors.New("transcode session not found")
 // ErrSegmentTimeout is returned when a segment does not appear within
 // segmentWaitTimeout. Maps to HTTP 504.
 var ErrSegmentTimeout = errors.New("segment not ready")
+
+// ErrTranscodeBusy means a public visitor already holds its share of transcodes. Maps to HTTP 503.
+var ErrTranscodeBusy = errors.New("too many transcodes for this client")
+
+// DefaultTranscodeCacheLimit bounds the transcode cache unless ONYX_TRANSCODE_CACHE_MAX says otherwise
+const DefaultTranscodeCacheLimit int64 = 20 << 30
+
+// TranscodeClient says who asked: the admin (zero value) or a public share visitor
+type TranscodeClient struct {
+	Public bool
+	Key    string // the visitor's limit key, IPv6 masked to /64
+}
 
 // ErrSegmentOutOfRange is returned when a segment number exceeds the
 // maximum derived from the source duration. Maps to HTTP 400.
@@ -89,12 +110,14 @@ type TranscodeSession struct {
 	cancel       context.CancelFunc
 	runDone      chan struct{} // closed when the current ffmpeg goroutine exits
 	startedAt    time.Time
-	evicted      bool // set by evictIfOverCap; blocks software-fallback respawn
+	evicted      bool // set by dropSession; blocks software-fallback respawn
 
-	// lastUsed is updated under TranscodeService.mu on every Ensure-hit and
-	// GetSegment call. Eviction targets the oldest lastUsed when the session
-	// cap is reached.
+	// lastUsed is updated under TranscodeService.mu on every GetSegment call,
+	// never on a playlist fetch: polling master.m3u8 must not keep a session
+	// alive. Eviction, idle drop and the cache limit all go by it.
 	lastUsed time.Time
+	// public is true while only share visitors have used the session, under TranscodeService.mu
+	public bool
 }
 
 // Hash returns the content hash used as the session's cache key.
@@ -125,6 +148,10 @@ type TranscodeService struct {
 	mu       sync.Mutex
 	sessions map[string]*TranscodeSession
 	sema     chan struct{}
+	// publicSema holds one slot fewer than sema, so share visitors never take the admin's last one
+	publicSema chan struct{}
+	clientRuns map[string]int // public ffmpeg runs per visitor key, under mu
+	cacheLimit atomic.Int64   // bytes; 0 is unlimited
 
 	initFlight sync.Map // hash → *transcodeInflight
 
@@ -181,8 +208,11 @@ func NewTranscodeService(s *storage.LocalStorage, probe *ProbeService, dataDir, 
 		maxHeight:   maxHeight,
 		sessions:    make(map[string]*TranscodeSession),
 		sema:        make(chan struct{}, limit),
+		publicSema:  make(chan struct{}, max(limit-1, 1)),
+		clientRuns:  make(map[string]int),
 		stopCh:      make(chan struct{}),
 	}
+	ts.cacheLimit.Store(DefaultTranscodeCacheLimit)
 	ts.wg.Add(1)
 	go ts.cleanupLoop()
 
@@ -209,7 +239,7 @@ func (ts *TranscodeService) Encoder() media.Encoder {
 // Ensure resolves relPath, starts a session if one does not exist yet,
 // and returns it after master and per-variant playlists are written.
 // Concurrent callers for the same file coalesce via single-flight.
-func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*TranscodeSession, error) {
+func (ts *TranscodeService) Ensure(ctx context.Context, relPath string, client TranscodeClient) (*TranscodeSession, error) {
 	if !ts.ffmpeg.Available() {
 		return nil, fmt.Errorf("ffmpeg not available")
 	}
@@ -251,7 +281,7 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 
 	ts.mu.Lock()
 	if existing := ts.findSessionLocked(hash, srcKey); existing != nil {
-		existing.lastUsed = time.Now()
+		claimLocked(existing, client)
 		ts.mu.Unlock()
 		return existing, nil
 	}
@@ -264,6 +294,17 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 		e := existing.(*transcodeInflight)
 		select {
 		case <-e.done:
+			// Leader refused for its own limit or left? That says nothing about this caller.
+			if errors.Is(e.err, ErrTranscodeBusy) || errors.Is(e.err, context.Canceled) || errors.Is(e.err, context.DeadlineExceeded) {
+				if ctx.Err() == nil {
+					return ts.Ensure(ctx, relPath, client)
+				}
+			}
+			if e.session != nil {
+				ts.mu.Lock()
+				claimLocked(e.session, client)
+				ts.mu.Unlock()
+			}
 			return e.session, e.err
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -271,20 +312,20 @@ func (ts *TranscodeService) Ensure(ctx context.Context, relPath string) (*Transc
 	}
 
 	defer func() {
+		ts.initFlight.CompareAndDelete(srcKey, entry)
 		close(entry.done)
-		ts.initFlight.Delete(srcKey)
 	}()
 
 	ts.mu.Lock()
 	if existing := ts.findSessionLocked(hash, srcKey); existing != nil {
-		existing.lastUsed = time.Now()
+		claimLocked(existing, client)
 		ts.mu.Unlock()
 		entry.session = existing
 		return existing, nil
 	}
 	ts.mu.Unlock()
 
-	session, err := ts.initSession(ctx, hash, srcKey, absPath, relPath, info, rungs)
+	session, err := ts.initSession(ctx, hash, srcKey, absPath, relPath, info, rungs, client)
 	entry.session = session
 	entry.err = err
 	if err != nil {
@@ -318,9 +359,20 @@ func (ts *TranscodeService) findSessionLocked(hash, srcKey string) *TranscodeSes
 	return nil
 }
 
+// claimLocked hands a session to the admin once the admin uses it. Caller holds ts.mu.
+func claimLocked(s *TranscodeSession, client TranscodeClient) {
+	if !client.Public {
+		s.public = false
+	}
+}
+
 // initSession creates directories, writes playlists, starts ffmpeg, and
 // registers the session. Called only by the single-flight winner.
-func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPath, relPath string, info *media.ProbeInfo, rungs []media.Rendition) (*TranscodeSession, error) {
+func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPath, relPath string, info *media.ProbeInfo, rungs []media.Rendition, client TranscodeClient) (*TranscodeSession, error) {
+	// Refuse before building anything, so refused requests leave no cache dirs
+	if client.Public && ts.clientAtLimit(client.Key) {
+		return nil, ErrTranscodeBusy
+	}
 	sessionDir := filepath.Join(ts.cacheRoot, hash)
 	// stale segments from a killed prior run don't match a fresh run's timeline
 	if err := os.RemoveAll(sessionDir); err != nil {
@@ -353,11 +405,13 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPa
 		framerate:  info.Framerate,
 		renditions: rungs,
 		hasAudio:   info.HasAudio,
+		public:     client.Public,
 	}
 
 	session.mu.Lock()
-	if err := ts.startFFmpegLocked(ctx, session, 0); err != nil {
+	if err := ts.startFFmpegLocked(ctx, session, 0, client); err != nil {
 		session.mu.Unlock()
+		os.RemoveAll(sessionDir)
 		return nil, err
 	}
 	session.mu.Unlock()
@@ -404,21 +458,65 @@ func (ts *TranscodeService) evictIfOverCap() {
 	delete(ts.sessions, oldestHash)
 	ts.mu.Unlock()
 
-	oldest.mu.Lock()
-	oldest.evicted = true
-	cancel := oldest.cancel
-	done := oldest.runDone
-	oldest.mu.Unlock()
+	ts.dropSession(oldest, "LRU session evicted")
+}
+
+// dropSession stops an already-unregistered session's ffmpeg, waits for it, then deletes its cache dir
+func (ts *TranscodeService) dropSession(s *TranscodeSession, reason string) {
+	s.mu.Lock()
+	s.evicted = true
+	cancel := s.cancel
+	done := s.runDone
+	s.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	if done != nil {
 		<-done
 	}
-	if err := os.RemoveAll(oldest.dir); err != nil {
-		slog.Warn("transcode evict: remove failed", "hash", oldestHash, "error", err)
+	if err := os.RemoveAll(s.dir); err != nil {
+		slog.Warn("transcode evict: remove failed", "hash", s.hash, "error", err)
 	} else {
-		slog.Info("transcode evict: LRU session evicted", "hash", oldestHash)
+		slog.Info("transcode evict: "+reason, "hash", s.hash)
+	}
+}
+
+// clientAtLimit reports whether a public visitor already holds maxClientTranscodes runs
+func (ts *TranscodeService) clientAtLimit(key string) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.clientRuns[key] >= maxClientTranscodes
+}
+
+// acquirePublic takes a public slot for key. ErrTranscodeBusy if key is at its limit.
+func (ts *TranscodeService) acquirePublic(ctx context.Context, key string) error {
+	ts.mu.Lock()
+	if ts.clientRuns[key] >= maxClientTranscodes {
+		ts.mu.Unlock()
+		return ErrTranscodeBusy
+	}
+	// Counted while waiting too, so queued requests can't pile up past the limit
+	ts.clientRuns[key]++
+	ts.mu.Unlock()
+	select {
+	case ts.publicSema <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		ts.releaseClient(key)
+		return ctx.Err()
+	}
+}
+
+func (ts *TranscodeService) releasePublic(key string) {
+	<-ts.publicSema
+	ts.releaseClient(key)
+}
+
+func (ts *TranscodeService) releaseClient(key string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.clientRuns[key]--; ts.clientRuns[key] <= 0 {
+		delete(ts.clientRuns, key)
 	}
 }
 
@@ -438,11 +536,12 @@ func (ts *TranscodeService) SessionDir(hash string) string {
 // appear, triggering a seek restart first if N falls outside the
 // transcode window currently in progress. Seek restart rewinds every
 // variant together.
-func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant, segNum int) ([]byte, error) {
+func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant, segNum int, client TranscodeClient) ([]byte, error) {
 	ts.mu.Lock()
 	session, ok := ts.sessions[hash]
 	if ok {
 		session.lastUsed = time.Now()
+		claimLocked(session, client)
 	}
 	ts.mu.Unlock()
 	if !ok {
@@ -489,7 +588,7 @@ func (ts *TranscodeService) GetSegment(ctx context.Context, hash string, variant
 			slog.Info("security_event", "event", "transcode_restart_debounced", "hash", hash, "seg", segNum)
 			return nil, ErrSegmentTimeout
 		}
-		if err := ts.startFFmpegLocked(ctx, session, segNum); err != nil {
+		if err := ts.startFFmpegLocked(ctx, session, segNum, client); err != nil {
 			session.mu.Unlock()
 			return nil, fmt.Errorf("seek restart: %w", err)
 		}
@@ -569,7 +668,7 @@ func (ts *TranscodeService) Shutdown() {
 // one from fromSegment. Caller must hold session.mu. ctx bounds only the
 // concurrency-slot wait; the spawned ffmpeg runs under its own context
 // since it must outlive the caller's request.
-func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeSession, fromSegment int) error {
+func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeSession, fromSegment int, client TranscodeClient) error {
 	s.startedAt = time.Now()
 	if s.cancel != nil {
 		s.cancel()
@@ -579,6 +678,19 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 		ts.trimPartialTail(s)
 	}
 
+	// Public runs take a public slot first, so one sema slot always stays free for the admin
+	if client.Public {
+		if err := ts.acquirePublic(ctx, client.Key); err != nil {
+			return err
+		}
+	}
+	release := func() {
+		<-ts.sema
+		if client.Public {
+			ts.releasePublic(client.Key)
+		}
+	}
+
 	select {
 	case ts.sema <- struct{}{}:
 	default:
@@ -586,6 +698,9 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 		select {
 		case ts.sema <- struct{}{}:
 		case <-ctx.Done():
+			if client.Public {
+				ts.releasePublic(client.Key)
+			}
 			return ctx.Err()
 		}
 	}
@@ -603,7 +718,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	})
 	if err != nil {
 		cancel()
-		<-ts.sema
+		release()
 		return err
 	}
 
@@ -611,7 +726,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	cmd.Stderr = stderrBuf
 	if err := cmd.Start(); err != nil {
 		cancel()
-		<-ts.sema
+		release()
 		return err
 	}
 
@@ -620,7 +735,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	s.runDone = done
 	s.startSegment = fromSegment
 
-	go ts.waitFFmpeg(runCtx, cmd, s, done, fromSegment, stderrBuf, enc)
+	go ts.waitFFmpeg(runCtx, cmd, s, done, fromSegment, stderrBuf, enc, client)
 
 	return nil
 }
@@ -628,10 +743,14 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 // waitFFmpeg reaps the process, releases the semaphore slot, and (when
 // the process failed under a hardware encoder) falls back to software
 // and triggers a background re-probe.
-func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder) {
+func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s *TranscodeSession, done chan struct{}, fromSegment int, stderrBuf *boundedBuffer, encoder media.Encoder, client TranscodeClient) {
 	startTime := s.startedAt
 	err := cmd.Wait()
+	// Release before close(done): a restart waiting on done must see this run's slots free
 	<-ts.sema
+	if client.Public {
+		ts.releasePublic(client.Key)
+	}
 
 	// a CommandContext kill surfaces as *ExitError ("signal: killed"), never
 	// context.Canceled; runCtx is the only reliable intentional-kill signal.
@@ -668,7 +787,7 @@ func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s 
 			// <-s.runDone (this done): taking s.mu before closing deadlocks.
 			ts.triggerReprobe()
 			close(done)
-			ts.retryWithSoftware(s, done, fromSegment)
+			ts.retryWithSoftware(s, done, fromSegment, client)
 			return
 		}
 
@@ -698,7 +817,7 @@ func (ts *TranscodeService) waitFFmpeg(runCtx context.Context, cmd *exec.Cmd, s 
 // for a session whose hardware-encoder run failed. oldDone is the
 // already-closed done channel from the failed run, used to detect whether
 // a concurrent restart already happened.
-func (ts *TranscodeService) retryWithSoftware(s *TranscodeSession, oldDone chan struct{}, fromSegment int) {
+func (ts *TranscodeService) retryWithSoftware(s *TranscodeSession, oldDone chan struct{}, fromSegment int, client TranscodeClient) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -725,7 +844,7 @@ func (ts *TranscodeService) retryWithSoftware(s *TranscodeSession, oldDone chan 
 
 	slotCtx, cancel := context.WithTimeout(context.Background(), fallbackSlotTimeout)
 	defer cancel()
-	if err := ts.startFFmpegLocked(slotCtx, s, fromSegment); err != nil {
+	if err := ts.startFFmpegLocked(slotCtx, s, fromSegment, client); err != nil {
 		slog.Error("ffmpeg software fallback retry failed",
 			"hash", s.hash,
 			"from_segment", fromSegment,
@@ -964,6 +1083,8 @@ func (ts *TranscodeService) cleanupLoop() {
 			ts.sweepCache()
 		case <-idleTicker.C:
 			ts.stopIdleSessions()
+			ts.dropIdleSessions()
+			ts.enforceCacheLimit()
 		}
 	}
 }

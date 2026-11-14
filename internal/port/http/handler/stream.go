@@ -102,9 +102,9 @@ func (h *StreamHandler) Master(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"transcoding not available"}`, http.StatusNotImplemented)
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, service.TranscodeClient{})
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	h.serveCachedFile(w, r, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl")
@@ -126,9 +126,9 @@ func (h *StreamHandler) Playlist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, service.TranscodeClient{})
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
@@ -153,9 +153,9 @@ func (h *StreamHandler) Init(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, service.TranscodeClient{})
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
@@ -192,16 +192,16 @@ func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid segment number"}`, http.StatusBadRequest)
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, service.TranscodeClient{})
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
 		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
-	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum)
+	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum, service.TranscodeClient{})
 	if err != nil {
 		if errors.Is(err, service.ErrSegmentTimeout) {
 			http.Error(w, `{"error":"segment not ready"}`, http.StatusGatewayTimeout)
@@ -215,7 +215,7 @@ func (h *StreamHandler) Segment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"segment out of range"}`, http.StatusBadRequest)
 			return
 		}
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp4")
@@ -296,4 +296,14 @@ func waitForStableFile(ctx context.Context, path string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// writeTranscodeError maps a busy refusal to 503, which hls.js retries (it never retries a 4xx)
+func writeTranscodeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrTranscodeBusy) {
+		w.Header().Set("Retry-After", "10")
+		http.Error(w, `{"error":"too many videos playing, try again shortly"}`, http.StatusServiceUnavailable)
+		return
+	}
+	writeFileError(w, err)
 }

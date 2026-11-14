@@ -191,12 +191,23 @@ func main() {
 	hwProbe := media.RunStartupProbe(probeCtx, media.Detect())
 	probeCancel()
 
+	transcodeCacheLimit := service.DefaultTranscodeCacheLimit
+	if v := os.Getenv("ONYX_TRANSCODE_CACHE_MAX"); v != "" {
+		n, err := parseByteSize(v)
+		if err != nil {
+			slog.Error("invalid ONYX_TRANSCODE_CACHE_MAX", "error", err)
+			os.Exit(1)
+		}
+		transcodeCacheLimit = n
+	}
+
 	transcodeService, err := service.NewTranscodeService(localStorage, probeService, dataDir, cacheDir, hwProbe, hwaccelPref, maxHeight)
 	if err != nil {
 		slog.Error("transcode service init failed", "error", err)
 		os.Exit(1)
 	}
 	defer transcodeService.Shutdown()
+	transcodeService.SetCacheLimit(transcodeCacheLimit)
 
 	trustedProxy := os.Getenv("ONYX_TRUSTED_PROXY") == "true"
 	requireHTTPS := os.Getenv("ONYX_REQUIRE_HTTPS") == "true"
@@ -449,4 +460,24 @@ func validateRedirectPort(redirectPort, listenPort string) error {
 		return fmt.Errorf("port %d is already the main listen port", n)
 	}
 	return nil
+}
+
+// parseByteSize reads a size like "20GB", "500MB" or plain bytes. Units are powers of 1024.
+func parseByteSize(v string) (int64, error) {
+	s := strings.ToUpper(strings.TrimSpace(v))
+	mult := int64(1)
+	for _, u := range []struct {
+		suffix string
+		mult   int64
+	}{{"TB", 1 << 40}, {"GB", 1 << 30}, {"MB", 1 << 20}, {"KB", 1 << 10}, {"B", 1}} {
+		if strings.HasSuffix(s, u.suffix) {
+			s, mult = strings.TrimSpace(strings.TrimSuffix(s, u.suffix)), u.mult
+			break
+		}
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 || n > (1<<63-1)/mult {
+		return 0, fmt.Errorf("%q is not a size like 20GB", v)
+	}
+	return n * mult, nil
 }

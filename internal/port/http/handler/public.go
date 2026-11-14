@@ -383,9 +383,9 @@ func (h *PublicHandler) StreamMaster(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, h.transcodeClient(r))
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	servePublicHLSPlaylist(w, filepath.Join(session.Dir(), "master.m3u8"), "application/vnd.apple.mpegurl", chi.URLParam(r, "token"), filePath)
@@ -412,9 +412,9 @@ func (h *PublicHandler) StreamPlaylist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, h.transcodeClient(r))
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
@@ -445,9 +445,9 @@ func (h *PublicHandler) StreamInit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, h.transcodeClient(r))
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
@@ -488,16 +488,16 @@ func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	session, err := h.transcode.Ensure(r.Context(), filePath)
+	session, err := h.transcode.Ensure(r.Context(), filePath, h.transcodeClient(r))
 	if err != nil {
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	if variant >= session.VariantCount() {
 		http.Error(w, `{"error":"variant out of range"}`, http.StatusBadRequest)
 		return
 	}
-	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum)
+	data, err := h.transcode.GetSegment(r.Context(), session.Hash(), variant, segNum, h.transcodeClient(r))
 	if err != nil {
 		if errors.Is(err, service.ErrSegmentTimeout) {
 			http.Error(w, `{"error":"segment not ready"}`, http.StatusGatewayTimeout)
@@ -511,7 +511,7 @@ func (h *PublicHandler) StreamSegment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"segment out of range"}`, http.StatusBadRequest)
 			return
 		}
-		writeFileError(w, err)
+		writeTranscodeError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp4")
@@ -718,4 +718,9 @@ func servePublicHLSPlaylist(w http.ResponseWriter, playlistPath, contentType, to
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(data)
+}
+
+// transcodeClient marks a share visitor's transcodes as public and keys their limit by client
+func (h *PublicHandler) transcodeClient(r *http.Request) service.TranscodeClient {
+	return service.TranscodeClient{Public: true, Key: middleware.ClientKey(r, h.trustedProxy)}
 }

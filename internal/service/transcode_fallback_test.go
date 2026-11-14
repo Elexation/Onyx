@@ -36,7 +36,7 @@ func TestWaitFFmpeg_FastFailFallsBackToSoftware(t *testing.T) {
 	}
 
 	stderrBuf := &boundedBuffer{max: 1024}
-	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderNVENC)
+	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderNVENC, TranscodeClient{})
 
 	if enc := ts.Encoder(); enc != media.EncoderSoftware {
 		t.Errorf("expected encoder to be %q after fast fail, got %q", media.EncoderSoftware, enc)
@@ -83,7 +83,7 @@ func TestWaitFFmpeg_SlowFailAlsoFallsBack(t *testing.T) {
 	}
 
 	stderrBuf := &boundedBuffer{max: 1024}
-	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderNVENC)
+	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderNVENC, TranscodeClient{})
 
 	if enc := ts.Encoder(); enc != media.EncoderSoftware {
 		t.Errorf("expected encoder to be %q after slow fail, got %q", media.EncoderSoftware, enc)
@@ -128,7 +128,7 @@ func TestWaitFFmpeg_SoftwareEncoderDoesNotFallBack(t *testing.T) {
 	}
 
 	stderrBuf := &boundedBuffer{max: 1024}
-	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderSoftware)
+	ts.waitFFmpeg(context.Background(), cmd, s, done, 0, stderrBuf, media.EncoderSoftware, TranscodeClient{})
 
 	if enc := ts.Encoder(); enc != media.EncoderSoftware {
 		t.Errorf("expected encoder to remain %q, got %q", media.EncoderSoftware, enc)
@@ -175,7 +175,7 @@ func TestWaitFFmpeg_CanceledRunDoesNotFallBack(t *testing.T) {
 	cancel()
 
 	stderrBuf := &boundedBuffer{max: 1024}
-	ts.waitFFmpeg(ctx, cmd, s, done, 0, stderrBuf, media.EncoderNVENC)
+	ts.waitFFmpeg(ctx, cmd, s, done, 0, stderrBuf, media.EncoderNVENC, TranscodeClient{})
 
 	if enc := ts.Encoder(); enc != media.EncoderNVENC {
 		t.Errorf("expected encoder to remain %q after canceled run, got %q", media.EncoderNVENC, enc)
@@ -242,7 +242,7 @@ func TestStopIdleSessions_StopsIdleKeepsActive(t *testing.T) {
 	ts.sessions["active"] = active
 
 	ts.sema <- struct{}{}
-	go ts.waitFFmpeg(ctx, cmd, idle, idleDone, 0, &boundedBuffer{max: 1024}, media.EncoderSoftware)
+	go ts.waitFFmpeg(ctx, cmd, idle, idleDone, 0, &boundedBuffer{max: 1024}, media.EncoderSoftware, TranscodeClient{})
 
 	ts.stopIdleSessions()
 

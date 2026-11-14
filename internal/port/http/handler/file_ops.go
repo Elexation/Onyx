@@ -165,13 +165,22 @@ func (h *FileOpsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cookie sessions get a 409 so the SPA re-asks; token callers keep the permanent fallback
-	if !req.Permanent && !middleware.IsBearerAuth(r.Context()) && !h.files.TrashEnabled() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "trash is disabled", "code": "trash_disabled"})
+	if req.Permanent {
+		// A leaked token must not destroy files past the trash
+		if middleware.IsBearerAuth(r.Context()) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access tokens cannot delete permanently"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": h.files.Delete(req.Paths, true)})
 		return
 	}
 
-	results := h.files.Delete(req.Paths, req.Permanent)
+	// Trash off? 409 so the SPA can re-ask for a permanent delete; tokens can't, so they stop here
+	results, err := h.files.DeleteToTrash(req.Paths)
+	if errors.Is(err, service.ErrTrashDisabled) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "trash is disabled", "code": "trash_disabled"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 

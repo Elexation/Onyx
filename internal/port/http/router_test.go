@@ -1,16 +1,20 @@
 package server
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Elexation/onyx/internal/adapter/database"
 	"github.com/Elexation/onyx/internal/adapter/storage"
+	"github.com/Elexation/onyx/internal/adapter/upload"
+	"github.com/Elexation/onyx/internal/domain"
 	"github.com/Elexation/onyx/internal/service"
 )
 
@@ -221,6 +225,136 @@ func TestRouterSetupRequiresCode(t *testing.T) {
 	}
 	if first, _ := auth.IsFirstRun(); first {
 		t.Fatal("admin not created")
+	}
+}
+
+// A leaked token can't make lasting shares, destroy data past the trash, or overwrite files with upload scope
+func TestRouterTokenLimits(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"keep.txt", "trashed.txt", "notrash.txt", "cookie.txt", "existing.txt"} {
+		if err := os.WriteFile(filepath.Join(dataDir, name), []byte("original"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(name string) bool {
+		_, err := os.Stat(filepath.Join(dataDir, name))
+		return err == nil
+	}
+
+	db, err := database.Open(filepath.Join(dir, "onyx.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	settings := service.NewSettingsService(database.NewSettingsRepo(db))
+	auth := service.NewAuthService(database.NewUserRepo(db), database.NewSessionRepo(db), settings)
+	code, _ := auth.InitSetupCode("")
+	session, err := auth.Setup("correct horse battery", code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := service.NewTokenService(database.NewTokenRepo(db))
+	_, fullTok, err := tokens.Create("full", domain.ScopeFull, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, uploadTok, err := tokens.Create("upload", domain.ScopeUpload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ls, err := storage.NewLocalStorage(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ls.Close() })
+	files := service.NewFileService(ls)
+	trash, err := service.NewTrashService(database.NewTrashRepo(db), settings, dataDir, filepath.Join(dir, ".trash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	trash.SetPathLocker(files.LockPath)
+	files.SetTrash(trash, settings)
+	tus, err := upload.NewTusHandler(filepath.Join(dir, "uploads"), "/api/upload/", files, settings, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tus.Close() })
+
+	router := NewRouter(auth, files, settings, trash, nil, tus, nil, nil, tokens, nil, nil, nil, nil, false, false, false, "8080", map[string]string{})
+	do := func(method, target, token, body string, hdr map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://x"+target, strings.NewReader(body))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		} else {
+			req.AddCookie(&http.Cookie{Name: "session", Value: session.ID})
+			req.Header.Set("X-CSRF-Token", session.CSRFToken)
+		}
+		if body != "" && hdr == nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+	expect := func(name string, rec *httptest.ResponseRecorder, want int) {
+		t.Helper()
+		if rec.Code != want {
+			t.Errorf("%s: status = %d, want %d (body %s)", name, rec.Code, want, strings.TrimSpace(rec.Body.String()))
+		}
+	}
+
+	expect("create share", do("POST", "/api/shares", fullTok, `{"path":"/keep.txt"}`, nil), http.StatusForbidden)
+	expect("purge trash item", do("DELETE", "/api/trash/1", fullTok, "", nil), http.StatusForbidden)
+	expect("empty trash", do("DELETE", "/api/trash", fullTok, "", nil), http.StatusForbidden)
+	expect("delete version", do("DELETE", "/api/versions/1", fullTok, "", nil), http.StatusForbidden)
+
+	expect("permanent delete", do("DELETE", "/api/files", fullTok, `{"paths":["/keep.txt"],"permanent":true}`, nil), http.StatusForbidden)
+	if !exists("keep.txt") {
+		t.Fatal("token permanently deleted a file")
+	}
+	expect("delete to trash", do("DELETE", "/api/files", fullTok, `{"paths":["/trashed.txt"]}`, nil), http.StatusOK)
+	if exists("trashed.txt") {
+		t.Fatal("trash delete via token did not move the file")
+	}
+
+	if err := settings.Set(domain.SettingTrashEnabled, "false"); err != nil {
+		t.Fatal(err)
+	}
+	expect("token delete, trash off", do("DELETE", "/api/files", fullTok, `{"paths":["/notrash.txt"]}`, nil), http.StatusConflict)
+	if !exists("notrash.txt") {
+		t.Fatal("token deleted a file permanently with trash off")
+	}
+	expect("browser delete, trash off", do("DELETE", "/api/files", "", `{"paths":["/cookie.txt"]}`, nil), http.StatusConflict)
+	expect("browser permanent delete", do("DELETE", "/api/files", "", `{"paths":["/cookie.txt"],"permanent":true}`, nil), http.StatusOK)
+	if exists("cookie.txt") {
+		t.Fatal("browser permanent delete did not remove the file")
+	}
+
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	create := func(token, strategy string) *httptest.ResponseRecorder {
+		meta := "name " + b64("existing.txt") + ",targetDir " + b64("/") + ",conflictStrategy " + b64(strategy)
+		return do("POST", "/api/upload/", token, "", map[string]string{"Tus-Resumable": "1.0.0", "Upload-Length": "3", "Upload-Metadata": meta})
+	}
+	expect("upload token replace", create(uploadTok, "replace"), http.StatusForbidden)
+	expect("upload token keepBoth", create(uploadTok, "keepBoth"), http.StatusCreated)
+
+	rec := create(fullTok, "replace")
+	expect("full token replace create", rec, http.StatusCreated)
+	id := path.Base(rec.Header().Get("Location"))
+	patch := do("PATCH", "/api/upload/"+id, uploadTok, "new", map[string]string{
+		"Tus-Resumable": "1.0.0", "Upload-Offset": "0", "Content-Type": "application/offset+octet-stream",
+	})
+	expect("upload token finishes a replace", patch, http.StatusForbidden)
+	if got, _ := os.ReadFile(filepath.Join(dataDir, "existing.txt")); string(got) != "original" {
+		t.Fatalf("existing.txt = %q, upload token overwrote it", got)
 	}
 }
 

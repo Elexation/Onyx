@@ -133,8 +133,8 @@
 							<span class="text-sm font-medium">Upload</span>
 						</div>
 						<p class="mt-1.5 text-meta text-muted-foreground">
-							Everything in read, plus: upload files (tus protocol), create directories, and check
-							upload conflicts.
+							Everything in read, plus: upload new files (tus protocol), create directories, and check
+							upload conflicts. Cannot replace existing files.
 						</p>
 					</div>
 					<div class="rounded-xl border border-border bg-card p-4">
@@ -143,8 +143,8 @@
 							<span class="text-sm font-medium">Full access</span>
 						</div>
 						<p class="mt-1.5 text-meta text-muted-foreground">
-							Everything in upload, plus: rename, move, copy, delete files, manage shares, restore
-							from trash, and manage versions.
+							Everything in upload, plus: replace files on upload, rename, move, copy, delete files to
+							trash, list and revoke shares, restore from trash, and restore versions.
 						</p>
 					</div>
 				</div>
@@ -156,6 +156,11 @@
 						<code class="rounded bg-muted px-1 py-0.5 font-mono text-meta">/api/settings</code>, and
 						<code class="rounded bg-muted px-1 py-0.5 font-mono text-meta">/api/changes</code>
 						require a browser session and are blocked for all token scopes, including full.
+					</p>
+					<p class="mt-2 text-meta text-muted-foreground">
+						Creating share links, permanently deleting files, purging trash, and deleting versions
+						are browser-only too, returning <strong>403</strong> to any token: a share link keeps
+						working after the token that made it is revoked, and the rest cannot be undone.
 					</p>
 				</div>
 			</section>
@@ -609,7 +614,7 @@
 								<td class="px-3 py-2 text-muted-foreground">No</td>
 								<td class="px-3 py-2 text-muted-foreground"
 									><code class="rounded bg-muted px-1 py-0.5 font-mono">"replace"</code> (overwrite,
-									versions old file) or
+									versions old file; full-scope tokens only, upload-scope tokens get <strong>403</strong>) or
 									<code class="rounded bg-muted px-1 py-0.5 font-mono">"keepBoth"</code>
 									(auto-rename). Omit to fail on conflict (409).</td
 								>
@@ -735,14 +740,16 @@
 					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: false</code> moves to
 					trash (if enabled).
 					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: true</code> deletes
-					immediately and cannot be undone.
+					immediately and cannot be undone; it needs a browser session, and tokens get
+					<strong>403</strong>.
 				</p>
 				<p class="mt-2 text-meta text-muted-foreground">
-					With trash disabled, a token request with
-					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: false</code> deletes
-					permanently. A browser session gets <strong>409</strong>
-					<code class="rounded bg-muted px-1 py-0.5 font-mono">trash is disabled</code> instead, so
-					the app can ask again before anything is lost.
+					With trash disabled,
+					<code class="rounded bg-muted px-1 py-0.5 font-mono">permanent: false</code> returns
+					<strong>409</strong>
+					<code class="rounded bg-muted px-1 py-0.5 font-mono">trash is disabled</code> and deletes
+					nothing, so a token can never delete permanently and the app can ask again before
+					anything is lost.
 				</p>
 
 				<h4 class="mt-4 text-sm font-semibold">Response</h4>
@@ -758,6 +765,8 @@
 				</div>
 				<p class="mt-3 text-sm leading-relaxed text-foreground-dim">
 					Create a public share link for a file or directory. Only one share per path is allowed.
+					Browser session only: tokens get <strong>403</strong>, because a share link keeps working
+					after the token that made it is revoked.
 				</p>
 
 				<h4 class="mt-4 text-sm font-semibold">Request Body</h4>
@@ -779,7 +788,6 @@
 					</table>
 				</div>
 
-				{@render codeBlock('curl -X POST "http://localhost:8080/api/shares/" \\\n  -H "Authorization: Bearer onyx_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"path": "/Documents/report.pdf", "isDir": false, "expiresIn": "168h"}\'', "shares-create-curl")}
 
 				<h4 class="mt-4 text-sm font-semibold">Response <span class="font-normal text-muted-foreground">(201)</span></h4>
 				{@render codeBlock('{\n  "id": 1,\n  "token": "full-64-char-share-token",\n  "tokenLast8": "abc12345",\n  "filePath": "/Documents/report.pdf",\n  "isDir": false,\n  "createdAt": 1714300000,\n  "expiresAt": 1714904000,\n  "hasPassword": false,\n  "downloadCount": 0\n}', "shares-create-resp")}
@@ -855,14 +863,14 @@
 				<h4 class="mt-5 text-sm font-semibold">Permanently Delete Item</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">DELETE /api/trash/&#123;id&#125;</code>: Permanently removes a
-					single trashed item.
+					single trashed item. Browser session only; tokens get <strong>403</strong>.
 				</p>
 				{@render codeBlock('{ "status": "deleted" }', "trash-purge-resp")}
 
 				<h4 class="mt-5 text-sm font-semibold">Empty Trash</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">DELETE /api/trash/</code>: Permanently removes all trashed
-					items.
+					items. Browser session only; tokens get <strong>403</strong>.
 				</p>
 				{@render codeBlock('{ "status": "emptied" }', "trash-empty-resp")}
 			</section>
@@ -889,7 +897,7 @@
 				<h4 class="mt-5 text-sm font-semibold">Delete Version</h4>
 				<p class="mt-1 text-meta text-muted-foreground">
 					<code class="font-mono">DELETE /api/versions/&#123;id&#125;</code>: Permanently deletes
-					a specific version.
+					a specific version. Browser session only; tokens get <strong>403</strong>.
 				</p>
 				{@render codeBlock('{ "status": "deleted" }', "version-delete-resp")}
 			</section>

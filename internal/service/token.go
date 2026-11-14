@@ -178,6 +178,7 @@ func (s *TokenService) StartCleanup(interval time.Duration) {
 // allowed for a bearer-authenticated request. Admin-only endpoints
 // (/api/tokens, /api/auth, /api/settings, /api/changes) are blocked for all
 // bearer tokens regardless of scope; they require a real browser session.
+// Permanent file deletes and upload replaces are refused in their handlers, which see the body.
 func CheckScope(scope, method, path string) bool {
 	// Admin endpoints are never accessible via bearer token, even with full scope.
 	// A leaked token must not be able to create more tokens, change the password,
@@ -186,6 +187,11 @@ func CheckScope(scope, method, path string) bool {
 		strings.HasPrefix(path, "/api/auth") ||
 		strings.HasPrefix(path, "/api/settings") ||
 		strings.HasPrefix(path, "/api/changes") {
+		return false
+	}
+	// Share links outlive a revoked token, and purging trash or versions can't be undone
+	if (method == http.MethodPost && (path == "/api/shares" || path == "/api/shares/")) ||
+		(method == http.MethodDelete && (strings.HasPrefix(path, "/api/trash") || strings.HasPrefix(path, "/api/versions"))) {
 		return false
 	}
 

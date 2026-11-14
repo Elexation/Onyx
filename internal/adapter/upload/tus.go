@@ -26,7 +26,15 @@ var (
 	errPathBlocked    = tusd.NewError("ERR_PATH_BLOCKED", "a file with this name already exists in the path", http.StatusUnprocessableEntity)
 	errInvalidPath    = tusd.NewError("ERR_INVALID_UPLOAD_PATH", "invalid upload path", http.StatusBadRequest)
 	errFinalizeFailed = tusd.NewError("ERR_FINALIZE_FAILED", "could not finalize upload", http.StatusInternalServerError)
+	// 403, not 409 or 5xx, so tus clients don't retry it
+	errReplaceNotAllowed = tusd.NewError("ERR_REPLACE_NOT_ALLOWED", "upload-scope tokens cannot replace existing files", http.StatusForbidden)
 )
+
+// Upload tokens add files but never overwrite one. Checked at create and at finalize, since another token may finish the upload.
+func replaceForbidden(hook tusd.HookEvent) bool {
+	return hook.Upload.MetaData["conflictStrategy"] == "replace" &&
+		hook.Context != nil && domain.TokenScopeFromContext(hook.Context) == domain.ScopeUpload
+}
 
 // TusHandler wraps tusd to provide resumable file uploads.
 type TusHandler struct {
@@ -76,6 +84,12 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 			}
 
 			tusFile := filepath.Join(storeDir, uploadID)
+			if replaceForbidden(hook) {
+				slog.Warn("upload token tried to replace a file", "id", uploadID, "file", filename)
+				os.Remove(tusFile)
+				os.Remove(tusFile + ".info")
+				return tusd.HTTPResponse{}, errReplaceNotAllowed
+			}
 			finalPath, ferr := files.CompleteUpload(targetDir, relativePath, strategy, tusFile)
 
 			// On success, cleanup of the tus temp file is left to the client's
@@ -129,6 +143,9 @@ func NewTusHandler(storeDir string, basePath string, files *service.FileService,
 			// is refused at create, before any bytes transfer.
 			if _, _, err := service.CleanUploadPaths(meta["targetDir"], relativePath); err != nil {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, errInvalidPath
+			}
+			if replaceForbidden(hook) {
+				return tusd.HTTPResponse{}, tusd.FileInfoChanges{}, errReplaceNotAllowed
 			}
 			if hook.Upload.SizeIsDeferred {
 				return tusd.HTTPResponse{}, tusd.FileInfoChanges{},

@@ -490,9 +490,22 @@ func (s *FileService) TrashEnabled() bool {
 	return err != nil || domain.GetBool(enabled)
 }
 
+// ErrTrashDisabled: DeleteToTrash was asked to delete while trash is off
+var ErrTrashDisabled = errors.New("trash is disabled")
+
 // Delete removes files and directories. When trash is enabled and permanent
 // is false, files are moved to the trash directory instead of being deleted.
 func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult {
+	results, _ := s.delete(paths, permanent, false)
+	return results
+}
+
+// DeleteToTrash moves paths to trash and never falls back to deleting them. ErrTrashDisabled if trash is off.
+func (s *FileService) DeleteToTrash(paths []string) ([]storage.OpResult, error) {
+	return s.delete(paths, false, true)
+}
+
+func (s *FileService) delete(paths []string, permanent, trashOnly bool) ([]storage.OpResult, error) {
 	var results []storage.OpResult
 	wentToTrash := false
 	if !permanent && s.trash != nil && s.settings != nil {
@@ -512,6 +525,9 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 			}
 			wentToTrash = true
 		}
+	}
+	if trashOnly && !wentToTrash {
+		return nil, ErrTrashDisabled
 	}
 	// Pre-stat for share cascade: only needed when bypassing trash, since
 	// MoveToTrash already cascades. Source is gone by the time we cascade,
@@ -552,7 +568,7 @@ func (s *FileService) Delete(paths []string, permanent bool) []storage.OpResult 
 			})
 		}
 	}
-	return results
+	return results, nil
 }
 
 // CheckConflicts returns metadata for the subset of paths that already exist in targetDir.

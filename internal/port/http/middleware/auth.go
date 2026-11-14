@@ -70,6 +70,7 @@ func Auth(sessions SessionValidator, tokens TokenValidator) func(http.Handler) h
 				synthetic := &domain.Session{CSRFToken: bearerCSRFSentinel}
 				ctx := ContextWithSession(r.Context(), synthetic)
 				ctx = context.WithValue(ctx, authMethodKey, AuthMethodBearer)
+				ctx = domain.WithTokenScope(ctx, tok.Scope)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

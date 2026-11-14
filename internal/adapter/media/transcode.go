@@ -119,6 +119,7 @@ func (f *FFmpeg) BuildHLSCommand(ctx context.Context, opts HLSOptions) (*exec.Cm
 		args = append(args, "-ss", strconv.Itoa(opts.StartSegment*HLSSegmentSeconds))
 	}
 
+	args = append(args, localInputArgs...)
 	args = append(args, "-i", opts.SrcPath)
 
 	// Filter complex: split + per-variant scale. For VAAPI/QSV the

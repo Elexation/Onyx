@@ -119,6 +119,10 @@ func (ps *ProbeService) Probe(ctx context.Context, relPath string) (*media.Probe
 	if info.IsDir {
 		return nil, fmt.Errorf("not a file")
 	}
+	// Probe only what the UI plays as video; a shared .m3u8 could pull in files outside the share
+	if !strings.HasPrefix(info.MIMEType, "video/") {
+		return nil, ErrNoVideoStream
+	}
 
 	absPath, err := ps.resolveSafePath(relPath)
 	if err != nil {

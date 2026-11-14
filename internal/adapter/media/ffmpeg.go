@@ -41,6 +41,9 @@ func (b *boundedBuffer) Bytes() []byte    { return b.buf.Bytes() }
 func (b *boundedBuffer) String() string   { return b.buf.String() }
 func (b *boundedBuffer) Overflowed() bool { return b.over }
 
+// Keep input to local files in real video containers, so concat or DASH manifests can't pull in other files
+var localInputArgs = []string{"-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,avi,ogg,mpeg,mpegvideo"}
+
 // FFmpeg wraps the ffmpeg and ffprobe binaries. If either is missing at
 // construction time, Available returns false and ExtractPoster/Probe fail.
 type FFmpeg struct {
@@ -96,13 +99,8 @@ func (f *FFmpeg) ProbeVideo(ctx context.Context, srcPath string) (*ProbeInfo, er
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, f.ffprobePath,
-		"-v", "quiet",
-		"-print_format", "json",
-		"-show_streams",
-		"-show_format",
-		srcPath,
-	)
+	args := append([]string{"-v", "quiet", "-print_format", "json", "-show_streams", "-show_format"}, localInputArgs...)
+	cmd := exec.CommandContext(ctx, f.ffprobePath, append(args, srcPath)...)
 	out := &boundedBuffer{max: 4 * 1024 * 1024}
 	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
@@ -197,12 +195,8 @@ func (f *FFmpeg) Probe(ctx context.Context, srcPath string) (float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, f.ffprobePath,
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "csv=p=0",
-		srcPath,
-	)
+	args := append([]string{"-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0"}, localInputArgs...)
+	cmd := exec.CommandContext(ctx, f.ffprobePath, append(args, srcPath)...)
 	out := &boundedBuffer{max: 64 * 1024}
 	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
@@ -237,16 +231,9 @@ func (f *FFmpeg) ExtractPoster(ctx context.Context, srcPath, dstPath string, wid
 	ts := strconv.FormatFloat(timestamp, 'f', 2, 64)
 	scale := fmt.Sprintf("scale=%d:-2", width)
 
-	cmd := exec.CommandContext(ctx, f.ffmpegPath,
-		"-hide_banner", "-loglevel", "error", "-nostdin",
-		"-ss", ts,
-		"-i", srcPath,
-		"-frames:v", "1",
-		"-vf", scale,
-		"-q:v", "3",
-		"-y",
-		dstPath,
-	)
+	args := append([]string{"-hide_banner", "-loglevel", "error", "-nostdin", "-ss", ts}, localInputArgs...)
+	args = append(args, "-i", srcPath, "-frames:v", "1", "-vf", scale, "-q:v", "3", "-y", dstPath)
+	cmd := exec.CommandContext(ctx, f.ffmpegPath, args...)
 	out := &boundedBuffer{max: 8 * 1024}
 	cmd.Stdout = out
 	cmd.Stderr = out

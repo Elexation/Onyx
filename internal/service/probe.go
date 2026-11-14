@@ -148,24 +148,34 @@ func (ps *ProbeService) probeSingleFlight(ctx context.Context, absPath string, m
 		e := existing.(*probeInflight)
 		select {
 		case <-e.done:
+			// Leader's own request was cancelled? Probe again for this one.
+			if (errors.Is(e.err, context.Canceled) || errors.Is(e.err, context.DeadlineExceeded)) && ctx.Err() == nil {
+				return ps.probeSingleFlight(ctx, absPath, mtime)
+			}
 			return e.info, e.err
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
+	// Unregister before waking followers, so a retrying follower can't find this finished entry
 	defer func() {
+		ps.inflight.CompareAndDelete(absPath, entry)
 		close(entry.done)
-		ps.inflight.Delete(absPath)
 	}()
 
 	select {
 	case ps.sema <- struct{}{}:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		entry.err = ctx.Err()
+		return nil, entry.err
 	}
 	defer func() { <-ps.sema }()
 
 	entry.info, entry.err = ps.ffmpeg.ProbeVideo(ctx, absPath)
+	if entry.err != nil && ctx.Err() != nil {
+		// Killed because this request was cancelled, not because the file is bad
+		entry.err = ctx.Err()
+	}
 	if entry.err == nil {
 		ps.cache.Store(absPath, &probeEntry{
 			info:      entry.info,

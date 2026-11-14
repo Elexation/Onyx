@@ -51,3 +51,14 @@ func TestEnsureOutsideData_TLSKey(t *testing.T) {
 		t.Fatalf("key inside data: got %v", err)
 	}
 }
+
+func TestEnsureNoDirOverlap_FilesystemRoot(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config")
+	root := filepath.VolumeName(cfg) + string(filepath.Separator)
+	if err := ensureNoDirOverlap(root, cfg); err == nil {
+		t.Fatalf("data dir %q accepted config %q inside it", root, cfg)
+	}
+	if err := ensureOutsideData(root, filepath.Join(cfg, "tls.key")); err == nil {
+		t.Fatalf("data dir %q accepted a TLS key inside it", root)
+	}
+}

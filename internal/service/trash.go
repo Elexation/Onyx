@@ -3,7 +3,6 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,10 +10,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Elexation/onyx/internal/adapter/storage"
 	"github.com/Elexation/onyx/internal/domain"
 )
 
@@ -211,7 +210,7 @@ func (s *TrashService) moveOne(filePath string) MoveToTrashResult {
 	dstAbs := filepath.Join(s.trashDir, trashName)
 
 	if err := os.Rename(resolvedSrc, dstAbs); err != nil {
-		if !isCrossDevice(err) {
+		if !storage.IsCrossDevice(err) {
 			slog.Warn("trash: move failed", "path", filePath, "error", err)
 			return MoveToTrashResult{Path: filePath, Error: "move to trash failed"}
 		}
@@ -397,7 +396,7 @@ func (s *TrashService) Restore(id, strategy string) (string, error) {
 	}
 	srcAbs := filepath.Join(s.trashDir, item.TrashPath)
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
-		if !isCrossDevice(err) {
+		if !storage.IsCrossDevice(err) {
 			return "", fmt.Errorf("restore file: %w", err)
 		}
 		if err := copyItem(srcAbs, dstAbs); err != nil {
@@ -612,35 +611,24 @@ func generateID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func isCrossDevice(err error) bool {
-	var linkErr *os.LinkError
-	if errors.As(err, &linkErr) {
-		return errors.Is(linkErr.Err, syscall.EXDEV)
-	}
-	return false
-}
-
-// copyItem is copyTree, except a top-level symlink is recreated, never followed
+// copyItem copies src to dst. Symlinks are recreated, never followed, so no outside file is copied in.
 func copyItem(src, dst string) error {
-	if info, err := os.Lstat(src); err == nil && info.Mode()&os.ModeSymlink != 0 {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
 		target, err := os.Readlink(src)
 		if err != nil {
 			return err
 		}
 		return os.Symlink(target, dst)
-	}
-	return copyTree(src, dst)
-}
-
-func copyTree(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
+	case info.IsDir():
 		return copyDir(src, dst)
+	default:
+		return copyFile(src, dst)
 	}
-	return copyFile(src, dst)
 }
 
 func copyFile(src, dst string) error {
@@ -671,16 +659,8 @@ func copyDir(src, dst string) error {
 		return err
 	}
 	for _, entry := range entries {
-		srcChild := filepath.Join(src, entry.Name())
-		dstChild := filepath.Join(dst, entry.Name())
-		if entry.IsDir() {
-			if err := copyDir(srcChild, dstChild); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFile(srcChild, dstChild); err != nil {
-				return err
-			}
+		if err := copyItem(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+			return err
 		}
 	}
 	return nil

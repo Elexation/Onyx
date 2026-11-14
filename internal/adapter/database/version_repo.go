@@ -181,6 +181,20 @@ func (r *VersionRepo) RenameDir(oldDir, newDir string) error {
 	return nil
 }
 
+// ListUnderDir returns the versions of every file inside dir, at any depth
+func (r *VersionRepo) ListUnderDir(dir string) ([]domain.FileVersion, error) {
+	lo, hi := childRange(dir)
+	rows, err := r.db.Query(
+		"SELECT id, file_path, version_path, created_at, size FROM file_versions WHERE file_path >= ? AND file_path < ?",
+		lo, hi,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list versions under dir: %w", err)
+	}
+	defer rows.Close()
+	return scanVersions(rows)
+}
+
 // versionPathFor returns the version-store-relative prefix for a file path.
 // e.g. "/Documents/report.docx" -> "Documents/report.docx"
 func versionPathFor(filePath string) string {

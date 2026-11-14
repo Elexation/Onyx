@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 )
@@ -84,7 +85,7 @@ func (s *LocalStorage) moveLocked(p, dst string) OpResult {
 	}
 
 	err := s.root.Rename(p, dst)
-	if err != nil && isCrossDevice(err) {
+	if err != nil && IsCrossDevice(err) {
 		// Cross-device: copy then delete original
 		err = s.copyOne(p, dst)
 		if err == nil {
@@ -539,11 +540,17 @@ func (s *LocalStorage) mkdirAll(dirPath string) error {
 	return nil
 }
 
-// isCrossDevice checks if an error is an EXDEV (cross-device link) error.
-func isCrossDevice(err error) bool {
+// Windows ERROR_NOT_SAME_DEVICE from a rename across drives. EEXIST on Linux, so Windows only.
+const errorNotSameDevice = syscall.Errno(17)
+
+// IsCrossDevice reports whether a rename or link failed because the two paths are on different devices
+func IsCrossDevice(err error) bool {
 	var linkErr *os.LinkError
-	if errors.As(err, &linkErr) {
-		return errors.Is(linkErr.Err, syscall.EXDEV)
+	if !errors.As(err, &linkErr) {
+		return false
 	}
-	return false
+	if errors.Is(linkErr.Err, syscall.EXDEV) {
+		return true
+	}
+	return runtime.GOOS == "windows" && errors.Is(linkErr.Err, errorNotSameDevice)
 }

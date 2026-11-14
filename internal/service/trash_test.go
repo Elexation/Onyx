@@ -456,3 +456,53 @@ func TestTrashBlobName_FitsNameMaxAndDropsBackslash(t *testing.T) {
 		t.Errorf("truncation split a rune: %q", name)
 	}
 }
+
+// Cross-device trash copies must keep nested links as links, never copy what they point at
+func TestCopyItemRecreatesNestedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(root, "outside")
+	sub := filepath.Join(root, "src", "sub")
+	for _, d := range []string{outside, sub} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "plain.txt"), []byte("plain"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		"dirlink":  outside,
+		"filelink": filepath.Join(outside, "secret.txt"),
+		"dangling": filepath.Join(root, "missing"),
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(sub, name)); err != nil {
+			t.Skipf("symlinks not available here: %v", err)
+		}
+	}
+
+	dst := filepath.Join(root, "dst")
+	if err := copyItem(filepath.Join(root, "src"), dst); err != nil {
+		t.Fatalf("copyItem: %v", err)
+	}
+	for name, target := range links {
+		p := filepath.Join(dst, "sub", name)
+		info, err := os.Lstat(p)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("%s copied as %v, want a symlink", name, info.Mode())
+			continue
+		}
+		if got, _ := os.Readlink(p); got != target {
+			t.Errorf("%s points at %q, want %q", name, got, target)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dst, "sub", "plain.txt")); err != nil || string(b) != "plain" {
+		t.Errorf("plain.txt: %q, %v", b, err)
+	}
+}

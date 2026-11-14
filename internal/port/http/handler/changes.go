@@ -78,7 +78,8 @@ func (h *ChangesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
-	if _, err := fmt.Fprintf(w, "retry: %d\n\n", sseRetryMs); err != nil {
+	// Send the cursor up front so a reconnect before the first event still resumes here
+	if _, err := fmt.Fprintf(w, "retry: %d\nid: %d\n\n", sseRetryMs, cursor); err != nil {
 		return
 	}
 	flusher.Flush()

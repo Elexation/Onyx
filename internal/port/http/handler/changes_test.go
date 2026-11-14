@@ -67,9 +67,11 @@ func readSSEMessages(t *testing.T, resp *http.Response, count int) []sseMsg {
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
-				if current.Data != "" {
-					msgs = append(msgs, current)
-					current = sseMsg{}
+				// Fields belong to their own block, so an id-only block never lends its id to the next one
+				msg := current
+				current = sseMsg{}
+				if msg.Data != "" {
+					msgs = append(msgs, msg)
 					if len(msgs) >= count {
 						ch <- result{msgs}
 						return
@@ -308,4 +310,30 @@ func TestChanges_Bearer_403(t *testing.T) {
 	if body["error"] != "not available via bearer token" {
 		t.Errorf("error message: got %q", body["error"])
 	}
+}
+
+// EventSource sends Last-Event-ID only after it has seen an id, so the opening frame must carry one
+func TestChanges_SSE_Bootstrap_SendsCursorID(t *testing.T) {
+	h, es, _ := newChangesHandlerForTest(t)
+	es.Record("old", struct{}{})
+	latest, _ := es.LatestID()
+
+	srv := httptest.NewServer(http.HandlerFunc(h.Get))
+	defer srv.Close()
+
+	resp := sseGet(t, srv, "", 2*time.Second)
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	var frame []string
+	for scanner.Scan() && scanner.Text() != "" {
+		frame = append(frame, scanner.Text())
+	}
+	want := "id: " + strconv.FormatInt(latest, 10)
+	for _, line := range frame {
+		if line == want {
+			return
+		}
+	}
+	t.Fatalf("opening frame %q has no %q", frame, want)
 }

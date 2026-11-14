@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Elexation/onyx/internal/adapter/media"
 	"github.com/Elexation/onyx/internal/adapter/storage"
@@ -52,5 +53,62 @@ func TestProbeRejectsNonVideoBeforeFFprobe(t *testing.T) {
 		if err == nil || errors.Is(err, ErrNoVideoStream) {
 			t.Errorf("%s: err = %v, want it to reach ffprobe", name, err)
 		}
+	}
+}
+
+// A leader whose request is cancelled while queued must not hand its followers (nil, nil)
+func TestProbeSingleFlightLeaderCancelled(t *testing.T) {
+	dir := t.TempDir()
+	ls, err := storage.NewLocalStorage(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ls.Close()
+	ps, err := NewProbeService(ls, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps.ffmpeg = &media.FFmpeg{}
+
+	// Every probe slot busy, so the leader queues
+	for i := 0; i < cap(ps.sema); i++ {
+		ps.sema <- struct{}{}
+	}
+	abs := filepath.Join(dir, "clip.mp4")
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderDone := make(chan struct{})
+	go func() {
+		ps.probeSingleFlight(leaderCtx, abs, 1)
+		close(leaderDone)
+	}()
+	for {
+		if _, ok := ps.inflight.Load(abs); ok {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	type result struct {
+		info *media.ProbeInfo
+		err  error
+	}
+	followerCtx, cancelFollower := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancelFollower()
+	got := make(chan result, 1)
+	go func() {
+		info, err := ps.probeSingleFlight(followerCtx, abs, 1)
+		got <- result{info, err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancelLeader()
+	<-leaderDone
+
+	r := <-got
+	if r.info == nil && r.err == nil {
+		t.Fatal("follower got (nil, nil) after the leader was cancelled")
+	}
+	if !errors.Is(r.err, context.DeadlineExceeded) {
+		t.Fatalf("follower err = %v, want its own deadline after retrying", r.err)
 	}
 }

@@ -121,14 +121,10 @@ func main() {
 	fileService.SetVersioning(versionService)
 	trashService.SetVersioning(versionService)
 
-	retentionInterval := 24 * time.Hour
-	if v := os.Getenv("ONYX_VERSION_RETENTION_INTERVAL"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			slog.Error("invalid ONYX_VERSION_RETENTION_INTERVAL", "value", v, "error", err)
-			os.Exit(1)
-		}
-		retentionInterval = d
+	retentionInterval, err := parseRetentionInterval(os.Getenv("ONYX_VERSION_RETENTION_INTERVAL"))
+	if err != nil {
+		slog.Error("invalid ONYX_VERSION_RETENTION_INTERVAL", "error", err)
+		os.Exit(1)
 	}
 	versionService.StartRetention(retentionInterval)
 
@@ -255,12 +251,9 @@ func main() {
 		if !tlsEnabled {
 			slog.Warn("ONYX_HTTPS_REDIRECT=true has no effect without HTTPS enabled (ONYX_HTTPS=true), skipping")
 			httpsRedirect = false
-		} else {
-			n, err := strconv.Atoi(httpsRedirectPort)
-			if err != nil || n < 1 || n > 65535 {
-				slog.Error("ONYX_HTTPS_REDIRECT_PORT must be a valid port (1-65535)", "value", httpsRedirectPort)
-				os.Exit(1)
-			}
+		} else if err := validateRedirectPort(httpsRedirectPort, port); err != nil {
+			slog.Error("invalid ONYX_HTTPS_REDIRECT_PORT", "value", httpsRedirectPort, "error", err)
+			os.Exit(1)
 		}
 	}
 
@@ -421,9 +414,39 @@ func resolvePath(p string) (string, error) {
 }
 
 func overlaps(a, b string) bool {
+	// Drop the separator a root ("/", "d:\") keeps, so its children still match
+	sep := string(filepath.Separator)
+	a, b = strings.TrimSuffix(a, sep), strings.TrimSuffix(b, sep)
 	if a == b {
 		return true
 	}
-	sep := string(filepath.Separator)
 	return strings.HasPrefix(a, b+sep) || strings.HasPrefix(b, a+sep)
+}
+
+// parseRetentionInterval reads the retention interval. 24h if unset.
+func parseRetentionInterval(v string) (time.Duration, error) {
+	if v == "" {
+		return 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, err
+	}
+	// time.NewTicker panics on zero or negative
+	if d <= 0 {
+		return 0, fmt.Errorf("%q must be a positive duration", v)
+	}
+	return d, nil
+}
+
+// validateRedirectPort checks the plain-HTTP redirect port. Error if invalid or equal to the listen port.
+func validateRedirectPort(redirectPort, listenPort string) error {
+	n, err := strconv.Atoi(redirectPort)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("%q must be a valid port (1-65535)", redirectPort)
+	}
+	if l, err := strconv.Atoi(listenPort); err == nil && l == n {
+		return fmt.Errorf("port %d is already the main listen port", n)
+	}
+	return nil
 }

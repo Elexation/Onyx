@@ -160,6 +160,22 @@ func (s *FileService) cascadeShareDelete(p string, isDir bool) {
 	}
 }
 
+// cascadeVersionDelete drops a permanently deleted path's versions so a restore can't revive it. Best-effort.
+func (s *FileService) cascadeVersionDelete(p string, isDir bool, cutoff int64) {
+	if s.versions == nil {
+		return
+	}
+	var err error
+	if isDir {
+		err = s.versions.DeleteDirVersionsBefore(p, cutoff)
+	} else {
+		err = s.versions.DeleteVersionsBefore(p, cutoff)
+	}
+	if err != nil {
+		slog.Warn("file: cascade version delete failed", "path", p, "isDir", isDir, "error", err)
+	}
+}
+
 // cascadeShareRewrite updates shares from oldPath to newPath on rename/move.
 // Best-effort: failures are logged but do not propagate (the underlying
 // rename already succeeded; a stale share row is preferable to a transaction
@@ -529,11 +545,11 @@ func (s *FileService) delete(paths []string, permanent, trashOnly bool) ([]stora
 	if trashOnly && !wentToTrash {
 		return nil, ErrTrashDisabled
 	}
-	// Pre-stat for share cascade: only needed when bypassing trash, since
+	// Pre-stat for the share and version cascades: only needed when bypassing trash, since
 	// MoveToTrash already cascades. Source is gone by the time we cascade,
 	// so isDir must be captured before the storage delete.
 	var preStatIsDir map[string]bool
-	if !wentToTrash && s.shares != nil {
+	if !wentToTrash && (s.shares != nil || s.versions != nil) {
 		preStatIsDir = make(map[string]bool, len(paths))
 		for _, p := range paths {
 			if pi, err := s.storage.Stat(p); err == nil {
@@ -541,6 +557,8 @@ func (s *FileService) delete(paths []string, permanent, trashOnly bool) ([]stora
 			}
 		}
 	}
+	// Versions made after this belong to whatever is created at the path next
+	cutoff := time.Now().Unix()
 	if results == nil {
 		results = s.storage.Delete(paths)
 	}
@@ -553,6 +571,7 @@ func (s *FileService) delete(paths []string, permanent, trashOnly bool) ([]stora
 		deleted = append(deleted, full)
 		if !wentToTrash {
 			s.cascadeShareDelete(full, preStatIsDir[paths[i]])
+			s.cascadeVersionDelete(full, preStatIsDir[paths[i]], cutoff)
 		}
 	}
 	if s.indexer != nil && len(deleted) > 0 {

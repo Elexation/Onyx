@@ -30,6 +30,7 @@ type VersionRepo interface {
 	ListOldestFirst() ([]domain.FileVersion, error)
 	RenameFile(oldPath, newPath string) error
 	RenameDir(oldDir, newDir string) error
+	ListUnderDir(dir string) ([]domain.FileVersion, error)
 }
 
 type VersionService struct {
@@ -180,11 +181,24 @@ func (s *VersionService) RestoreVersion(id int64) error {
 
 // DeleteVersionsBefore drops filePath's versions up to cutoff, so a newer file there keeps its own
 func (s *VersionService) DeleteVersionsBefore(filePath string, cutoff int64) error {
-	filePath = ensureLeadingSlash(filePath)
-	versions, err := s.repo.ListByPath(filePath)
+	versions, err := s.repo.ListByPath(ensureLeadingSlash(filePath))
 	if err != nil {
 		return fmt.Errorf("list versions for delete: %w", err)
 	}
+	return s.deleteUpTo(versions, cutoff)
+}
+
+// DeleteDirVersionsBefore drops versions of every file inside dir, at any depth, up to cutoff
+func (s *VersionService) DeleteDirVersionsBefore(dir string, cutoff int64) error {
+	versions, err := s.repo.ListUnderDir(ensureLeadingSlash(dir))
+	if err != nil {
+		return fmt.Errorf("list dir versions for delete: %w", err)
+	}
+	return s.deleteUpTo(versions, cutoff)
+}
+
+// deleteUpTo deletes the versions created at or before cutoff. First error, but keeps going.
+func (s *VersionService) deleteUpTo(versions []domain.FileVersion, cutoff int64) error {
 	var firstErr error
 	for _, v := range versions {
 		if v.CreatedAt > cutoff {

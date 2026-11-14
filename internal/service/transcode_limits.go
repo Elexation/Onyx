@@ -37,6 +37,7 @@ type cacheVictim struct {
 	session *TranscodeSession // nil for a dir no session owns
 	rank    int
 	at      time.Time
+	owner   string // visitor key for a visitor's session
 }
 
 const (
@@ -68,7 +69,7 @@ func (ts *TranscodeService) enforceCacheLimit() {
 				victims = append(victims, cacheVictim{hash: hash, rank: rankOrphan, at: at})
 			}
 		case s.public:
-			victims = append(victims, cacheVictim{hash: hash, session: s, rank: rankPublic, at: s.lastUsed})
+			victims = append(victims, cacheVictim{hash: hash, session: s, rank: rankPublic, at: s.lastUsed, owner: s.owner})
 		case now.Sub(s.lastUsed) >= idleStopAfter:
 			victims = append(victims, cacheVictim{hash: hash, session: s, rank: rankAdminIdle, at: s.lastUsed})
 		}
@@ -80,6 +81,7 @@ func (ts *TranscodeService) enforceCacheLimit() {
 		}
 		return victims[i].at.Before(victims[j].at)
 	})
+	victims = fairPublicOrder(victims, sizes)
 
 	for _, v := range victims {
 		if total <= limit {
@@ -148,4 +150,67 @@ func dirAge(dir string) time.Time {
 		return info.ModTime()
 	}
 	return time.Time{}
+}
+
+// publicStartRefusedLocked reports whether a visitor's new run on s would be refused. Caller holds s.mu.
+func (ts *TranscodeService) publicStartRefusedLocked(s *TranscodeSession, key string) bool {
+	running := false
+	if s.runDone != nil {
+		select {
+		case <-s.runDone:
+		default:
+			running = true
+		}
+	}
+	// Stopping a visitor's run gives its slot back, and the count back too if it is this visitor's
+	freesPublic := running && s.runClient.Public
+	ts.mu.Lock()
+	runs := ts.clientRuns[key]
+	ts.mu.Unlock()
+	if freesPublic && s.runClient.Key == key {
+		runs--
+	}
+	if runs >= maxClientTranscodes {
+		return true
+	}
+	// Nothing to stop? Waiting for a slot then costs no one an encode.
+	if !running || freesPublic {
+		return false
+	}
+	return len(ts.publicSema) >= cap(ts.publicSema)
+}
+
+// fairPublicOrder reorders sorted victims so the visitor holding the most cache loses a session first
+func fairPublicOrder(victims []cacheVictim, sizes map[string]int64) []cacheVictim {
+	out := make([]cacheVictim, 0, len(victims))
+	var public []cacheVictim
+	held := make(map[string]int64)
+	for _, v := range victims {
+		switch v.rank {
+		case rankOrphan:
+			out = append(out, v)
+		case rankPublic:
+			public = append(public, v)
+			held[v.owner] += sizes[v.hash]
+		}
+	}
+	for len(public) > 0 {
+		// Ties keep the earlier entry, which is the older session
+		best := 0
+		for i := 1; i < len(public); i++ {
+			if held[public[i].owner] > held[public[best].owner] {
+				best = i
+			}
+		}
+		v := public[best]
+		out = append(out, v)
+		held[v.owner] -= sizes[v.hash]
+		public = append(public[:best], public[best+1:]...)
+	}
+	for _, v := range victims {
+		if v.rank == rankAdminIdle {
+			out = append(out, v)
+		}
+	}
+	return out
 }

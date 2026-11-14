@@ -19,23 +19,24 @@ const concurrencyMaxEntries = 10000
 // Map entries are deleted when the per-IP count returns to zero, so the
 // map only grows with currently-active IPs.
 type ConcurrencyLimiter struct {
-	mu           sync.Mutex
-	counts       map[string]int
-	max          int
-	trustedProxy bool
+	mu     sync.Mutex
+	counts map[string]int
+	max    int
+	key    func(*http.Request) string
 }
 
 func NewConcurrencyLimiter(trustedProxy bool, maxPerIP int) *ConcurrencyLimiter {
-	return &ConcurrencyLimiter{
-		counts:       make(map[string]int),
-		max:          maxPerIP,
-		trustedProxy: trustedProxy,
-	}
+	return NewConcurrencyLimiterBy(maxPerIP, func(r *http.Request) string { return ClientKey(r, trustedProxy) })
+}
+
+// NewConcurrencyLimiterBy caps in-flight requests per key. The key is logged, so it must never be a secret.
+func NewConcurrencyLimiterBy(limit int, key func(*http.Request) string) *ConcurrencyLimiter {
+	return &ConcurrencyLimiter{counts: make(map[string]int), max: limit, key: key}
 }
 
 func (l *ConcurrencyLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := ClientKey(r, l.trustedProxy)
+		ip := l.key(r)
 
 		l.mu.Lock()
 		if l.counts[ip] >= l.max {

@@ -201,16 +201,30 @@ func (s *ShareService) Validate(token string) (*domain.ShareLink, *string, error
 	return link, pwHash, nil
 }
 
-// VerifyPassword checks a share password under the per-share limit. ShareThrottledError while it is in force.
-func (s *ShareService) VerifyPassword(ctx context.Context, token string, link *domain.ShareLink, pwHash *string, password string) (bool, error) {
-	if err := s.guard.begin(token); err != nil {
-		return false, err
+// VerifyPassword checks a share password under the per-share limit. On success, returns the recipient cookie to set.
+func (s *ShareService) VerifyPassword(ctx context.Context, token, recipientCookie string, link *domain.ShareLink, pwHash *string, password string) (bool, string, error) {
+	// Signed with the share's password hash, so it dies when the password changes
+	deviceID := ""
+	if pwHash != nil {
+		deviceID = deviceIDFromToken(*pwHash, recipientCookie)
+	}
+	attempt, err := s.guard.begin(token, deviceID)
+	if err != nil {
+		return false, "", err
 	}
 	if !s.checkPassword(ctx, link, pwHash, password) {
-		return false, nil
+		return false, "", nil
 	}
-	s.guard.undo(token)
-	return true, nil
+	s.guard.succeed(attempt)
+	if deviceID != "" {
+		return true, recipientCookie, nil
+	}
+	cookie, err := newDeviceToken(*pwHash)
+	if err != nil {
+		slog.Warn("share verify: recipient cookie not issued", "error", err)
+		return true, "", nil
+	}
+	return true, cookie, nil
 }
 
 // checkPassword reports whether password matches the share's stored hash.

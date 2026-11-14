@@ -10,7 +10,8 @@ import (
 
 const (
 	maxAttemptEntries = 10000
-	lockoutAfter      = 5 // failures before the cooldown starts
+	lockoutAfter      = 5         // failures before the cooldown starts
+	attemptRetention  = time.Hour // cleanup forgets a key this long after its last failure
 )
 
 type loginAttempts struct {
@@ -18,8 +19,9 @@ type loginAttempts struct {
 	lastFail  time.Time
 }
 
-func (a *loginAttempts) lockedAt(now time.Time) bool {
-	return a.failCount >= lockoutAfter && now.Sub(a.lastFail) < cooldownFor(a.failCount)
+// heldAt reports whether a key has failed enough that forgetting it would hand back free attempts
+func (a *loginAttempts) heldAt(now time.Time) bool {
+	return a.failCount >= lockoutAfter && now.Sub(a.lastFail) < attemptRetention
 }
 
 type RateLimiter struct {
@@ -108,17 +110,17 @@ func (rl *RateLimiter) UndoAttempt(r *http.Request) {
 	}
 }
 
-// evictOldestLocked drops the oldest entry not in cooldown, so new keys can't wipe a live lockout. Caller holds rl.mu.
+// evictOldestLocked drops the oldest key with few failures, so a flood of new keys can't reset a guesser. Caller holds rl.mu.
 func (rl *RateLimiter) evictOldestLocked() {
 	now := time.Now()
 	var victim string
 	var victimFail time.Time
-	found, victimLocked := false, false
+	found, victimHeld := false, false
 	for key, a := range rl.attempts {
-		locked := a.lockedAt(now)
-		// All locked? Take the oldest anyway: refusing new keys would lock the admin out too.
-		if !found || (victimLocked && !locked) || (locked == victimLocked && a.lastFail.Before(victimFail)) {
-			victim, victimFail, victimLocked, found = key, a.lastFail, locked, true
+		held := a.heldAt(now)
+		// Only held keys left? Take the oldest anyway: refusing new keys would lock the admin out too.
+		if !found || (victimHeld && !held) || (held == victimHeld && a.lastFail.Before(victimFail)) {
+			victim, victimFail, victimHeld, found = key, a.lastFail, held, true
 		}
 	}
 	if found {
@@ -131,7 +133,7 @@ func (rl *RateLimiter) cleanup() {
 	defer ticker.Stop()
 	for range ticker.C {
 		rl.mu.Lock()
-		cutoff := time.Now().Add(-time.Hour)
+		cutoff := time.Now().Add(-attemptRetention)
 		for ip, a := range rl.attempts {
 			if a.lastFail.Before(cutoff) {
 				delete(rl.attempts, ip)

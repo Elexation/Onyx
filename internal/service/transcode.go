@@ -110,7 +110,8 @@ type TranscodeSession struct {
 	cancel       context.CancelFunc
 	runDone      chan struct{} // closed when the current ffmpeg goroutine exits
 	startedAt    time.Time
-	evicted      bool // set by dropSession; blocks software-fallback respawn
+	evicted      bool            // set by dropSession; blocks software-fallback respawn
+	runClient    TranscodeClient // who started the current run
 
 	// lastUsed is updated under TranscodeService.mu on every GetSegment call,
 	// never on a playlist fetch: polling master.m3u8 must not keep a session
@@ -118,6 +119,7 @@ type TranscodeSession struct {
 	lastUsed time.Time
 	// public is true while only share visitors have used the session, under TranscodeService.mu
 	public bool
+	owner  string // limit key of the visitor who started it, for the cache limit's fair share
 }
 
 // Hash returns the content hash used as the session's cache key.
@@ -406,6 +408,7 @@ func (ts *TranscodeService) initSession(ctx context.Context, hash, srcKey, absPa
 		renditions: rungs,
 		hasAudio:   info.HasAudio,
 		public:     client.Public,
+		owner:      client.Key,
 	}
 
 	session.mu.Lock()
@@ -669,6 +672,10 @@ func (ts *TranscodeService) Shutdown() {
 // concurrency-slot wait; the spawned ffmpeg runs under its own context
 // since it must outlive the caller's request.
 func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeSession, fromSegment int, client TranscodeClient) error {
+	// Refuse a visitor before stopping the current run, so a refused seek can't leave the session with no encode
+	if client.Public && ts.publicStartRefusedLocked(s, client.Key) {
+		return ErrTranscodeBusy
+	}
 	s.startedAt = time.Now()
 	if s.cancel != nil {
 		s.cancel()
@@ -734,6 +741,7 @@ func (ts *TranscodeService) startFFmpegLocked(ctx context.Context, s *TranscodeS
 	s.cancel = cancel
 	s.runDone = done
 	s.startSegment = fromSegment
+	s.runClient = client
 
 	go ts.waitFFmpeg(runCtx, cmd, s, done, fromSegment, stderrBuf, enc, client)
 

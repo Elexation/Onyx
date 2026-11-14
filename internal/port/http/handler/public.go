@@ -101,7 +101,11 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	// Collapse non-existent token and wrong password into a single 403 to
 	// avoid an existence oracle that lets brute force enumerate valid tokens.
 	// VerifyPassword burns argon2 work either way to keep timing uniform.
-	ok, err := h.shares.VerifyPassword(r.Context(), token, link, pwHash, req.Password)
+	var recipient string
+	if c, err := r.Cookie(shareRecipientCookie); err == nil {
+		recipient = c.Value
+	}
+	ok, recipient, err := h.shares.VerifyPassword(r.Context(), token, recipient, link, pwHash, req.Password)
 	if err != nil {
 		var throttled *service.ShareThrottledError
 		if errors.As(err, &throttled) {
@@ -135,6 +139,18 @@ func (h *PublicHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.requireHTTPS || middleware.IsHTTPS(r, h.trustedProxy),
 		MaxAge:   3600,
 	})
+	// Lets this browser past the share-wide wrong-password limit next time
+	if recipient != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     shareRecipientCookie,
+			Value:    recipient,
+			Path:     "/api/public/s/" + token,
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			Secure:   h.requireHTTPS || middleware.IsHTTPS(r, h.trustedProxy),
+			MaxAge:   int(service.DeviceCookieMaxAge.Seconds()),
+		})
+	}
 
 	h.writeShareInfo(w, link)
 }
@@ -552,6 +568,9 @@ func (h *PublicHandler) writeShareInfo(w http.ResponseWriter, link *domain.Share
 }
 
 const maxShareSessions = 10000
+
+// shareRecipientCookie marks a browser that entered a share's password before, for the share guard
+const shareRecipientCookie = "share_recipient"
 
 func (h *PublicHandler) createSession(token string) (string, error) {
 	b := make([]byte, 32)

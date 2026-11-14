@@ -81,23 +81,28 @@ func TestConcurrencyLimiterMasksIPv6To64(t *testing.T) {
 	}
 }
 
-// A full map must evict an entry that is not locked out before one that is
+// A full map must evict keys with few failures before a guesser's, even one between cooldowns
 func TestRateLimiterEvictionKeepsLiveLockout(t *testing.T) {
 	rl := &RateLimiter{attempts: map[string]*loginAttempts{}}
 	now := time.Now()
 	rl.attempts["locked"] = &loginAttempts{failCount: lockoutAfter, lastFail: now.Add(-time.Second)}
+	// Cooldown long over, but forgetting it would hand back free attempts
+	rl.attempts["between-cooldowns"] = &loginAttempts{failCount: lockoutAfter + 1, lastFail: now.Add(-2 * time.Minute)}
 	rl.attempts["idle-old"] = &loginAttempts{failCount: 1, lastFail: now.Add(-500 * time.Millisecond)}
 	rl.attempts["idle-new"] = &loginAttempts{failCount: 1, lastFail: now}
 
 	rl.evictOldestLocked()
-	if _, ok := rl.attempts["locked"]; !ok {
-		t.Fatal("evicted the locked-out entry while unlocked ones remained")
+	rl.evictOldestLocked()
+	for _, key := range []string{"locked", "between-cooldowns"} {
+		if _, ok := rl.attempts[key]; !ok {
+			t.Fatalf("evicted %q while keys with few failures remained", key)
+		}
 	}
-	if _, ok := rl.attempts["idle-old"]; ok {
-		t.Fatal("kept the oldest unlocked entry")
+	if len(rl.attempts) != 2 {
+		t.Fatalf("got %v, want both low-failure keys evicted", rl.attempts)
 	}
 
-	// Only locked entries left: the oldest goes, so a new client can still get a slot
+	// Only guessers' keys left: the oldest goes, so a new client can still get a slot
 	rl.attempts = map[string]*loginAttempts{
 		"a": {failCount: lockoutAfter, lastFail: now.Add(-2 * time.Second)},
 		"b": {failCount: lockoutAfter, lastFail: now.Add(-time.Second)},

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"path"
@@ -20,6 +22,18 @@ import (
 // perWriteTimeout drops a client that has read nothing for this long; downloads themselves are not capped
 const perWriteTimeout = 30 * time.Second
 
+// A public download averaging under 16 KB/s over a minute is dropped
+const (
+	minDownloadRate   = 16 << 10
+	minDownloadWindow = time.Minute
+)
+
+// shareLimitKey keys a limiter by share without the token itself, which is a secret and gets logged
+func shareLimitKey(r *http.Request) string {
+	sum := sha256.Sum256([]byte(chi.URLParam(r, "token")))
+	return "share:" + hex.EncodeToString(sum[:8])
+}
+
 func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, events *service.EventStore, trustedProxy, requireHTTPS, activeTLS bool, activeListenPort string, envOverrides map[string]string) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
@@ -32,8 +46,11 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	// Each download holds a file, a goroutine and, for zips, a compressor until the client finishes
 	downloadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
 	publicDLCL := middleware.NewConcurrencyLimiter(trustedProxy, 4)
+	// Per share, so one leaked link can only fill a quarter of the public pool
+	shareDLCL := middleware.NewConcurrencyLimiterBy(8, shareLimitKey)
 	// Public-only, so share visitors can never take the admin's download slots
 	publicDLGlobal := middleware.NewGlobalLimiter(32)
+	slowDL := middleware.MinThroughput(minDownloadRate, minDownloadWindow)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -146,12 +163,13 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 		r.Use(streamRL.Middleware)
 		r.Get("/api/public/s/{token}", publicHandler.Info)
 		r.Group(func(r chi.Router) {
-			r.Use(publicDLCL.Middleware, publicDLGlobal.Middleware)
-			r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
+			r.Use(publicDLCL.Middleware, shareDLCL.Middleware, publicDLGlobal.Middleware)
+			// No speed floor on raw: a media element reads at playback speed, which can sit under it
+			r.With(slowDL).Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
 			r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
 			r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
-			r.Get("/api/public/s/{token}/dl", publicHandler.Download)
-			r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
+			r.With(slowDL).Get("/api/public/s/{token}/dl", publicHandler.Download)
+			r.With(slowDL).Get("/api/public/s/{token}/dl/*", publicHandler.Download)
 		})
 		r.Get("/api/public/s/{token}/stream/info", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/info/*", publicHandler.StreamInfo)

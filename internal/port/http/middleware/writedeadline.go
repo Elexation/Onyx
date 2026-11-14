@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,11 +23,11 @@ type deadlineWriter struct {
 	http.ResponseWriter
 	rc      *http.ResponseController
 	d       time.Duration
-	managed bool
+	managed atomic.Bool // set from other goroutines too, by MinThroughput
 }
 
 func (dw *deadlineWriter) extend() {
-	if !dw.managed {
+	if !dw.managed.Load() {
 		_ = dw.rc.SetWriteDeadline(time.Now().Add(dw.d))
 	}
 }
@@ -43,7 +44,7 @@ func (dw *deadlineWriter) Flush() {
 
 // SetWriteDeadline hands deadlines to a handler that sets its own, like the SSE feed
 func (dw *deadlineWriter) SetWriteDeadline(t time.Time) error {
-	dw.managed = true
+	dw.managed.Store(true)
 	return dw.rc.SetWriteDeadline(t)
 }
 

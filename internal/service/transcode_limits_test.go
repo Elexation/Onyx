@@ -163,3 +163,77 @@ func TestEnforceCacheLimitOff(t *testing.T) {
 		t.Fatalf("limit 0 still deleted cache: %v", err)
 	}
 }
+
+// A visitor refused a slot must not have stopped the encode it wanted to replace
+func TestRefusedVisitorSeekKeepsRunningEncode(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(ts *TranscodeService)
+		owner TranscodeClient
+	}{
+		{"public slots full, admin's encode", func(ts *TranscodeService) { ts.publicSema <- struct{}{} }, TranscodeClient{}},
+		{"visitor at its limit, another visitor's encode", func(ts *TranscodeService) { ts.clientRuns["visitor"] = maxClientTranscodes }, TranscodeClient{Public: true, Key: "other"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ts := newLimitTestService(t, 2)
+			c.setup(ts)
+			stopped := false
+			done := make(chan struct{})
+			s := &TranscodeSession{hash: "h", runDone: done, runClient: c.owner, cancel: func() { stopped = true; close(done) }}
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			s.mu.Lock()
+			err := ts.startFFmpegLocked(ctx, s, 5, TranscodeClient{Public: true, Key: "visitor"})
+			s.mu.Unlock()
+			if !errors.Is(err, ErrTranscodeBusy) || stopped {
+				t.Fatalf("got %v, encode stopped=%v; want ErrTranscodeBusy with the encode left running", err, stopped)
+			}
+		})
+	}
+}
+
+// Replacing its own encode gives the visitor its slot back, so that seek goes ahead
+func TestVisitorSeekReplacingOwnEncodeAllowed(t *testing.T) {
+	ts := newLimitTestService(t, 2)
+	ts.clientRuns["visitor"] = maxClientTranscodes
+	ts.publicSema <- struct{}{}
+	s := &TranscodeSession{runDone: make(chan struct{}), runClient: TranscodeClient{Public: true, Key: "visitor"}}
+	if ts.publicStartRefusedLocked(s, "visitor") {
+		t.Fatal("seek replacing the visitor's own encode was refused")
+	}
+}
+
+// Over the limit, the visitor holding the most cache loses sessions before a quieter one
+func TestEnforceCacheLimitTakesFromBiggestVisitor(t *testing.T) {
+	ts := newLimitTestService(t, 2)
+	const mb = 1 << 20
+	now := time.Now()
+	for hash, s := range map[string]*TranscodeSession{
+		"hog-1": {lastUsed: now.Add(-3 * time.Second)},
+		"hog-2": {lastUsed: now.Add(-2 * time.Second)},
+		"hog-3": {lastUsed: now.Add(-time.Second)},
+		"quiet": {lastUsed: now.Add(-time.Minute)},
+	} {
+		s.hash, s.public, s.owner = hash, true, "hog"
+		if hash == "quiet" {
+			s.owner = "quiet"
+		}
+		s.dir = makeCacheDir(t, ts.cacheRoot, hash, 2*mb, 0)
+		ts.sessions[hash] = s
+	}
+	ts.SetCacheLimit(5 * mb)
+
+	ts.enforceCacheLimit()
+	if _, ok := ts.sessions["quiet"]; !ok {
+		t.Fatal("evicted the quiet visitor's only session while another visitor held three")
+	}
+	hogs := 0
+	for _, h := range []string{"hog-1", "hog-2", "hog-3"} {
+		if _, ok := ts.sessions[h]; ok {
+			hogs++
+		}
+	}
+	if hogs != 1 {
+		t.Fatalf("%d of the big visitor's sessions kept, want 1", hogs)
+	}
+}

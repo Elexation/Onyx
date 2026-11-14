@@ -260,7 +260,7 @@ func (s *LocalStorage) detectFileMIME(filePath, name string) string {
 // WriteZip streams paths as a zip; skipHidden leaves out dot-named entries inside folders
 func (s *LocalStorage) WriteZip(w io.Writer, paths []string, skipHidden bool) error {
 	zw := zip.NewWriter(w)
-	defer zw.Close()
+	// No deferred Close: it writes the central directory, sealing a partial archive as valid
 
 	for _, p := range paths {
 		p = cleanPath(p)
@@ -281,7 +281,7 @@ func (s *LocalStorage) WriteZip(w io.Writer, paths []string, skipHidden bool) er
 		}
 	}
 
-	return nil
+	return zw.Close()
 }
 
 func (s *LocalStorage) zipFile(zw *zip.Writer, fsPath, archivePath string, info fs.FileInfo) error {

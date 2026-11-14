@@ -6,6 +6,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,6 +17,9 @@ import (
 	"github.com/Elexation/onyx/web"
 )
 
+// perWriteTimeout drops a client that has read nothing for this long; downloads themselves are not capped
+const perWriteTimeout = 30 * time.Second
+
 func NewRouter(auth *service.AuthService, files *service.FileService, settings *service.SettingsService, trash *service.TrashService, versions *service.VersionService, tus *upload.TusHandler, search *service.SearchService, shares *service.ShareService, tokens *service.TokenService, thumbs *service.ThumbnailService, probe *service.ProbeService, transcode *service.TranscodeService, events *service.EventStore, trustedProxy, requireHTTPS, activeTLS bool, activeListenPort string, envOverrides map[string]string) http.Handler {
 	r := chi.NewRouter()
 	rl := middleware.NewRateLimiter(trustedProxy)
@@ -25,6 +29,11 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	thumbRL := middleware.NewThumbRateLimiter(trustedProxy)
 	uploadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
 	sseCL := middleware.NewConcurrencyLimiter(trustedProxy, 10)
+	// Each download holds a file, a goroutine and, for zips, a compressor until the client finishes
+	downloadCL := middleware.NewConcurrencyLimiter(trustedProxy, 8)
+	publicDLCL := middleware.NewConcurrencyLimiter(trustedProxy, 4)
+	// Public-only, so share visitors can never take the admin's download slots
+	publicDLGlobal := middleware.NewGlobalLimiter(32)
 	authHandler := handler.NewAuthHandler(auth, rl, trustedProxy, requireHTTPS)
 	fileHandler := handler.NewFileHandler(files)
 	fileOpsHandler := handler.NewFileOpsHandler(files)
@@ -43,6 +52,7 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 
 	r.Use(middleware.Recovery)
 	r.Use(middleware.Logging)
+	r.Use(middleware.WriteDeadline(perWriteTimeout))
 	r.Use(normalizePath)
 	r.Use(middleware.SecurityHeaders(trustedProxy, requireHTTPS))
 	r.Use(middleware.BodyLimit(1 << 20))
@@ -72,9 +82,12 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 			r.Delete("/", fileOpsHandler.Delete)
 			r.Get("/*", fileHandler.List)
 		})
-		r.Get("/download/zip", fileHandler.DownloadZip)
-		r.Get("/download/*", fileHandler.Download)
-		r.Get("/preview/*", fileHandler.Preview)
+		r.Group(func(r chi.Router) {
+			r.Use(downloadCL.Middleware)
+			r.Get("/download/zip", fileHandler.DownloadZip)
+			r.Get("/download/*", fileHandler.Download)
+			r.Get("/preview/*", fileHandler.Preview)
+		})
 		r.With(thumbRL.Middleware).Get("/thumbs/*", thumbsHandler.Get)
 		r.Group(func(r chi.Router) {
 			r.Use(streamRL.Middleware)
@@ -132,11 +145,14 @@ func NewRouter(auth *service.AuthService, files *service.FileService, settings *
 	r.Group(func(r chi.Router) {
 		r.Use(streamRL.Middleware)
 		r.Get("/api/public/s/{token}", publicHandler.Info)
-		r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
-		r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
-		r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
-		r.Get("/api/public/s/{token}/dl", publicHandler.Download)
-		r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
+		r.Group(func(r chi.Router) {
+			r.Use(publicDLCL.Middleware, publicDLGlobal.Middleware)
+			r.Get("/api/public/s/{token}/zip", publicHandler.DownloadZip)
+			r.Get("/api/public/s/{token}/raw", publicHandler.Raw)
+			r.Get("/api/public/s/{token}/raw/*", publicHandler.Raw)
+			r.Get("/api/public/s/{token}/dl", publicHandler.Download)
+			r.Get("/api/public/s/{token}/dl/*", publicHandler.Download)
+		})
 		r.Get("/api/public/s/{token}/stream/info", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/info/*", publicHandler.StreamInfo)
 		r.Get("/api/public/s/{token}/stream/master", publicHandler.StreamMaster)

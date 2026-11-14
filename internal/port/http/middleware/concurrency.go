@@ -69,3 +69,27 @@ func (l *ConcurrencyLimiter) Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// GlobalLimiter caps in-flight requests across every client. When full it answers 503, never queues.
+type GlobalLimiter struct {
+	slots chan struct{}
+}
+
+func NewGlobalLimiter(max int) *GlobalLimiter {
+	return &GlobalLimiter{slots: make(chan struct{}, max)}
+}
+
+func (l *GlobalLimiter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case l.slots <- struct{}{}:
+		default:
+			slog.Info("security_event", "event", "global_limit_triggered", "path", redactSharePath(r.URL.Path))
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, `{"error":"server busy, try again shortly"}`, http.StatusServiceUnavailable)
+			return
+		}
+		defer func() { <-l.slots }()
+		next.ServeHTTP(w, r)
+	})
+}

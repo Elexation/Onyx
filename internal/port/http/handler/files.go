@@ -200,6 +200,8 @@ func (h *FileHandler) DownloadZip(w http.ResponseWriter, r *http.Request) {
 		if !errors.Is(err, service.ErrZipSizeExceeded) {
 			slog.Error("zip stream error", "error", err)
 		}
+		// Part of the archive is already sent; cut the connection so the client sees a failed download
+		panic(http.ErrAbortHandler)
 	}
 }
 
